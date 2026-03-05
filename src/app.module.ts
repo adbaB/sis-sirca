@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AwsModule } from './aws/aws.module';
 import { EmailModule } from './email/email.module';
 import { PaymentsModule } from './payments/payments.module';
+import { ChatbotModule } from './chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { PaymentsModule } from './payments/payments.module';
     AwsModule,
     EmailModule,
     PaymentsModule,
+    ChatbotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

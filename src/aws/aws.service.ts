@@ -17,7 +17,7 @@ export class AwsService {
     });
   }
 
-  async uploadFile(file: Express.Multer.File, folder: string = 'receipts'): Promise<string> {
+  async uploadFile(file: Express.Multer.File | { buffer: Buffer, originalname: string, mimetype: string }, folder: string = 'receipts'): Promise<string> {
     try {
       const bucket = this.configService.get<string>('AWS_S3_BUCKET');
       if (!bucket) {
