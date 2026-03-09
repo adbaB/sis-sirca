@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ChatbotService } from './chatbot.service';
 import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
+import axios from 'axios';
 import { AwsService } from '../aws/aws.service';
 import { EmailService } from '../email/email.service';
-import axios from 'axios';
+import { ChatbotService } from './chatbot.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -59,29 +59,45 @@ describe('ChatbotService', () => {
     });
 
     const createMetaMessage = (from: string, text: string) => ({
-      entry: [{
-        changes: [{
-          value: {
-            messages: [{
-              from,
-              text: { body: text },
-            }],
-          },
-        }],
-      }],
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messages: [
+                  {
+                    from,
+                    text: { body: text },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
     });
 
-    const createMetaMediaMessage = (from: string, mediaId: string, mimeType: string) => ({
-      entry: [{
-        changes: [{
-          value: {
-            messages: [{
-              from,
-              image: { id: mediaId, mime_type: mimeType },
-            }],
-          },
-        }],
-      }],
+    const createMetaMediaMessage = (
+      from: string,
+      mediaId: string,
+      mimeType: string,
+    ) => ({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messages: [
+                  {
+                    from,
+                    image: { id: mediaId, mime_type: mimeType },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
     });
 
     it('should initialize conversation with Hola', async () => {
@@ -93,7 +109,7 @@ describe('ChatbotService', () => {
           to: '123',
           text: { body: expect.stringContaining('Soy Elena') },
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -101,7 +117,9 @@ describe('ChatbotService', () => {
       // First message to set state to AWAITING_NAME
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
 
-      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+      await service.handleIncomingMessage(
+        createMetaMessage('123', 'Juan Perez'),
+      );
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
@@ -109,56 +127,76 @@ describe('ChatbotService', () => {
           to: '123',
           text: { body: expect.stringContaining('Gracias Juan Perez') },
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('should validate email and ask for receipt', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+      await service.handleIncomingMessage(
+        createMetaMessage('123', 'Juan Perez'),
+      );
 
-      await service.handleIncomingMessage(createMetaMessage('123', 'invalidemail'));
+      await service.handleIncomingMessage(
+        createMetaMessage('123', 'invalidemail'),
+      );
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('correo electrónico válido') },
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
 
-      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
+      await service.handleIncomingMessage(
+        createMetaMessage('123', 'juan@test.com'),
+      );
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('envíame una imagen o foto') },
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('should process media correctly', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
+      await service.handleIncomingMessage(
+        createMetaMessage('123', 'Juan Perez'),
+      );
+      await service.handleIncomingMessage(
+        createMetaMessage('123', 'juan@test.com'),
+      );
 
       mockedAxios.get
         .mockResolvedValueOnce({ data: { url: 'https://media.url/123' } }) // First get for URL
         .mockResolvedValueOnce({ data: Buffer.from('test') }); // Second get for Buffer
 
-      mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
+      mockAwsService.uploadFile.mockResolvedValue(
+        'http://s3.aws.com/comprobante.jpg',
+      );
 
-      await service.handleIncomingMessage(createMetaMediaMessage('123', 'media123', 'image/jpeg'));
+      await service.handleIncomingMessage(
+        createMetaMediaMessage('123', 'media123', 'image/jpeg'),
+      );
 
-      expect(mockedAxios.get).toHaveBeenCalledWith('https://graph.facebook.com/v18.0/media123', expect.any(Object));
-      expect(mockedAxios.get).toHaveBeenCalledWith('https://media.url/123', expect.any(Object));
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/media123',
+        expect.any(Object),
+      );
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        'https://media.url/123',
+        expect.any(Object),
+      );
 
       expect(mockAwsService.uploadFile).toHaveBeenCalled();
       expect(mockEmailService.sendPaymentConfirmation).toHaveBeenCalledWith(
         'juan@test.com',
         { name: 'Juan Perez', email: 'juan@test.com', phone: '123' },
-        'http://s3.aws.com/comprobante.jpg'
+        'http://s3.aws.com/comprobante.jpg',
       );
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -167,7 +205,7 @@ describe('ChatbotService', () => {
           to: '123',
           text: { body: expect.stringContaining('procesado con éxito') },
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
   });

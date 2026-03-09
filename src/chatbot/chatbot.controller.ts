@@ -1,4 +1,13 @@
-import { Controller, Post, Get, Body, Req, Res, HttpStatus, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpStatus,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ChatbotService } from './chatbot.service';
 

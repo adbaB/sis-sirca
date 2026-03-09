@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Request, Response } from 'express';
 import { ChatbotController } from './chatbot.controller';
 import { ChatbotService } from './chatbot.service';
-import { Request, Response } from 'express';
 
 describe('ChatbotController', () => {
   let controller: ChatbotController;
@@ -47,7 +47,12 @@ describe('ChatbotController', () => {
         send: jest.fn(),
       } as unknown as Response;
 
-      controller.verifyWebhook('subscribe', 'test_token', '12345', mockResponse);
+      controller.verifyWebhook(
+        'subscribe',
+        'test_token',
+        '12345',
+        mockResponse,
+      );
 
       expect(mockResponse.status).toHaveBeenCalledWith(200);
       expect(mockResponse.send).toHaveBeenCalledWith('12345');
@@ -58,7 +63,12 @@ describe('ChatbotController', () => {
         sendStatus: jest.fn(),
       } as unknown as Response;
 
-      controller.verifyWebhook('subscribe', 'wrong_token', '12345', mockResponse);
+      controller.verifyWebhook(
+        'subscribe',
+        'wrong_token',
+        '12345',
+        mockResponse,
+      );
 
       expect(mockResponse.sendStatus).toHaveBeenCalledWith(403);
     });

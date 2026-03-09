@@ -1,9 +1,9 @@
+import { InternalServerErrorException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PaymentsService } from './payments.service';
 import { AwsService } from '../aws/aws.service';
 import { EmailService } from '../email/email.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
-import { InternalServerErrorException } from '@nestjs/common';
+import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;

@@ -1,8 +1,8 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
-import { BadRequestException } from '@nestjs/common';
-import { SubmitPaymentDto } from './dto/submit-payment.dto';
 
 describe('PaymentsController', () => {
   let controller: PaymentsController;
@@ -41,7 +41,10 @@ describe('PaymentsController', () => {
 
     it('should call paymentsService.processPaymentReceipt with file and dto', async () => {
       const dto: SubmitPaymentDto = { name: 'Test', email: 'test@example.com' };
-      const file = { originalname: 'test.png', buffer: Buffer.from('test') } as Express.Multer.File;
+      const file = {
+        originalname: 'test.png',
+        buffer: Buffer.from('test'),
+      } as Express.Multer.File;
       const result = { message: 'Success', receiptUrl: 'http://test.com' };
 
       mockPaymentsService.processPaymentReceipt.mockResolvedValue(result);

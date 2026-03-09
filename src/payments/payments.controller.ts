@@ -1,14 +1,14 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   Post,
-  UseInterceptors,
   UploadedFile,
-  Body,
-  BadRequestException,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { PaymentsService } from './payments.service';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
+import { PaymentsService } from './payments.service';
 
 @Controller('payments')
 export class PaymentsController {
@@ -27,9 +27,6 @@ export class PaymentsController {
     // In a real application, you might also want to add file validation
     // to ensure the file is an image (e.g. using ParseFilePipe in NestJS).
 
-    return this.paymentsService.processPaymentReceipt(
-      submitPaymentDto,
-      file,
-    );
+    return this.paymentsService.processPaymentReceipt(submitPaymentDto, file);
   }
 }
