@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, Req, Res, HttpStatus, Query } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ChatbotService } from './chatbot.service';
 
@@ -6,16 +6,40 @@ import { ChatbotService } from './chatbot.service';
 export class ChatbotController {
   constructor(private readonly chatbotService: ChatbotService) {}
 
+  @Get('webhook')
+  verifyWebhook(
+    @Query('hub.mode') mode: string,
+    @Query('hub.verify_token') token: string,
+    @Query('hub.challenge') challenge: string,
+    @Res() response: Response,
+  ) {
+    const verifyToken = process.env.META_VERIFY_TOKEN;
+
+    if (mode && token) {
+      if (mode === 'subscribe' && token === verifyToken) {
+        return response.status(HttpStatus.OK).send(challenge);
+      } else {
+        return response.sendStatus(HttpStatus.FORBIDDEN);
+      }
+    }
+    return response.sendStatus(HttpStatus.BAD_REQUEST);
+  }
+
   @Post('webhook')
   async handleWebhook(
     @Req() request: Request,
     @Res() response: Response,
     @Body() body: any,
   ) {
-    // Twilio sends form-data content by default.
-    const twimlResponse = await this.chatbotService.handleIncomingMessage(body);
+    // Acknowledge Meta immediately to avoid timeouts
+    response.status(HttpStatus.OK).send('EVENT_RECEIVED');
 
-    response.set('Content-Type', 'text/xml');
-    response.status(HttpStatus.OK).send(twimlResponse);
+    // Asynchronously handle the incoming message
+    try {
+      await this.chatbotService.handleIncomingMessage(body);
+    } catch (error) {
+      // Log the error but do not change the response sent to Meta
+      console.error('Error handling incoming message:', error);
+    }
   }
 }

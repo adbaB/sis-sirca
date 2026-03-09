@@ -30,25 +30,66 @@ describe('ChatbotController', () => {
     expect(controller).toBeDefined();
   });
 
-  describe('handleWebhook', () => {
-    it('should return twiml response and set content-type', async () => {
-      const mockRequest = {} as Request;
+  describe('verifyWebhook', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv, META_VERIFY_TOKEN: 'test_token' };
+    });
+
+    afterAll(() => {
+      process.env = originalEnv;
+    });
+
+    it('should return challenge when token is valid', () => {
       const mockResponse = {
-        set: jest.fn(),
         status: jest.fn().mockReturnThis(),
         send: jest.fn(),
       } as unknown as Response;
-      const body = { From: '+123', Body: 'Hola' };
-      const twimlResponse = '<Response><Message>Hola</Message></Response>';
 
-      mockChatbotService.handleIncomingMessage.mockResolvedValue(twimlResponse);
+      controller.verifyWebhook('subscribe', 'test_token', '12345', mockResponse);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.send).toHaveBeenCalledWith('12345');
+    });
+
+    it('should return forbidden when token is invalid', () => {
+      const mockResponse = {
+        sendStatus: jest.fn(),
+      } as unknown as Response;
+
+      controller.verifyWebhook('subscribe', 'wrong_token', '12345', mockResponse);
+
+      expect(mockResponse.sendStatus).toHaveBeenCalledWith(403);
+    });
+
+    it('should return bad request when params are missing', () => {
+      const mockResponse = {
+        sendStatus: jest.fn(),
+      } as unknown as Response;
+
+      controller.verifyWebhook(undefined, undefined, undefined, mockResponse);
+
+      expect(mockResponse.sendStatus).toHaveBeenCalledWith(400);
+    });
+  });
+
+  describe('handleWebhook', () => {
+    it('should send 200 OK immediately and call service', async () => {
+      const mockRequest = {} as Request;
+      const mockResponse = {
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+      } as unknown as Response;
+      const body = { entry: [] };
+
+      mockChatbotService.handleIncomingMessage.mockResolvedValue(undefined);
 
       await controller.handleWebhook(mockRequest, mockResponse, body);
 
-      expect(service.handleIncomingMessage).toHaveBeenCalledWith(body);
-      expect(mockResponse.set).toHaveBeenCalledWith('Content-Type', 'text/xml');
       expect(mockResponse.status).toHaveBeenCalledWith(200);
-      expect(mockResponse.send).toHaveBeenCalledWith(twimlResponse);
+      expect(mockResponse.send).toHaveBeenCalledWith('EVENT_RECEIVED');
+      expect(service.handleIncomingMessage).toHaveBeenCalledWith(body);
     });
   });
 });
