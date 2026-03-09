@@ -10,8 +10,8 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('ChatbotService', () => {
   let service: ChatbotService;
-  let awsService: AwsService;
-  let emailService: EmailService;
+  // let awsService: AwsService;
+  // let emailService: EmailService;
 
   const mockConfigService = {
     get: jest.fn(),
@@ -36,8 +36,8 @@ describe('ChatbotService', () => {
     }).compile();
 
     service = module.get<ChatbotService>(ChatbotService);
-    awsService = module.get<AwsService>(AwsService);
-    emailService = module.get<EmailService>(EmailService);
+    // awsService = module.get<AwsService>(AwsService);
+    // emailService = module.get<EmailService>(EmailService);
   });
 
   afterEach(() => {
@@ -77,11 +77,7 @@ describe('ChatbotService', () => {
       ],
     });
 
-    const createMetaMediaMessage = (
-      from: string,
-      mediaId: string,
-      mimeType: string,
-    ) => ({
+    const createMetaMediaMessage = (from: string, mediaId: string, mimeType: string) => ({
       entry: [
         {
           changes: [
@@ -117,9 +113,7 @@ describe('ChatbotService', () => {
       // First message to set state to AWAITING_NAME
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
 
-      await service.handleIncomingMessage(
-        createMetaMessage('123', 'Juan Perez'),
-      );
+      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
@@ -133,13 +127,9 @@ describe('ChatbotService', () => {
 
     it('should validate email and ask for receipt', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(
-        createMetaMessage('123', 'Juan Perez'),
-      );
+      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
 
-      await service.handleIncomingMessage(
-        createMetaMessage('123', 'invalidemail'),
-      );
+      await service.handleIncomingMessage(createMetaMessage('123', 'invalidemail'));
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
@@ -149,9 +139,7 @@ describe('ChatbotService', () => {
         expect.any(Object),
       );
 
-      await service.handleIncomingMessage(
-        createMetaMessage('123', 'juan@test.com'),
-      );
+      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
@@ -164,33 +152,22 @@ describe('ChatbotService', () => {
 
     it('should process media correctly', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(
-        createMetaMessage('123', 'Juan Perez'),
-      );
-      await service.handleIncomingMessage(
-        createMetaMessage('123', 'juan@test.com'),
-      );
+      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
 
       mockedAxios.get
         .mockResolvedValueOnce({ data: { url: 'https://media.url/123' } }) // First get for URL
         .mockResolvedValueOnce({ data: Buffer.from('test') }); // Second get for Buffer
 
-      mockAwsService.uploadFile.mockResolvedValue(
-        'http://s3.aws.com/comprobante.jpg',
-      );
+      mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
 
-      await service.handleIncomingMessage(
-        createMetaMediaMessage('123', 'media123', 'image/jpeg'),
-      );
+      await service.handleIncomingMessage(createMetaMediaMessage('123', 'media123', 'image/jpeg'));
 
       expect(mockedAxios.get).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/media123',
         expect.any(Object),
       );
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        'https://media.url/123',
-        expect.any(Object),
-      );
+      expect(mockedAxios.get).toHaveBeenCalledWith('https://media.url/123', expect.any(Object));
 
       expect(mockAwsService.uploadFile).toHaveBeenCalled();
       expect(mockEmailService.sendPaymentConfirmation).toHaveBeenCalledWith(

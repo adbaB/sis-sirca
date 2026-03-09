@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:latest
+    restart: always
+    # set shared memory limit when using docker-compose
+    shm_size: 128mb
+    volumes:
+      - db_data_sirca:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: 123456d
+      POSTGRES_USER: postgres
+      POSTGRES_DB: sirca
+    ports:
+      - '5433:5432'
+
+volumes:
+  db_data_sirca:

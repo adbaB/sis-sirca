@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpStatus,
-  Post,
-  Query,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Post, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ChatbotService } from './chatbot.service';
 
@@ -35,11 +26,7 @@ export class ChatbotController {
   }
 
   @Post('webhook')
-  async handleWebhook(
-    @Req() request: Request,
-    @Res() response: Response,
-    @Body() body: any,
-  ) {
+  async handleWebhook(@Req() request: Request, @Res() response: Response, @Body() body: unknown) {
     // Acknowledge Meta immediately to avoid timeouts
     response.status(HttpStatus.OK).send('EVENT_RECEIVED');
 
