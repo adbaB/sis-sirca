@@ -49,55 +49,126 @@ describe('ChatbotService', () => {
   });
 
   describe('handleIncomingMessage', () => {
+    beforeEach(() => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'META_ACCESS_TOKEN') return 'token';
+        if (key === 'META_PHONE_NUMBER_ID') return 'phoneid';
+        return null;
+      });
+      mockedAxios.post.mockResolvedValue({});
+    });
+
+    const createMetaMessage = (from: string, text: string) => ({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              from,
+              text: { body: text },
+            }],
+          },
+        }],
+      }],
+    });
+
+    const createMetaMediaMessage = (from: string, mediaId: string, mimeType: string) => ({
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              from,
+              image: { id: mediaId, mime_type: mimeType },
+            }],
+          },
+        }],
+      }],
+    });
+
     it('should initialize conversation with Hola', async () => {
-      const response = await service.handleIncomingMessage({ From: '123', Body: 'hola' });
-      expect(response).toContain('Soy Elena');
-      expect(response).toContain('tu nombre completo');
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('Soy Elena') },
+        }),
+        expect.any(Object)
+      );
     });
 
     it('should ask for email after receiving name', async () => {
       // First message to set state to AWAITING_NAME
-      await service.handleIncomingMessage({ From: '123', Body: 'hola' });
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
 
-      const response = await service.handleIncomingMessage({ From: '123', Body: 'Juan Perez' });
-      expect(response).toContain('Gracias Juan Perez');
-      expect(response).toContain('correo electrónico');
+      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('Gracias Juan Perez') },
+        }),
+        expect.any(Object)
+      );
     });
 
     it('should validate email and ask for receipt', async () => {
-      await service.handleIncomingMessage({ From: '123', Body: 'hola' });
-      await service.handleIncomingMessage({ From: '123', Body: 'Juan Perez' });
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
 
-      const responseInvalid = await service.handleIncomingMessage({ From: '123', Body: 'invalidemail' });
-      expect(responseInvalid).toContain('correo electrónico válido');
+      await service.handleIncomingMessage(createMetaMessage('123', 'invalidemail'));
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('correo electrónico válido') },
+        }),
+        expect.any(Object)
+      );
 
-      const responseValid = await service.handleIncomingMessage({ From: '123', Body: 'juan@test.com' });
-      expect(responseValid).toContain('envíame una imagen o foto de tu comprobante');
+      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('envíame una imagen o foto') },
+        }),
+        expect.any(Object)
+      );
     });
 
     it('should process media correctly', async () => {
-      await service.handleIncomingMessage({ From: '123', Body: 'hola' });
-      await service.handleIncomingMessage({ From: '123', Body: 'Juan Perez' });
-      await service.handleIncomingMessage({ From: '123', Body: 'juan@test.com' });
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
 
-      mockedAxios.get.mockResolvedValue({ data: Buffer.from('test') });
+      mockedAxios.get
+        .mockResolvedValueOnce({ data: { url: 'https://media.url/123' } }) // First get for URL
+        .mockResolvedValueOnce({ data: Buffer.from('test') }); // Second get for Buffer
+
       mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
 
-      const response = await service.handleIncomingMessage({
-        From: '123',
-        NumMedia: '1',
-        MediaUrl0: 'http://twilio.com/media/1',
-        MediaContentType0: 'image/jpeg',
-      });
+      await service.handleIncomingMessage(createMetaMediaMessage('123', 'media123', 'image/jpeg'));
 
-      expect(mockedAxios.get).toHaveBeenCalledWith('http://twilio.com/media/1', expect.any(Object));
+      expect(mockedAxios.get).toHaveBeenCalledWith('https://graph.facebook.com/v18.0/media123', expect.any(Object));
+      expect(mockedAxios.get).toHaveBeenCalledWith('https://media.url/123', expect.any(Object));
+
       expect(mockAwsService.uploadFile).toHaveBeenCalled();
       expect(mockEmailService.sendPaymentConfirmation).toHaveBeenCalledWith(
         'juan@test.com',
         { name: 'Juan Perez', email: 'juan@test.com', phone: '123' },
         'http://s3.aws.com/comprobante.jpg'
       );
-      expect(response).toContain('Comprobante recibido y procesado con éxito');
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('procesado con éxito') },
+        }),
+        expect.any(Object)
+      );
     });
   });
 });
