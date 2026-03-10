@@ -34,9 +34,7 @@ describe('PaymentsController', () => {
   describe('submitPayment', () => {
     it('should throw BadRequestException if no file is provided', async () => {
       const dto: SubmitPaymentDto = { name: 'Test', email: 'test@example.com' };
-      await expect(controller.submitPayment(null, dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(controller.submitPayment(null, dto)).rejects.toThrow(BadRequestException);
     });
 
     it('should call paymentsService.processPaymentReceipt with file and dto', async () => {

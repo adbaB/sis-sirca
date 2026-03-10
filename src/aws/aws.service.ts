@@ -12,16 +12,13 @@ export class AwsService {
       region: this.configService.get<string>('AWS_REGION'),
       credentials: {
         accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID') || '',
-        secretAccessKey:
-          this.configService.get<string>('AWS_SECRET_ACCESS_KEY') || '',
+        secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY') || '',
       },
     });
   }
 
   async uploadFile(
-    file:
-      | Express.Multer.File
-      | { buffer: Buffer; originalname: string; mimetype: string },
+    file: Express.Multer.File | { buffer: Buffer; originalname: string; mimetype: string },
     folder: string = 'receipts',
   ): Promise<string> {
     try {
@@ -46,9 +43,7 @@ export class AwsService {
       const region = this.configService.get<string>('AWS_REGION');
       return `https://${bucket}.s3.${region}.amazonaws.com/${fileName}`;
     } catch (error) {
-      throw new InternalServerErrorException(
-        `Failed to upload file to S3: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to upload file to S3: ${error.message}`);
     }
   }
 }

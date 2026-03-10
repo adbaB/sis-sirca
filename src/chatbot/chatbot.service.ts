@@ -25,14 +25,10 @@ export class ChatbotService {
 
   private async sendMessage(to: string, text: string): Promise<void> {
     const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>(
-      'META_PHONE_NUMBER_ID',
-    );
+    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
 
     if (!accessToken || !phoneNumberId) {
-      this.logger.error(
-        'Missing Meta access token or phone number ID in configuration.',
-      );
+      this.logger.error('Missing Meta access token or phone number ID in configuration.');
       return;
     }
 
@@ -52,14 +48,24 @@ export class ChatbotService {
         },
       );
     } catch (error) {
-      this.logger.error(
-        `Error sending message to ${to}:`,
-        error?.response?.data || error.message,
-      );
+      this.logger.error(`Error sending message to ${to}:`, error?.response?.data || error.message);
     }
   }
 
-  async handleIncomingMessage(body: any): Promise<void> {
+  async handleIncomingMessage(body: {
+    entry?: Array<{
+      changes?: Array<{
+        value?: {
+          messages?: Array<{
+            from: string;
+            text?: { body: string };
+            image?: { id: string; mime_type: string };
+            document?: { id: string; mime_type: string };
+          }>;
+        };
+      }>;
+    }>;
+  }): Promise<void> {
     try {
       const entry = body.entry?.[0];
       const changes = entry?.changes?.[0];
@@ -74,8 +80,7 @@ export class ChatbotService {
       const incomingText = message.text?.body ? message.text.body.trim() : '';
 
       const mediaId = message.image?.id || message.document?.id || null;
-      const contentType =
-        message.image?.mime_type || message.document?.mime_type || 'image/jpeg';
+      const contentType = message.image?.mime_type || message.document?.mime_type || 'image/jpeg';
 
       let state = this.stateStore.get(fromNumber);
 
@@ -97,10 +102,7 @@ export class ChatbotService {
       switch (state.step) {
         case 'AWAITING_NAME':
           if (!incomingText) {
-            await this.sendMessage(
-              fromNumber,
-              'Por favor, indícame tu nombre completo.',
-            );
+            await this.sendMessage(fromNumber, 'Por favor, indícame tu nombre completo.');
             return;
           }
           state.name = incomingText;
@@ -114,10 +116,7 @@ export class ChatbotService {
 
         case 'AWAITING_EMAIL':
           if (!incomingText || !incomingText.includes('@')) {
-            await this.sendMessage(
-              fromNumber,
-              'Por favor, ingresa un correo electrónico válido.',
-            );
+            await this.sendMessage(fromNumber, 'Por favor, ingresa un correo electrónico válido.');
             return;
           }
           state.email = incomingText;
@@ -137,16 +136,12 @@ export class ChatbotService {
                 'Estamos procesando tu comprobante, un momento por favor...',
               );
 
-              const accessToken =
-                this.configService.get<string>('META_ACCESS_TOKEN');
+              const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
 
               // 1. Get media URL
-              const mediaResponse = await axios.get(
-                `https://graph.facebook.com/v18.0/${mediaId}`,
-                {
-                  headers: { Authorization: `Bearer ${accessToken}` },
-                },
-              );
+              const mediaResponse = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
               const mediaUrl = mediaResponse.data.url;
 
               // 2. Download media buffer
@@ -174,11 +169,7 @@ export class ChatbotService {
                 phone: fromNumber,
               };
 
-              await this.emailService.sendPaymentConfirmation(
-                state.email,
-                userInfo,
-                receiptUrl,
-              );
+              await this.emailService.sendPaymentConfirmation(state.email, userInfo, receiptUrl);
 
               // Clear state after success
               this.stateStore.delete(fromNumber);
@@ -188,10 +179,7 @@ export class ChatbotService {
                 '¡Comprobante recibido y procesado con éxito! Hemos enviado un correo con la confirmación. Gracias por confiar en SIRCA Seguros.',
               );
             } catch (error) {
-              this.logger.error(
-                'Error processing media:',
-                error?.response?.data || error.message,
-              );
+              this.logger.error('Error processing media:', error?.response?.data || error.message);
               await this.sendMessage(
                 fromNumber,
                 'Hubo un error al procesar tu comprobante. Por favor, intenta enviarlo de nuevo.',

@@ -1,0 +1,14 @@
+node_module
+.husky
+.env
+.prettierrc
+README.md
+pnpm-lock.yaml
+nest-cli.json
+tsconfig.build.json
+tsconfig.json
+jest-e2e.json
+.github
+.eslintrc.js
+tsconfig.eslint.json
+.eslintrc.json

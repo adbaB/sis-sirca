@@ -54,11 +54,7 @@ describe('PaymentsService', () => {
       const result = await service.processPaymentReceipt(dto, file);
 
       expect(awsService.uploadFile).toHaveBeenCalledWith(file);
-      expect(emailService.sendPaymentConfirmation).toHaveBeenCalledWith(
-        dto.email,
-        dto,
-        receiptUrl,
-      );
+      expect(emailService.sendPaymentConfirmation).toHaveBeenCalledWith(dto.email, dto, receiptUrl);
       expect(result).toEqual({
         message: 'Payment information collected and email sent successfully.',
         receiptUrl,

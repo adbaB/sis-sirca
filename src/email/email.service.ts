@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import nodemailer from 'nodemailer';
+import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
 
 @Injectable()
 export class EmailService {
@@ -20,7 +21,7 @@ export class EmailService {
 
   async sendPaymentConfirmation(
     to: string,
-    userInfo: any,
+    userInfo: SubmitPaymentDto,
     receiptUrl: string,
   ): Promise<void> {
     const mailOptions = {
@@ -47,9 +48,7 @@ export class EmailService {
     try {
       await this.transporter.sendMail(mailOptions);
     } catch (error) {
-      throw new InternalServerErrorException(
-        `Failed to send email: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to send email: ${error.message}`);
     }
   }
 }

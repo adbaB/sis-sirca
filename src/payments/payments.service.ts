@@ -19,20 +19,14 @@ export class PaymentsService {
       const receiptUrl = await this.awsService.uploadFile(file);
 
       // 2. Send email with the payment info and receipt URL
-      await this.emailService.sendPaymentConfirmation(
-        dto.email,
-        dto,
-        receiptUrl,
-      );
+      await this.emailService.sendPaymentConfirmation(dto.email, dto, receiptUrl);
 
       return {
         message: 'Payment information collected and email sent successfully.',
         receiptUrl,
       };
     } catch (error) {
-      throw new InternalServerErrorException(
-        `Failed to process payment receipt: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to process payment receipt: ${error.message}`);
     }
   }
 }
