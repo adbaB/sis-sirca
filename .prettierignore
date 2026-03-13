@@ -12,3 +12,4 @@ jest-e2e.json
 .eslintrc.js
 tsconfig.eslint.json
 .eslintrc.json
+script
