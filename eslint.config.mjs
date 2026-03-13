@@ -56,6 +56,7 @@ export default [
       'src/database/migrations',
       '.github',
       '.eslintrc.json',
+      'script',
     ],
   },
   { languageOptions: { globals: globals.browser } },
