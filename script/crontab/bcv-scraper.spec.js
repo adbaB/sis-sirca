@@ -38,13 +38,74 @@ describe('BCV Scraper Cron Script', () => {
   describe('scrapeBcvRates', () => {
     it('should extract dolar, euro and date from valid BCV HTML response', async () => {
       const mockHtml = `
-        <div id="euro">
-          <strong> 123,45 </strong>
+   <div class="views-row views-row-1 views-row-odd views-row-first views-row-last row">
+      
+          <div id="titulo1" class="col-sm-12 col-xs-12 sin-padding-titulo titulo_block_tasas_mer">
+<div data-toggle="tooltip" title="" data-placement="right" data-original-title="Tipo de  Cambio Promedio Ponderado | Art. 9 - Convenio Cambiario N°1. | 
+Art. 3 - Resolución 19-05-01."><span><a href="https://www.bcv.org.ve/estadisticas/tipo-cambio-de-referencia-smc" id="tcr">Tipo de Cambio de Referencia
+<div class="col-sm-12 col-xs-12 center"><img alt="logo_bcv-04.png" src="/sites/default/files/default_images/logo_bcv-04_2.png"></div></a></span></div>
+</div>    
+          <div class="col-sm-12 col-xs-12  textp"> El tipo de cambio publicado por el BCV es el promedio ponderado resultante de las operaciones diarias de las mesas de cambio activas de las instituciones bancarias participantes.
+ </div>    
+          <div id="euro" class="col-sm-12 col-xs-12 ">        
+	<div class="field-content">
+  		<div class="row recuadrotsmc">
+			<div class="col-sm-6 col-xs-6">
+  			<img src="/sites/default/files/euro-04_2.png" class="icono_bss_blanco1">
+  		        <span> EUR </span>	 </div>
+          
+                        <div class="col-sm-6 col-xs-6 centrado"><strong> 505,41677808 </strong> </div>
+	        </div>  
         </div>
-        <div id="dolar">
-          <strong> 543,21 </strong>
+</div>    
+          <div id="yuan" class="col-sm-12 col-xs-12">        
+	<div class="field-content">
+  		<div class="row recuadrotsmc">
+			<div class="col-sm-6 col-xs-6">
+  			<img src="/sites/default/files/yuan-04_2.png" class="icono_bss_blanco1">
+  		        <span> CNY </span>	 </div>
+
+<div class="col-sm-6 col-xs-6 centrado"><strong> 63,10000723 </strong> </div>
+	        </div>  
         </div>
-        Fecha Valor: <span content="2023-10-15T00:00:00-04:00"></span>
+</div>    
+          <div id="lira" class="col-sm-12 col-xs-12">        
+	<div class="field-content">
+  		<div class="row recuadrotsmc">
+			<div class="col-sm-6 col-xs-6">
+  			<img src="/sites/default/files/default_images/lirat-04_0.png" class="icono_bss_blanco1">
+  		        <span> TRY</span>	 </div>
+
+<div class="col-sm-6 col-xs-6 centrado"><strong> 9,89596622 </strong> </div>
+	        </div>  
+        </div>
+</div>    
+          <div id="rublo" class="col-sm-12 col-xs-12 ">             
+	<div class="field-content">
+  		<div class="row recuadrotsmc">
+			<div class="col-sm-6 col-xs-6">
+  			<img src="/sites/default/files/rublo-04_2.png" class="icono_bss_blanco1">
+  		        <span> RUB</span>	 </div>
+
+<div class="col-sm-6 col-xs-6 centrado"><strong> 5,55545240 </strong> </div>
+	        </div>  
+        </div>
+</div>    
+          <div id="dolar" class="col-sm-12 col-xs-12 ">        
+	<div class="field-content">
+  		<div class="row recuadrotsmc">
+			<div class="col-sm-6 col-xs-6">
+  			<img src="/sites/default/files/dollar-04_2.png" class="icono_bss_blanco1"> 		
+  		        <span> USD</span>	 </div>
+                          
+                         <div class="col-sm-6 col-xs-6 centrado"><strong> 436,24190000 </strong> </div>
+	        </div>  
+        </div>
+</div>    
+          <div class="pull-right dinpro center">
+Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:dateTime" content="2026-03-10T00:00:00-04:00">Martes, 10 Marzo  2026</span>
+<hr>
+</div>    </div>
       `;
 
       jest.spyOn(axios, 'get').mockResolvedValueOnce({ data: mockHtml });
@@ -52,9 +113,9 @@ describe('BCV Scraper Cron Script', () => {
       const result = await scrapeBcvRates();
 
       expect(result).toEqual({
-        dolar: 543.21,
-        euro: 123.45,
-        bcvDate: new Date('2023-10-15T00:00:00-04:00'),
+        dolar: 436.24190000,
+        euro: 505.41677808,
+        bcvDate: new Date('2026-03-10T00:00:00-04:00'),
       });
     });
 

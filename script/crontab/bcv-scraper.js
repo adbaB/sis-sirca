@@ -1,6 +1,13 @@
 const axios = require('axios');
 const https = require('https');
 const { Pool } = require('pg');
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Configura dotenv para buscar el archivo .env en la raíz del proyecto (dos niveles arriba).
+// Si no existe (ej. en producción donde se usan variables de sistema), las variables ya 
+// deberían estar inyectadas por el sistema.
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function scrapeBcvRates(retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -42,11 +49,11 @@ async function scrapeBcvRates(retries = 3) {
 
 async function main() {
   const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 5432,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: process.env.POSTGRES_HOST,
+    port: process.env.POSTGRES_PORT ? parseInt(process.env.POSTGRES_PORT) : 5432,
+    user: process.env.POSTGRES_USER,
+    password: process.env.POSTGRES_PASSWORD,
+    database: process.env.POSTGRES_DB,
   });
 
   try {
@@ -89,6 +96,7 @@ async function main() {
 
     console.log(`Successfully saved rates: Dolar ${finalDolar}, Euro ${finalEuro}, Date: ${finalFecha.toISOString()}`);
   } catch (err) {
+    console.log(err);
     console.error('An error occurred during database operations:', err.message);
   } finally {
     await pool.end();

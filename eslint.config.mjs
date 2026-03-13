@@ -54,6 +54,7 @@ export default [
       'eslint.config.mjs',
       'dist',
       'src/database/migrations',
+      'script',
       '.github',
       '.eslintrc.json',
     ],
