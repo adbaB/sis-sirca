@@ -5,12 +5,9 @@ const path = require('path');
 const dotenv = require('dotenv');
 
 // Configura dotenv para buscar el archivo .env en la raíz del proyecto (dos niveles arriba).
-// Si no existe (ej. en producción donde se usan variables de sistema), ignora el error.
-try {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-} catch (error) {
-  // Las variables de entorno ya deberían estar inyectadas por el sistema
-}
+// Si no existe (ej. en producción donde se usan variables de sistema), las variables ya 
+// deberían estar inyectadas por el sistema.
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function scrapeBcvRates(retries = 3) {
   for (let i = 0; i < retries; i++) {
