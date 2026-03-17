@@ -4,10 +4,10 @@ import { Repository } from 'typeorm';
 import { NotFoundException } from '@nestjs/common';
 
 import { ContractsService } from './contracts.service';
-import { Contract } from '../entities/contract.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
 import { CreateContractDto } from '../dto/create-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
-import { Person } from '../../persons/entities/person.entity';
+import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { Plan } from '../../plans/entities/plan.entity';
 
 describe('ContractsService', () => {
@@ -22,6 +22,7 @@ describe('ContractsService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
+    status: ContractStatus.ACTIVE,
   };
 
   const CONTRACTS_REPOSITORY_TOKEN = getRepositoryToken(Contract);
@@ -151,7 +152,7 @@ describe('ContractsService', () => {
       await service.recalculateMonthlyAmount('1');
 
       expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1' },
+        where: { id: '1', persons: { status: PersonStatus.ACTIVE } },
         relations: ['persons', 'persons.plan'],
       });
       expect(contractWithPersons.monthlyAmount).toEqual(30); // 10 + 20 + 0

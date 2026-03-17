@@ -3,7 +3,7 @@ import { ContractsController } from './contracts.controller';
 import { ContractsService } from '../services/contracts.service';
 import { CreateContractDto } from '../dto/create-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
-import { Contract } from '../entities/contract.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
 
 describe('ContractsController', () => {
   let controller: ContractsController;
@@ -17,6 +17,7 @@ describe('ContractsController', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
+    status: ContractStatus.ACTIVE,
   };
 
   beforeEach(async () => {

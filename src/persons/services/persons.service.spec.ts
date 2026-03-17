@@ -1,16 +1,16 @@
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { NotFoundException } from '@nestjs/common';
 
-import { PersonsService } from './persons.service';
-import { Person } from '../entities/person.entity';
-import { CreatePersonDto } from '../dto/create-person.dto';
-import { UpdatePersonDto } from '../dto/update-person.dto';
-import { PlansService } from '../../plans/services/plans.service';
+import { Contract } from '../../contracts/entities/contract.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { Plan } from '../../plans/entities/plan.entity';
-import { Contract } from '../../contracts/entities/contract.entity';
+import { PlansService } from '../../plans/services/plans.service';
+import { CreatePersonDto } from '../dto/create-person.dto';
+import { UpdatePersonDto } from '../dto/update-person.dto';
+import { Person, PersonStatus } from '../entities/person.entity';
+import { PersonsService } from './persons.service';
 
 describe('PersonsService', () => {
   let service: PersonsService;
@@ -30,12 +30,13 @@ describe('PersonsService', () => {
     identityCard: '123456',
     name: 'John Doe',
     birthDate: new Date('1990-01-01'),
-    gender: 'male',
+    gender: true,
     plan: mockPlan,
     contract: mockContract,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
+    status: PersonStatus.ACTIVE,
   };
 
   const PERSONS_REPOSITORY_TOKEN = getRepositoryToken(Person);
@@ -86,7 +87,7 @@ describe('PersonsService', () => {
         identityCard: '123456',
         name: 'John Doe',
         birthDate: '1990-01-01',
-        gender: 'male',
+        gender: true,
         planId: 'plan-1',
         contractId: 'contract-1',
       };
@@ -104,7 +105,7 @@ describe('PersonsService', () => {
         identityCard: '123456',
         name: 'John Doe',
         birthDate: '1990-01-01',
-        gender: 'male',
+        gender: true,
         plan: mockPlan,
         contract: mockContract,
       });
@@ -118,7 +119,7 @@ describe('PersonsService', () => {
         identityCard: 'invalid-id',
         name: 'John Doe',
         birthDate: '1990-01-01',
-        gender: 'male',
+        gender: true,
         planId: 'invalid-plan',
       };
 

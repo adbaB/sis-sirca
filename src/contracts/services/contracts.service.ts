@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { CreateContractDto } from '../dto/create-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { Contract } from '../entities/contract.entity';
+import { PersonStatus } from '../../persons/entities/person.entity';
 
 @Injectable()
 export class ContractsService {
@@ -50,7 +51,7 @@ export class ContractsService {
    */
   async recalculateMonthlyAmount(contractId: string): Promise<void> {
     const contract = await this.contractsRepository.findOne({
-      where: { id: contractId },
+      where: { id: contractId, persons: { status: PersonStatus.ACTIVE } },
       relations: ['persons', 'persons.plan'],
     });
 
