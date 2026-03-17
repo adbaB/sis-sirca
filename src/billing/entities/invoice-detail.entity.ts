@@ -17,15 +17,18 @@ export class InvoiceDetail {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne('Invoice', (invoice: Invoice) => invoice.details, { onDelete: 'CASCADE' })
+  @ManyToOne('Invoice', (invoice: Invoice) => invoice.details, {
+    onDelete: 'CASCADE',
+    nullable: false,
+  })
   @JoinColumn({ name: 'invoice_id' })
   invoice: Invoice;
 
-  @ManyToOne('Person')
+  @ManyToOne('Person', { nullable: false })
   @JoinColumn({ name: 'person_id' })
   person: Person;
 
-  @ManyToOne('Plan')
+  @ManyToOne('Plan', { nullable: false })
   @JoinColumn({ name: 'plan_id' })
   plan: Plan;
 

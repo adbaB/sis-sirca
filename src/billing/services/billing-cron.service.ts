@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, Between } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { InvoiceDetail } from '../entities/invoice-detail.entity';
@@ -32,10 +32,14 @@ export class BillingCronService {
     // Let's set a due date for the 5th of the next month
     const dueDate = new Date(now.getFullYear(), now.getMonth() + 1, 5);
 
+    // Create billingMonth string YYYY-MM
+    const billingMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     while (true) {
       const contracts = await this.contractRepository.find({
         where: { status: ContractStatus.ACTIVE },
         relations: ['persons', 'persons.plan'],
+        order: { id: 'ASC' },
         skip: offset,
         take: chunkSize,
       });
@@ -45,7 +49,7 @@ export class BillingCronService {
       }
 
       for (const contract of contracts) {
-        await this.processContract(contract, startOfMonth, endOfMonth, dueDate);
+        await this.processContract(contract, startOfMonth, endOfMonth, dueDate, billingMonth);
       }
 
       offset += chunkSize;
@@ -59,18 +63,21 @@ export class BillingCronService {
     startOfMonth: Date,
     endOfMonth: Date,
     dueDate: Date,
+    billingMonth: string,
   ) {
     const queryRunner = this.dataSource.createQueryRunner();
 
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
     try {
-      // Idempotency check: see if invoice for this month already exists
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      // The idempotency check below is now only an optimization.
+      // The true database truth check is enforced via the Unique constraint
+      // on (contract, billingMonth).
       const existingInvoice = await queryRunner.manager.findOne(Invoice, {
         where: {
           contract: { id: contract.id },
-          issueDate: Between(startOfMonth, endOfMonth),
+          billingMonth,
         },
       });
 
@@ -102,6 +109,7 @@ export class BillingCronService {
       // Create Invoice
       const invoice = queryRunner.manager.create(Invoice, {
         contract: contract,
+        billingMonth: billingMonth,
         issueDate: new Date(),
         dueDate: dueDate,
         totalAmount: totalAmount,
@@ -123,12 +131,23 @@ export class BillingCronService {
 
       await queryRunner.commitTransaction();
       this.logger.log(`Created invoice ${savedInvoice.id} for contract ${contract.id}`);
-    } catch (error) {
+    } catch (error: unknown) {
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
+
+      // Postgres Unique Violation Code
+      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+        this.logger.log(
+          `Skipping contract ${contract.id}: Invoice for ${billingMonth} already exists (Duplicate Key)`,
+        );
+        return;
+      }
+
       this.logger.error(
         `Error processing contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
-      await queryRunner.rollbackTransaction();
     } finally {
       await queryRunner.release();
     }

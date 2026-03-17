@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -7,6 +8,7 @@ import {
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import type { Contract } from '../../contracts/entities/contract.entity';
@@ -21,13 +23,20 @@ export enum InvoiceStatus {
 }
 
 @Entity('invoices')
+@Check('"total_amount" >= 0')
+@Check('"paid_amount" >= 0')
+@Check('"paid_amount" <= "total_amount"')
+@Unique(['contract', 'billingMonth'])
 export class Invoice {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne('Contract', (contract: Contract) => contract.invoices)
+  @ManyToOne('Contract', (contract: Contract) => contract.invoices, { nullable: false })
   @JoinColumn({ name: 'contract_id' })
   contract: Contract;
+
+  @Column({ type: 'varchar', length: 7, name: 'billing_month' })
+  billingMonth: string;
 
   @Column({ type: 'date', name: 'issue_date' })
   issueDate: Date;

@@ -21,7 +21,7 @@ export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne('Invoice', (invoice: Invoice) => invoice.payments)
+  @ManyToOne('Invoice', (invoice: Invoice) => invoice.payments, { nullable: false })
   @JoinColumn({ name: 'invoice_id' })
   invoice: Invoice;
 

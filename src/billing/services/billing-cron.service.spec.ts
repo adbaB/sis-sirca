@@ -16,6 +16,7 @@ describe('BillingCronService', () => {
     startTransaction: jest.fn(),
     commitTransaction: jest.fn(),
     rollbackTransaction: jest.fn(),
+    isTransactionActive: true,
     release: jest.fn(),
     manager: {
       findOne: jest.fn(),

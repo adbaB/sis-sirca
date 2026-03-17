@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
@@ -16,6 +16,11 @@ export class BillingService {
   ) {}
 
   async createPayment(createPaymentDto: CreatePaymentDto) {
+    const amount = Number(createPaymentDto.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Payment amount must be greater than 0');
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
 
     await queryRunner.connect();
@@ -43,7 +48,7 @@ export class BillingService {
       await queryRunner.manager.save(payment);
 
       // Update Invoice
-      const newPaidAmount = Number(invoice.paidAmount) + Number(createPaymentDto.amount);
+      const newPaidAmount = Number(invoice.paidAmount) + amount;
       const totalAmount = Number(invoice.totalAmount);
 
       invoice.paidAmount = newPaidAmount;
