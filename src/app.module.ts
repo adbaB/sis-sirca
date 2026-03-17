@@ -10,6 +10,9 @@ import { PaymentsModule } from './payments/payments.module';
 import { PlansModule } from './plans/plans.module';
 import { PersonsModule } from './persons/persons.module';
 import { ContractsModule } from './contracts/contracts.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { GoogleDriveModule } from './google-drive/google-drive.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { ContractsModule } from './contracts/contracts.module';
     PlansModule,
     PersonsModule,
     ContractsModule,
+    ScheduleModule.forRoot(),
+    GoogleDriveModule,
+    SyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],
