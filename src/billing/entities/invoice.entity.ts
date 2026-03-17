@@ -44,10 +44,30 @@ export class Invoice {
   @Column({ type: 'date', name: 'due_date' })
   dueDate: Date;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, name: 'total_amount' })
+const decimalTransformer = {
+  to: (value: number) => value,
+  from: (value: string | null) => (value === null ? 0 : Number(value)),
+};
+
+// ... other entity code ...
+
+  `@Column`({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    name: 'total_amount',
+    transformer: decimalTransformer,
+  })
   totalAmount: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, name: 'paid_amount' })
+  `@Column`({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    name: 'paid_amount',
+    transformer: decimalTransformer,
+  })
   paidAmount: number;
 
   @Column({ type: 'enum', enum: InvoiceStatus, default: InvoiceStatus.PENDING })
