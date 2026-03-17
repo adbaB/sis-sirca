@@ -21,6 +21,10 @@ export default registerAs('config', () => {
       excelFileId: process.env.GOOGLE_DRIVE_EXCEL_FILE_ID,
     },
 
+    openrouter: {
+      apiKey: process.env.OPENROUTER_API_KEY,
+    },
+
     env: process.env.NODE_ENV || 'development',
   };
 });

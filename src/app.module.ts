@@ -13,6 +13,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { GoogleDriveModule } from './google-drive/google-drive.module';
 import { SyncModule } from './sync/sync.module';
+import { OcrModule } from './ocr/ocr.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SyncModule } from './sync/sync.module';
     ScheduleModule.forRoot(),
     GoogleDriveModule,
     SyncModule,
+    OcrModule,
   ],
   controllers: [AppController],
   providers: [AppService],
