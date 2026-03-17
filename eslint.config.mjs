@@ -57,6 +57,7 @@ export default [
       'script',
       '.github',
       '.eslintrc.json',
+      'script',
     ],
   },
   { languageOptions: { globals: globals.browser } },
