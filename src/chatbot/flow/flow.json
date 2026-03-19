@@ -1,5 +1,18 @@
 {
   "version": "7.3",
+  "routing_model": {
+    "SCREEN_IDENTIFICATION": [
+      "SCREEN_INVOICES",
+      "SCREEN_IDENTIFICATION"
+    ],
+    "SCREEN_INVOICES": [
+      "SCREEN_PAYMENT_METHOD"
+    ],
+    "SCREEN_PAYMENT_METHOD": [
+      "SCREEN_PAYMENT_DETAILS",
+      "SCREEN_INVOICES"
+    ]
+  },
   "screens": [
     {
       "id": "SCREEN_IDENTIFICATION",
