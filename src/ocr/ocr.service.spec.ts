@@ -2,14 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { OcrService } from './ocr.service';
 import * as Tesseract from 'tesseract.js';
-import OpenAI from 'openai';
 
 jest.mock('tesseract.js');
 jest.mock('openai');
 
 describe('OcrService', () => {
   let service: OcrService;
-  let configService: ConfigService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -30,7 +28,6 @@ describe('OcrService', () => {
     }).compile();
 
     service = module.get<OcrService>(OcrService);
-    configService = module.get<ConfigService>(ConfigService);
   });
 
   afterEach(() => {
@@ -46,7 +43,7 @@ describe('OcrService', () => {
       // Mock Tesseract.recognize
       const mockRecognize = jest.spyOn(Tesseract, 'recognize').mockResolvedValue({
         data: { text: 'Recibo de pago 100 BS referencia 12345' },
-      } as any);
+      } as unknown as Tesseract.RecognizeResult);
 
       // Mock OpenAI chat completions create
       const mockChatCompletionsCreate = jest.fn().mockResolvedValue({
@@ -69,12 +66,12 @@ describe('OcrService', () => {
       });
 
       // The service instantiates OpenAI inside constructor, we need to mock prototype
-      const openAiInstance = (service as any).openai;
+      const openAiInstance = service['openai'];
       openAiInstance.chat = {
         completions: {
           create: mockChatCompletionsCreate,
         },
-      };
+      } as unknown as typeof openAiInstance.chat;
 
       const buffer = Buffer.from('dummy image buffer');
       const result = await service.extractReceiptData(buffer);
@@ -97,11 +94,10 @@ describe('OcrService', () => {
     });
 
     it('should throw error if OCR fails', async () => {
-      // Mock Tesseract.recognize
-      const mockRecognize = jest.spyOn(Tesseract, 'recognize').mockRejectedValue(new Error('OCR Failed'));
-
       const buffer = Buffer.from('dummy image buffer');
-      await expect(service.extractReceiptData(buffer)).rejects.toThrow('Failed to extract receipt data');
+      await expect(service.extractReceiptData(buffer)).rejects.toThrow(
+        'Failed to extract receipt data',
+      );
     });
   });
 });

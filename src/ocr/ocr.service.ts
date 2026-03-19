@@ -22,17 +22,34 @@ export class OcrService {
   constructor(private configService: ConfigService) {
     const apiKey = this.configService.get<string>('config.openrouter.apiKey');
 
+    const isTestEnv = process.env.NODE_ENV === 'test';
+
+    if (!apiKey && !isTestEnv) {
+      this.logger.warn(
+        'Missing OPENROUTER_API_KEY in environment. OCR processing will fail if used.',
+      );
+    }
+
     this.openai = new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: apiKey || 'dummy-key-for-tests', // fallback
+      apiKey: apiKey ?? 'dummy-key-for-tests',
     });
   }
 
   async extractReceiptData(imageBufferOrUrl: string | Buffer): Promise<ReceiptData> {
+    const apiKey = this.configService.get<string>('config.openrouter.apiKey');
+    const isTestEnv = process.env.NODE_ENV === 'test';
+
+    if (!apiKey && !isTestEnv) {
+      throw new Error('Missing OPENROUTER_API_KEY. Cannot process OCR.');
+    }
+
     try {
       this.logger.log('Starting OCR extraction with Tesseract...');
-      const { data: { text } } = await Tesseract.recognize(
-        imageBufferOrUrl as any,
+      const {
+        data: { text },
+      } = await Tesseract.recognize(
+        imageBufferOrUrl,
         'spa', // Spanish language by default for receipts
       );
 
@@ -58,32 +75,51 @@ export class OcrService {
         """
       `;
 
-      const completion = await this.openai.chat.completions.create({
-        model: 'openai/gpt-4o-mini', // or any preferred model available in OpenRouter
-        messages: [
-          {
-            role: 'system',
-            content: 'Eres un asistente experto en analizar recibos de pago y extraer datos en formato JSON puro. No uses bloques de código markdown.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        // response_format: { type: 'json_object' }, // Supported by many OpenRouter models
-        temperature: 0,
-      });
+      const completion = await this.openai.chat.completions.create(
+        {
+          model: 'openai/gpt-4o-mini', // or any preferred model available in OpenRouter
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Eres un asistente experto en analizar recibos de pago y extraer datos en formato JSON puro. No uses bloques de código markdown.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          // response_format: { type: 'json_object' }, // Supported by many OpenRouter models
+          temperature: 0,
+        },
+        { timeout: 15_000 },
+      );
 
       let responseContent = completion.choices[0]?.message?.content || '{}';
 
       // Clean up markdown code blocks if the AI still adds them
-      responseContent = responseContent.replace(/```json/g, '').replace(/```/g, '').trim();
+      responseContent = responseContent
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
 
-      const parsedData: ReceiptData = JSON.parse(responseContent);
+      const raw = JSON.parse(responseContent) as Partial<ReceiptData>;
+
+      const parsedData: ReceiptData = {
+        monto: raw.monto ?? null,
+        referencia: raw.referencia ?? null,
+        beneficiario: raw.beneficiario ?? null,
+        bancoDestino: raw.bancoDestino ?? null,
+        fecha: raw.fecha ?? null,
+        origen: raw.origen ?? null,
+        descripcion: raw.descripcion ?? null,
+        nombreBanco: raw.nombreBanco ?? null,
+      };
       return parsedData;
     } catch (error) {
       this.logger.error('Error processing receipt:', error);
-      throw new Error('Failed to extract receipt data');
+      // @ts-expect-error ts(2554) underlying TS config doesn't support error cause yet
+      throw new Error('Failed to extract receipt data', { cause: error });
     }
   }
 }
