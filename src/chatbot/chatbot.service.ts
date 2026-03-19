@@ -108,9 +108,10 @@ export class ChatbotService {
   private async sendFlowMessage(to: string, text: string): Promise<void> {
     const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
     const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const flowId = this.configService.get<string>('META_FLOW_ID');
 
-    if (!accessToken || !phoneNumberId) {
-      this.logger.error('Missing Meta access token or phone number ID in configuration.');
+    if (!accessToken || !phoneNumberId || !flowId) {
+      this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
       return;
     }
 
@@ -139,7 +140,7 @@ export class ChatbotService {
               parameters: {
                 flow_message_version: '3',
                 flow_token: 'payment_flow_token',
-                flow_id: this.configService.get<string>('META_FLOW_ID') || '123456789', // Usually obtained from config
+                flow_id: flowId,
                 flow_cta: 'Realizar pago',
                 flow_action: 'navigate',
                 flow_action_payload: {

@@ -67,6 +67,7 @@ describe('ChatbotService', () => {
       mockConfigService.get.mockImplementation((key: string) => {
         if (key === 'META_ACCESS_TOKEN') return 'token';
         if (key === 'META_PHONE_NUMBER_ID') return 'phoneid';
+        if (key === 'META_FLOW_ID') return '123456789';
         return null;
       });
       mockedAxios.post.mockResolvedValue({});

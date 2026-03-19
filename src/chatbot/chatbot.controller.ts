@@ -8,6 +8,7 @@ import {
   Req,
   Res,
   UseGuards,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ChatbotService } from './chatbot.service';
@@ -52,18 +53,15 @@ export class ChatbotController {
   }
 
   @Post('flow-endpoint')
-  async handleFlowEndpoint(@Body() body: any) {
+  async handleFlowEndpoint(@Body() body: any, @Res() response: Response) {
     // Flow endpoints are decrypted and encrypted using the ChatbotService
     try {
-      const response = await this.chatbotService.handleEncryptedFlowDataExchange(body);
-      return response;
+      const encryptedResponse = await this.chatbotService.handleEncryptedFlowDataExchange(body);
+      return response.status(HttpStatus.OK).send(encryptedResponse);
     } catch (error) {
       console.error('Error in encrypted flow endpoint:', error);
-      // If decryption fails entirely, Meta expects a specific error or just standard 500
-      return {
-        error: true,
-        error_message: 'Hubo un error procesando la solicitud segura.',
-      };
+      // Meta expects an encrypted response or a plain text error, not a JSON object
+      return response.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Error processing secure flow request.');
     }
   }
 }

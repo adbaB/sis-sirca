@@ -31,23 +31,32 @@ export class FlowsCryptoUtil {
    * @param iv Base64 encoded Initialization Vector.
    * @returns The decrypted JSON payload object.
    */
-  static decryptPayload(decryptedAesKey: Buffer, encryptedPayload: string, iv: string): any {
+  static decryptPayload(
+    decryptedAesKey: Buffer,
+    encryptedPayload: string,
+    iv: string,
+  ): Record<string, any> {
+    const ivBuffer = Buffer.from(iv, 'base64');
+    if (ivBuffer.length !== 12) {
+      throw new Error(`Invalid IV length. Expected 12 bytes, got ${ivBuffer.length}`);
+    }
+
     const payloadBuffer = Buffer.from(encryptedPayload, 'base64');
     const authTagLength = 16;
+    if (payloadBuffer.length <= authTagLength) {
+      throw new Error('Encrypted payload is too short to contain a valid AES-GCM auth tag.');
+    }
+
     const ciphertext = payloadBuffer.subarray(0, payloadBuffer.length - authTagLength);
     const authTag = payloadBuffer.subarray(payloadBuffer.length - authTagLength);
 
-    const decipher = crypto.createDecipheriv(
-      'aes-256-gcm',
-      decryptedAesKey,
-      Buffer.from(iv, 'base64'),
-    );
+    const decipher = crypto.createDecipheriv('aes-256-gcm', decryptedAesKey, ivBuffer);
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(ciphertext, undefined, 'utf8');
     decrypted += decipher.final('utf8');
 
-    return JSON.parse(decrypted);
+    return JSON.parse(decrypted) as Record<string, any>;
   }
 
   /**
@@ -57,9 +66,17 @@ export class FlowsCryptoUtil {
    * @param iv Base64 encoded IV (will be inverted as per Meta spec).
    * @returns Base64 encoded string containing the encrypted response payload.
    */
-  static encryptResponse(payloadObj: any, decryptedAesKey: Buffer, iv: string): string {
-    // Flip the IV per Meta specifications (XOR inverted IV)
+  static encryptResponse(
+    payloadObj: Record<string, any>,
+    decryptedAesKey: Buffer,
+    iv: string,
+  ): string {
     const ivBuffer = Buffer.from(iv, 'base64');
+    if (ivBuffer.length !== 12) {
+      throw new Error(`Invalid IV length. Expected 12 bytes, got ${ivBuffer.length}`);
+    }
+
+    // Flip the IV per Meta specifications (XOR inverted IV)
     const flippedIv = Buffer.alloc(12);
     for (let i = 0; i < 12; i++) {
       flippedIv[i] = ~ivBuffer[i];

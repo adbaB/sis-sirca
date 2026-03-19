@@ -26,10 +26,10 @@ export class MetaSignatureGuard implements CanActivate {
     const appSecret = this.configService.get<string>('config.meta.appSecret');
 
     if (!appSecret) {
-      this.logger.warn(
-        'Missing META_APP_SECRET in environment variables. Allowing request for local testing purposes, but this is DANGEROUS in production.',
+      this.logger.error(
+        'Missing META_APP_SECRET in environment variables. Rejecting request for security.',
       );
-      return true; // Optionally we could block here, but typically we want to warn. I will block in strict mode.
+      throw new UnauthorizedException('Server configuration error.');
     }
 
     const rawBody = request.rawBody;
@@ -55,9 +55,7 @@ export class MetaSignatureGuard implements CanActivate {
         throw new Error('Signature mismatch');
       }
     } catch (error) {
-      this.logger.warn(
-        `Invalid signature. Expected: ${expectedSignature}, got: ${signatureHeader}`,
-      );
+      this.logger.warn('Invalid signature received from Meta webhook.');
       throw new UnauthorizedException('Invalid signature.');
     }
 
