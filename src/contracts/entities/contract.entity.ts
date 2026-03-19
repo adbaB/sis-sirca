@@ -8,6 +8,12 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Person } from '../../persons/entities/person.entity';
+import type { Invoice } from '../../billing/entities/invoice.entity';
+
+export enum ContractStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
 
 @Entity('contracts')
 export class Contract {
@@ -28,6 +34,12 @@ export class Contract {
 
   @OneToMany('Person', (person: Person) => person.contract)
   persons: Person[];
+
+  @OneToMany('Invoice', (invoice: Invoice) => invoice.contract)
+  invoices?: Invoice[] | null;
+
+  @Column({ type: 'enum', enum: ContractStatus, default: ContractStatus.ACTIVE })
+  status: ContractStatus;
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;

@@ -10,6 +10,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PlansModule } from './plans/plans.module';
 import { PersonsModule } from './persons/persons.module';
 import { ContractsModule } from './contracts/contracts.module';
+import { BillingModule } from './billing/billing.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { GoogleDriveModule } from './google-drive/google-drive.module';
 import { SyncModule } from './sync/sync.module';
@@ -25,6 +26,7 @@ import { SyncModule } from './sync/sync.module';
     PlansModule,
     PersonsModule,
     ContractsModule,
+    BillingModule,
     ScheduleModule.forRoot(),
     GoogleDriveModule,
     SyncModule,
