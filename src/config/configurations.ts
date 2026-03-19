@@ -25,6 +25,12 @@ export default registerAs('config', () => {
       apiKey: process.env.OPENROUTER_API_KEY,
     },
 
+    meta: {
+      appSecret: process.env.META_APP_SECRET,
+      flowPrivateKey: process.env.META_FLOW_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      flowPassphrase: process.env.META_FLOW_PASSPHRASE,
+    },
+
     env: process.env.NODE_ENV || 'development',
   };
 });

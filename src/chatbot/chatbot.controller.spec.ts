@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Request, Response } from 'express';
 import { ChatbotController } from './chatbot.controller';
 import { ChatbotService } from './chatbot.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('ChatbotController', () => {
   let controller: ChatbotController;
@@ -9,6 +10,7 @@ describe('ChatbotController', () => {
 
   const mockChatbotService = {
     handleIncomingMessage: jest.fn(),
+    handleEncryptedFlowDataExchange: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -18,6 +20,12 @@ describe('ChatbotController', () => {
         {
           provide: ChatbotService,
           useValue: mockChatbotService,
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue('mockAppSecret'),
+          },
         },
       ],
     }).compile();

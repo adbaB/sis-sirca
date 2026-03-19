@@ -11,5 +11,6 @@ import { BillingCronService } from './services/billing-cron.service';
   imports: [TypeOrmModule.forFeature([Invoice, InvoiceDetail, Payment, Contract])],
   controllers: [],
   providers: [BillingService, BillingCronService],
+  exports: [BillingService],
 })
 export class BillingModule {}

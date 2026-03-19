@@ -3,11 +3,24 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { AwsService } from '../aws/aws.service';
 import { EmailService } from '../email/email.service';
+import { OcrService } from '../ocr/ocr.service';
+import { BillingService } from '../billing/services/billing.service';
+import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
-  step: 'AWAITING_NAME' | 'AWAITING_EMAIL' | 'AWAITING_RECEIPT';
+  step:
+    | 'AWAITING_NAME'
+    | 'AWAITING_EMAIL'
+    | 'AWAITING_RECEIPT'
+    | 'AWAITING_CAPTURE'
+    | 'AWAITING_CONFIRMATION'
+    | 'AWAITING_MANUAL_INPUT';
   name?: string;
   email?: string;
+  selected_invoices?: string[];
+  payment_method?: string;
+  total_amount?: string;
+  extracted_data?: any;
 }
 
 @Injectable()
@@ -21,6 +34,8 @@ export class ChatbotService {
     private configService: ConfigService,
     private awsService: AwsService,
     private emailService: EmailService,
+    private ocrService: OcrService,
+    private billingService: BillingService,
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
@@ -52,15 +67,266 @@ export class ChatbotService {
     }
   }
 
+  private async sendInteractiveMessage(to: string, text: string, buttons: any[]): Promise<void> {
+    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+
+    if (!accessToken || !phoneNumberId) {
+      this.logger.error('Missing Meta access token or phone number ID in configuration.');
+      return;
+    }
+
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'interactive',
+          interactive: {
+            type: 'button',
+            body: { text },
+            action: { buttons },
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error sending interactive message to ${to}:`,
+        error?.response?.data || error.message,
+      );
+    }
+  }
+
+  private async sendFlowMessage(to: string, text: string): Promise<void> {
+    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const flowId = this.configService.get<string>('META_FLOW_ID');
+
+    if (!accessToken || !phoneNumberId || !flowId) {
+      this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
+      return;
+    }
+
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'interactive',
+          interactive: {
+            type: 'flow',
+            header: {
+              type: 'text',
+              text: 'Pago de Facturas',
+            },
+            body: {
+              text,
+            },
+            footer: {
+              text: 'Sirca Seguros',
+            },
+            action: {
+              name: 'flow',
+              parameters: {
+                flow_message_version: '3',
+                flow_token: 'payment_flow_token',
+                flow_id: flowId,
+                flow_cta: 'Realizar pago',
+                flow_action: 'navigate',
+                flow_action_payload: {
+                  screen: 'SCREEN_IDENTIFICATION',
+                },
+              },
+            },
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error sending flow message to ${to}:`,
+        error?.response?.data || error.message,
+      );
+    }
+  }
+
+  async handleEncryptedFlowDataExchange(body: any): Promise<any> {
+    const privateKey = this.configService.get<string>('config.meta.flowPrivateKey');
+    const passphrase = this.configService.get<string>('config.meta.flowPassphrase');
+
+    if (!privateKey) {
+      this.logger.warn(
+        'META_FLOW_PRIVATE_KEY not set. Flow Data Exchange cannot decrypt payload securely.',
+      );
+      throw new Error('Server not configured for secure Flow exchange.');
+    }
+
+    const { encrypted_aes_key, encrypted_flow_data, initial_vector } = body;
+
+    if (!encrypted_aes_key || !encrypted_flow_data || !initial_vector) {
+      throw new Error('Missing encrypted data fields in request.');
+    }
+
+    try {
+      const decryptedAesKey = FlowsCryptoUtil.decryptAesKey(
+        encrypted_aes_key,
+        privateKey,
+        passphrase,
+      );
+      const decryptedPayload = FlowsCryptoUtil.decryptPayload(
+        decryptedAesKey,
+        encrypted_flow_data,
+        initial_vector,
+      );
+
+      const responseObj = await this.handleFlowDataExchange(decryptedPayload);
+
+      const encryptedResponse = FlowsCryptoUtil.encryptResponse(
+        responseObj,
+        decryptedAesKey,
+        initial_vector,
+      );
+      return encryptedResponse;
+    } catch (e) {
+      this.logger.error('Error decrypting or encrypting flow data exchange:', e);
+      throw e;
+    }
+  }
+
+  async handleFlowDataExchange(body: any): Promise<any> {
+    const action = body?.action;
+    const data = body?.data || {};
+
+    if (action === 'INIT') {
+      return {
+        screen: 'SCREEN_IDENTIFICATION',
+        data: {},
+      };
+    }
+
+    if (action === 'data_exchange') {
+      const payload = data;
+      const exchangeAction = payload.action;
+
+      if (exchangeAction === 'fetch_invoices') {
+        const docType = payload.doc_type;
+        const docNumber = payload.doc_number;
+        const identityCard = `${docType}-${docNumber}`;
+
+        const invoices = await this.billingService.findPendingInvoicesByIdentityCard(identityCard);
+
+        if (!invoices || invoices.length === 0) {
+          return {
+            screen: 'SCREEN_IDENTIFICATION',
+            data: {
+              error: true,
+              error_message: 'No se encontraron facturas pendientes para este documento.',
+            },
+          };
+        }
+
+        const mappedInvoices = invoices.map((inv) => ({
+          id: inv.id,
+          title: `Factura ${inv.billingMonth}`,
+          description: `Monto pendiente: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
+        }));
+
+        return {
+          screen: 'SCREEN_INVOICES',
+          data: {
+            invoices: mappedInvoices,
+          },
+        };
+      }
+
+      if (exchangeAction === 'fetch_payment_details') {
+        const selectedInvoiceIds = payload.selected_invoices || [];
+        const paymentMethod = payload.payment_method;
+
+        if (selectedInvoiceIds.length === 0) {
+          return {
+            screen: 'SCREEN_INVOICES',
+            data: {
+              error: true,
+              error_message: 'Debes seleccionar al menos una factura.',
+            },
+          };
+        }
+
+        const invoices = await this.billingService.findInvoicesByIds(selectedInvoiceIds);
+        const totalAmount = invoices.reduce(
+          (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
+          0,
+        );
+
+        let paymentInfo = '';
+        if (paymentMethod === 'transferencia') {
+          paymentInfo =
+            'Banco: Mercantil\nCuenta: 0105-XXXX-XXXX-XXXX\nTitular: SIRCA Seguros\nRIF: J-XXXXXXX';
+        } else if (paymentMethod === 'pago_movil') {
+          paymentInfo = 'Banco: Mercantil\nTeléfono: 0414-XXXXXXX\nRIF: J-XXXXXXX';
+        } else if (paymentMethod === 'zelle') {
+          paymentInfo = 'Zelle: pagos@sirca.com\nTitular: SIRCA Seguros';
+        }
+
+        return {
+          screen: 'SCREEN_PAYMENT_DETAILS',
+          data: {
+            payment_info: paymentInfo,
+            total_amount: totalAmount.toFixed(2),
+            selected_invoices: selectedInvoiceIds,
+            payment_method: paymentMethod,
+          },
+        };
+      }
+    }
+
+    return {
+      screen: 'SCREEN_IDENTIFICATION',
+      data: {
+        error: true,
+        error_message: 'Acción no reconocida.',
+      },
+    };
+  }
+
   async handleIncomingMessage(body: {
     entry?: Array<{
       changes?: Array<{
         value?: {
           messages?: Array<{
             from: string;
+            type?: string;
             text?: { body: string };
             image?: { id: string; mime_type: string };
             document?: { id: string; mime_type: string };
+            interactive?: {
+              type: string;
+              nfm_reply?: {
+                response_json: string;
+                body: string;
+                name: string;
+              };
+              button_reply?: {
+                id: string;
+                title: string;
+              };
+            };
           }>;
         };
       }>;
@@ -77,10 +343,18 @@ export class ChatbotService {
       }
 
       const fromNumber = message.from;
-      const incomingText = message.text?.body ? message.text.body.trim() : '';
+      let incomingText = message.text?.body ? message.text.body.trim() : '';
 
       const mediaId = message.image?.id || message.document?.id || null;
       const contentType = message.image?.mime_type || message.document?.mime_type || 'image/jpeg';
+
+      const interactiveType = message.interactive?.type;
+      const buttonReplyId = message.interactive?.button_reply?.id;
+      const nfmReply = message.interactive?.nfm_reply;
+
+      if (interactiveType === 'button_reply' && buttonReplyId) {
+        incomingText = buttonReplyId;
+      }
 
       let state = this.stateStore.get(fromNumber);
 
@@ -91,44 +365,65 @@ export class ChatbotService {
         incomingText.toLowerCase() === 'reiniciar'
       ) {
         state = { step: 'AWAITING_NAME' };
-        this.stateStore.set(fromNumber, state);
+        this.stateStore.delete(fromNumber); // Reset
+
+        const buttons = [
+          { type: 'reply', reply: { id: 'info_planes', title: '1. Info de planes' } },
+          { type: 'reply', reply: { id: 'realizar_pago', title: '2. Realizar pago' } },
+        ];
+
+        await this.sendInteractiveMessage(
+          fromNumber,
+          '¡Hola! Soy Helena, tu asistente virtual de SIRCA Seguros. ¿En qué puedo ayudarte hoy?',
+          buttons,
+        );
+
+        // Let's set the state to initialized after greeting to avoid repeated greetings
+        this.stateStore.set(fromNumber, { step: 'AWAITING_NAME' });
+        return;
+      }
+
+      // Handle Flow completion (nfm_reply)
+      if (nfmReply) {
+        try {
+          const flowData = JSON.parse(nfmReply.response_json);
+          state = {
+            step: 'AWAITING_CAPTURE',
+            selected_invoices: flowData.selected_invoices,
+            payment_method: flowData.payment_method,
+            total_amount: flowData.total_amount,
+          };
+          this.stateStore.set(fromNumber, state);
+          await this.sendMessage(
+            fromNumber,
+            'Por favor, envía la imagen del comprobante de pago (capture) por aquí.',
+          );
+          return;
+        } catch (e) {
+          this.logger.error('Error parsing flow response', e);
+        }
+      }
+
+      // Handle Interactive button replies for the Main Menu
+      if (incomingText === 'info_planes') {
         await this.sendMessage(
           fromNumber,
-          '¡Hola! Soy Elena, tu asistente virtual de SIRCA Seguros. Para procesar tu pago, ¿podrías indicarme tu nombre completo?',
+          'Para información sobre nuestros planes, por favor contacta a nuestro asesor comercial:\n\n📱 WhatsApp: +58 414-XXXXXXX\n📧 Correo: ventas@sirca.com',
+        );
+        this.stateStore.delete(fromNumber);
+        return;
+      }
+
+      if (incomingText === 'realizar_pago') {
+        await this.sendFlowMessage(
+          fromNumber,
+          'Haz clic en el botón de abajo para iniciar el proceso de pago seguro.',
         );
         return;
       }
 
       switch (state.step) {
-        case 'AWAITING_NAME':
-          if (!incomingText) {
-            await this.sendMessage(fromNumber, 'Por favor, indícame tu nombre completo.');
-            return;
-          }
-          state.name = incomingText;
-          state.step = 'AWAITING_EMAIL';
-          this.stateStore.set(fromNumber, state);
-          await this.sendMessage(
-            fromNumber,
-            `Gracias ${state.name}. Ahora, por favor ingresa tu correo electrónico.`,
-          );
-          break;
-
-        case 'AWAITING_EMAIL':
-          if (!incomingText || !incomingText.includes('@')) {
-            await this.sendMessage(fromNumber, 'Por favor, ingresa un correo electrónico válido.');
-            return;
-          }
-          state.email = incomingText;
-          state.step = 'AWAITING_RECEIPT';
-          this.stateStore.set(fromNumber, state);
-          await this.sendMessage(
-            fromNumber,
-            '¡Excelente! Finalmente, por favor envíame una imagen o foto de tu comprobante de pago.',
-          );
-          break;
-
-        case 'AWAITING_RECEIPT':
+        case 'AWAITING_CAPTURE':
           if (mediaId) {
             try {
               await this.sendMessage(
@@ -151,33 +446,47 @@ export class ChatbotService {
               });
               const buffer = Buffer.from(response.data, 'binary');
 
-              // Guess extension
+              // Upload to S3
               const ext = contentType.split('/')[1] || 'jpg';
               const originalname = `comprobante.${ext}`;
-
-              // Upload to S3
               const receiptUrl = await this.awsService.uploadFile({
                 buffer,
                 originalname,
                 mimetype: contentType,
               });
 
-              // Send Email
-              const userInfo = {
-                name: state.name,
-                email: state.email,
-                phone: fromNumber,
-              };
+              state.extracted_data = { receiptUrl };
 
-              await this.emailService.sendPaymentConfirmation(state.email, userInfo, receiptUrl);
+              // Process OCR
+              try {
+                const extractedData = await this.ocrService.extractReceiptData(buffer);
+                state.extracted_data = { ...state.extracted_data, ...extractedData };
 
-              // Clear state after success
-              this.stateStore.delete(fromNumber);
+                state.step = 'AWAITING_CONFIRMATION';
+                this.stateStore.set(fromNumber, state);
 
-              await this.sendMessage(
-                fromNumber,
-                '¡Comprobante recibido y procesado con éxito! Hemos enviado un correo con la confirmación. Gracias por confiar en SIRCA Seguros.',
-              );
+                const buttons = [
+                  { type: 'reply', reply: { id: 'datos_correctos', title: 'Sí, son correctos' } },
+                  {
+                    type: 'reply',
+                    reply: { id: 'datos_incorrectos', title: 'No, ingresarlos manual' },
+                  },
+                ];
+
+                await this.sendInteractiveMessage(
+                  fromNumber,
+                  `Hemos detectado los siguientes datos de tu pago:\n\nReferencia: ${extractedData.referencia || 'No detectada'}\nMonto: ${extractedData.monto || 'No detectado'}\nBanco: ${extractedData.nombreBanco || 'No detectado'}\n\n¿Son correctos?`,
+                  buttons,
+                );
+              } catch (ocrError) {
+                this.logger.error('OCR Error', ocrError);
+                state.step = 'AWAITING_MANUAL_INPUT';
+                this.stateStore.set(fromNumber, state);
+                await this.sendMessage(
+                  fromNumber,
+                  'No pudimos extraer los datos del comprobante automáticamente. Por favor, escribe los datos manualmente en el siguiente formato:\n\nReferencia, Banco, Monto',
+                );
+              }
             } catch (error) {
               this.logger.error('Error processing media:', error?.response?.data || error.message);
               await this.sendMessage(
@@ -188,7 +497,98 @@ export class ChatbotService {
           } else {
             await this.sendMessage(
               fromNumber,
-              'Aún no he recibido ninguna imagen. Por favor, adjunta tu comprobante de pago.',
+              'Aún no he recibido ninguna imagen. Por favor, adjunta tu comprobante de pago (capture).',
+            );
+          }
+          break;
+
+        case 'AWAITING_CONFIRMATION':
+          if (incomingText === 'datos_correctos') {
+            // Create payment
+            try {
+              if (state.selected_invoices && state.selected_invoices.length > 0) {
+                for (const invoiceId of state.selected_invoices) {
+                  await this.billingService.createPayment({
+                    invoiceId: invoiceId,
+                    amount: Number(state.total_amount) || 0,
+                    paymentMethod: state.payment_method || 'transferencia',
+                    referenceNumber: state.extracted_data?.referencia || 'N/A',
+                  });
+                }
+              }
+
+              // Send email
+              const userInfo = { name: 'Cliente', email: 'admin@sirca.com', phone: fromNumber };
+              await this.emailService.sendPaymentConfirmation(
+                'admin@sirca.com',
+                userInfo,
+                state.extracted_data?.receiptUrl,
+              );
+
+              this.stateStore.delete(fromNumber);
+              await this.sendMessage(
+                fromNumber,
+                '¡Tu pago ha sido registrado exitosamente! Hemos notificado a nuestro equipo administrativo. Gracias por confiar en SIRCA Seguros.',
+              );
+            } catch (e) {
+              this.logger.error('Error saving payment', e);
+              await this.sendMessage(
+                fromNumber,
+                'Hubo un error al guardar tu pago. Por favor contacta soporte.',
+              );
+            }
+          } else if (incomingText === 'datos_incorrectos') {
+            state.step = 'AWAITING_MANUAL_INPUT';
+            this.stateStore.set(fromNumber, state);
+            await this.sendMessage(
+              fromNumber,
+              'Por favor, escribe los datos de tu pago en el siguiente formato, separados por comas:\n\nReferencia, Banco, Monto\n\nEjemplo: 123456, Mercantil, 100',
+            );
+          }
+          break;
+
+        case 'AWAITING_MANUAL_INPUT':
+          if (!incomingText || !incomingText.includes(',')) {
+            await this.sendMessage(
+              fromNumber,
+              'Formato inválido. Por favor, usa el formato: Referencia, Banco, Monto\nEjemplo: 123456, Mercantil, 100',
+            );
+            return;
+          }
+
+          const parts = incomingText.split(',').map((s) => s.trim());
+          const ref = parts[0] || 'N/A';
+          const amount = parts[2] ? Number(parts[2]) : Number(state.total_amount);
+
+          try {
+            if (state.selected_invoices && state.selected_invoices.length > 0) {
+              for (const invoiceId of state.selected_invoices) {
+                await this.billingService.createPayment({
+                  invoiceId: invoiceId,
+                  amount: amount || 0,
+                  paymentMethod: state.payment_method || 'transferencia',
+                  referenceNumber: ref,
+                });
+              }
+            }
+
+            const userInfo = { name: 'Cliente', email: 'admin@sirca.com', phone: fromNumber };
+            await this.emailService.sendPaymentConfirmation(
+              'admin@sirca.com',
+              userInfo,
+              state.extracted_data?.receiptUrl,
+            );
+
+            this.stateStore.delete(fromNumber);
+            await this.sendMessage(
+              fromNumber,
+              '¡Tu pago ha sido registrado exitosamente! Hemos notificado a nuestro equipo administrativo. Gracias por confiar en SIRCA Seguros.',
+            );
+          } catch (e) {
+            this.logger.error('Error saving payment manual', e);
+            await this.sendMessage(
+              fromNumber,
+              'Hubo un error al guardar tu pago. Por favor contacta soporte.',
             );
           }
           break;

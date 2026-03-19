@@ -6,7 +6,9 @@ import { ConfigService } from '@nestjs/config';
 import { useContainer } from 'class-validator';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
