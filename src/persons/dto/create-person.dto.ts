@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreatePersonDto {
   @IsString()
@@ -12,9 +12,9 @@ export class CreatePersonDto {
   @IsDateString()
   birthDate: string;
 
-  @IsString()
-  @IsNotEmpty()
-  gender: string;
+  @IsOptional()
+  @IsBoolean()
+  gender: boolean;
 
   @IsUUID()
   @IsNotEmpty()

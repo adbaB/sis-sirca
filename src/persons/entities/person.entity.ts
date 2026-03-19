@@ -11,6 +11,11 @@ import {
 import type { Plan } from '../../plans/entities/plan.entity';
 import type { Contract } from '../../contracts/entities/contract.entity';
 
+export enum PersonStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
 @Entity('persons')
 export class Person {
   @PrimaryGeneratedColumn('uuid')
@@ -22,11 +27,11 @@ export class Person {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'date', name: 'birth_date' })
+  @Column({ type: 'date', name: 'birth_date', nullable: true })
   birthDate: Date;
 
-  @Column({ type: 'varchar', length: 20 })
-  gender: string;
+  @Column({ type: 'boolean', name: 'gender', nullable: true })
+  gender: boolean;
 
   @ManyToOne('Plan', (plan: Plan) => plan.persons)
   @JoinColumn({ name: 'plan_id' })
@@ -35,6 +40,9 @@ export class Person {
   @ManyToOne('Contract', (contract: Contract) => contract.persons, { nullable: true })
   @JoinColumn({ name: 'contract_id' })
   contract: Contract;
+
+  @Column({ type: 'enum', enum: PersonStatus, default: PersonStatus.ACTIVE })
+  status: PersonStatus;
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
