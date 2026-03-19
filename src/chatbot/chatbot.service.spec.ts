@@ -4,6 +4,8 @@ import axios from 'axios';
 import { AwsService } from '../aws/aws.service';
 import { EmailService } from '../email/email.service';
 import { ChatbotService } from './chatbot.service';
+import { OcrService } from '../ocr/ocr.service';
+import { BillingService } from '../billing/services/billing.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -25,6 +27,16 @@ describe('ChatbotService', () => {
     sendPaymentConfirmation: jest.fn(),
   };
 
+  const mockOcrService = {
+    extractReceiptData: jest.fn(),
+  };
+
+  const mockBillingService = {
+    createPayment: jest.fn(),
+    findPendingInvoicesByIdentityCard: jest.fn(),
+    findInvoicesByIds: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -32,6 +44,8 @@ describe('ChatbotService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: AwsService, useValue: mockAwsService },
         { provide: EmailService, useValue: mockEmailService },
+        { provide: OcrService, useValue: mockOcrService },
+        { provide: BillingService, useValue: mockBillingService },
       ],
     }).compile();
 
@@ -96,70 +110,130 @@ describe('ChatbotService', () => {
       ],
     });
 
-    it('should initialize conversation with Hola', async () => {
+    const createNfmReplyMessage = (from: string, responseJson: string) => ({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messages: [
+                  {
+                    from,
+                    interactive: {
+                      type: 'nfm_reply',
+                      nfm_reply: {
+                        response_json: responseJson,
+                        body: '',
+                        name: 'flow',
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    it('should initialize conversation with main menu buttons', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('Soy Elena') },
+          type: 'interactive',
+          interactive: expect.objectContaining({
+            type: 'button',
+            body: expect.objectContaining({ text: expect.stringContaining('¿En qué puedo ayudarte hoy?') }),
+            action: expect.objectContaining({
+               buttons: expect.arrayContaining([
+                 expect.objectContaining({ reply: expect.objectContaining({ id: 'info_planes' }) }),
+                 expect.objectContaining({ reply: expect.objectContaining({ id: 'realizar_pago' }) }),
+               ])
+            })
+          }),
         }),
         expect.any(Object),
       );
     });
 
-    it('should ask for email after receiving name', async () => {
-      // First message to set state to AWAITING_NAME
-      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+    const createButtonReplyMessage = (from: string, id: string) => ({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messages: [
+                  {
+                    from,
+                    interactive: {
+                      type: 'button_reply',
+                      button_reply: {
+                        id,
+                        title: 'button',
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
 
-      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+    it('should respond with info_planes', async () => {
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      await service.handleIncomingMessage(createButtonReplyMessage('123', 'info_planes'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('Gracias Juan Perez') },
+          text: { body: expect.stringContaining('asesor comercial') },
         }),
         expect.any(Object),
       );
     });
 
-    it('should validate email and ask for receipt', async () => {
+    it('should open flow on realizar_pago', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
+      await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
-      await service.handleIncomingMessage(createMetaMessage('123', 'invalidemail'));
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('correo electrónico válido') },
-        }),
-        expect.any(Object),
-      );
-
-      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
-        expect.objectContaining({
-          to: '123',
-          text: { body: expect.stringContaining('envíame una imagen o foto') },
+          type: 'interactive',
+          interactive: expect.objectContaining({
+            type: 'flow',
+            action: expect.objectContaining({ name: 'flow' })
+          }),
         }),
         expect.any(Object),
       );
     });
 
-    it('should process media correctly', async () => {
+    it('should process media capture after flow completion', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'Juan Perez'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'juan@test.com'));
+      await service.handleIncomingMessage(createNfmReplyMessage('123', JSON.stringify({
+        selected_invoices: ['inv1'],
+        payment_method: 'zelle',
+        total_amount: '100.00'
+      })));
 
       mockedAxios.get
         .mockResolvedValueOnce({ data: { url: 'https://media.url/123' } }) // First get for URL
         .mockResolvedValueOnce({ data: Buffer.from('test') }); // Second get for Buffer
 
       mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
+      mockOcrService.extractReceiptData.mockResolvedValue({
+         referencia: '123456',
+         monto: '100',
+         nombreBanco: 'Banesco'
+      });
 
       await service.handleIncomingMessage(createMetaMediaMessage('123', 'media123', 'image/jpeg'));
 
@@ -170,20 +244,7 @@ describe('ChatbotService', () => {
       expect(mockedAxios.get).toHaveBeenCalledWith('https://media.url/123', expect.any(Object));
 
       expect(mockAwsService.uploadFile).toHaveBeenCalled();
-      expect(mockEmailService.sendPaymentConfirmation).toHaveBeenCalledWith(
-        'juan@test.com',
-        { name: 'Juan Perez', email: 'juan@test.com', phone: '123' },
-        'http://s3.aws.com/comprobante.jpg',
-      );
-
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
-        expect.objectContaining({
-          to: '123',
-          text: { body: expect.stringContaining('procesado con éxito') },
-        }),
-        expect.any(Object),
-      );
+      expect(mockOcrService.extractReceiptData).toHaveBeenCalled();
     });
   });
 });

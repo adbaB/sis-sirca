@@ -1,0 +1,202 @@
+{
+  "version": "3.1",
+  "screens": [
+    {
+      "id": "SCREEN_IDENTIFICATION",
+      "title": "Identificación",
+      "data": {},
+      "terminal": false,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "identification_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "label": "Tipo de Documento",
+                "name": "doc_type",
+                "required": true,
+                "data-source": [
+                  { "id": "V", "title": "V" },
+                  { "id": "E", "title": "E" },
+                  { "id": "J", "title": "J" },
+                  { "id": "G", "title": "G" }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "label": "Número de Identificación",
+                "name": "doc_number",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "action": "fetch_invoices",
+                    "doc_type": "${form.doc_type}",
+                    "doc_number": "${form.doc_number}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_INVOICES",
+      "title": "Seleccionar Facturas",
+      "data": {
+        "invoices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "inv1", "title": "Factura Ene", "description": "100.00 USD" }
+          ]
+        }
+      },
+      "terminal": false,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "invoices_form",
+            "children": [
+              {
+                "type": "CheckboxGroup",
+                "name": "selected_invoices",
+                "required": true,
+                "data-source": "${data.invoices}"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": {
+                    "type": "screen",
+                    "name": "SCREEN_PAYMENT_METHOD"
+                  },
+                  "payload": {
+                    "selected_invoices": "${form.selected_invoices}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PAYMENT_METHOD",
+      "title": "Método de Pago",
+      "data": {
+        "selected_invoices": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": ["inv1"]
+        }
+      },
+      "terminal": false,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "payment_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "label": "Método de Pago",
+                "name": "payment_method",
+                "required": true,
+                "data-source": [
+                  { "id": "transferencia", "title": "Transferencia Bancaria" },
+                  { "id": "pago_movil", "title": "Pago Móvil" },
+                  { "id": "zelle", "title": "Zelle" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "action": "fetch_payment_details",
+                    "selected_invoices": "${data.selected_invoices}",
+                    "payment_method": "${form.payment_method}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCREEN_PAYMENT_DETAILS",
+      "title": "Detalles de Pago",
+      "data": {
+        "payment_info": { "type": "string", "__example__": "Datos de transferencia..." },
+        "total_amount": { "type": "string", "__example__": "100.00" },
+        "selected_invoices": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "payment_method": { "type": "string" }
+      },
+      "terminal": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Monto Total a Pagar"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.total_amount}"
+          },
+          {
+            "type": "TextHeading",
+            "text": "Datos de Pago"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.payment_info}"
+          },
+          {
+            "type": "TextBody",
+            "text": "⚠️ ATENCIÓN: Al cerrar esta pantalla, deberás enviar por este mismo chat el capture (comprobante) de tu pago."
+          },
+          {
+            "type": "Footer",
+            "label": "Cerrar y enviar comprobante",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "selected_invoices": "${data.selected_invoices}",
+                "payment_method": "${data.payment_method}",
+                "total_amount": "${data.total_amount}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

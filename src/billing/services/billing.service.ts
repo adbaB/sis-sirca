@@ -71,4 +71,24 @@ export class BillingService {
       await queryRunner.release();
     }
   }
+
+  async findPendingInvoicesByIdentityCard(identityCard: string): Promise<Invoice[]> {
+    return this.invoiceRepository
+      .createQueryBuilder('invoice')
+      .innerJoin('invoice.contract', 'contract')
+      .innerJoin('contract.persons', 'person')
+      .where('person.identityCard = :identityCard', { identityCard })
+      .andWhere('invoice.status IN (:...statuses)', {
+        statuses: [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL],
+      })
+      .getMany();
+  }
+
+  async findInvoicesByIds(ids: string[]): Promise<Invoice[]> {
+    if (!ids || ids.length === 0) return [];
+    return this.invoiceRepository
+      .createQueryBuilder('invoice')
+      .where('invoice.id IN (:...ids)', { ids })
+      .getMany();
+  }
 }

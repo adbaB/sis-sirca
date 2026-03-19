@@ -38,4 +38,21 @@ export class ChatbotController {
       console.error('Error handling incoming message:', error);
     }
   }
+
+  @Post('flow-endpoint')
+  async handleFlowEndpoint(@Body() body: any) {
+    try {
+      return await this.chatbotService.handleFlowDataExchange(body);
+    } catch (error) {
+      console.error('Error in flow endpoint:', error);
+      // Return a basic error response format for flow endpoint if needed
+      return {
+        screen: 'SCREEN_IDENTIFICATION',
+        data: {
+          error: true,
+          error_message: 'Hubo un error procesando la solicitud.',
+        },
+      };
+    }
+  }
 }
