@@ -16,6 +16,7 @@ describe('ContractsService', () => {
 
   const mockContract: Contract = {
     id: '1',
+    code: '1',
     affiliationDate: new Date('2023-01-01'),
     monthlyAmount: 0,
     persons: [],
@@ -56,6 +57,7 @@ describe('ContractsService', () => {
     it('should successfully insert a contract', async () => {
       const createContractDto: CreateContractDto = {
         affiliationDate: '2023-01-01',
+        code: '1',
       };
 
       jest.spyOn(repository, 'create').mockReturnValue(mockContract);

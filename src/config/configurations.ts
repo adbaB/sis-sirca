@@ -19,6 +19,7 @@ export default registerAs('config', () => {
       clientEmail: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
       privateKey: process.env.GOOGLE_DRIVE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       excelFileId: process.env.GOOGLE_DRIVE_EXCEL_FILE_ID,
+      clientId: process.env.GOOGLE_DRIVE_CLIENT_ID,
     },
 
     openrouter: {

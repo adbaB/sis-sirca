@@ -23,6 +23,12 @@ export class ContractsService {
     return this.contractsRepository.find({ relations: ['persons', 'persons.plan'] });
   }
 
+  async findByCode(code: string): Promise<Contract> {
+    return this.contractsRepository.findOne({
+      where: { code },
+      relations: ['persons', 'persons.plan'],
+    });
+  }
   async findOne(id: string): Promise<Contract> {
     const contract = await this.contractsRepository.findOne({
       where: { id },

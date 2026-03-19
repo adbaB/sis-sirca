@@ -32,6 +32,9 @@ export class Contract {
   })
   monthlyAmount: number;
 
+  @Column({ type: 'varchar', length: 255, unique: true, nullable: false })
+  code: string;
+
   @OneToMany('Person', (person: Person) => person.contract)
   persons: Person[];
 

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
-import { Person } from '../entities/person.entity';
+import { Person, TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from '../services/persons.service';
 import { PersonsController } from './persons.controller';
 
@@ -50,11 +50,13 @@ describe('PersonsController', () => {
   describe('create', () => {
     it('should create a person', async () => {
       const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
         birthDate: '1990-01-01',
         gender: true,
         planId: 'plan-1',
+        contractId: 'contract-1',
       };
       jest.spyOn(service, 'create').mockResolvedValue(mockPerson);
 

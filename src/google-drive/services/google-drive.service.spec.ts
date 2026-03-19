@@ -3,7 +3,7 @@ import { GoogleDriveService } from './google-drive.service';
 import config from '../../config/configurations';
 import { google } from 'googleapis';
 
-const mockGet = jest.fn();
+const mockExport = jest.fn();
 
 jest.mock('googleapis', () => ({
   google: {
@@ -12,7 +12,7 @@ jest.mock('googleapis', () => ({
     },
     drive: jest.fn().mockImplementation(() => ({
       files: {
-        get: mockGet,
+        export: mockExport,
       },
     })),
   },
@@ -55,6 +55,7 @@ describe('GoogleDriveService', () => {
     it('should initialize the drive client if credentials exist', () => {
       // It is initialized in constructor
       expect(google.auth.JWT).toHaveBeenCalledWith({
+        client_id: undefined,
         email: 'test@serviceaccount.com',
         key: 'private_key',
         scopes: ['https://www.googleapis.com/auth/drive.readonly'],
@@ -81,12 +82,15 @@ describe('GoogleDriveService', () => {
   describe('downloadExcelFile', () => {
     it('should successfully download a file', async () => {
       const mockBuffer = new ArrayBuffer(8);
-      mockGet.mockResolvedValueOnce({ data: mockBuffer });
+      mockExport.mockResolvedValueOnce({ data: mockBuffer });
 
       const result = await service.downloadExcelFile('file_id_123');
 
-      expect(mockGet).toHaveBeenCalledWith(
-        { fileId: 'file_id_123', alt: 'media' },
+      expect(mockExport).toHaveBeenCalledWith(
+        {
+          fileId: 'file_id_123',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
         { responseType: 'arraybuffer' },
       );
       expect(result).toBeInstanceOf(Buffer);
@@ -110,7 +114,7 @@ describe('GoogleDriveService', () => {
     });
 
     it('should return null if an error occurs during download', async () => {
-      mockGet.mockRejectedValueOnce(new Error('Download failed'));
+      mockExport.mockRejectedValueOnce(new Error('Download failed'));
 
       const result = await service.downloadExcelFile('file_id_123');
 
