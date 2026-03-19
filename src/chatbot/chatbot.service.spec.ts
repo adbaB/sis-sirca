@@ -146,13 +146,17 @@ describe('ChatbotService', () => {
           type: 'interactive',
           interactive: expect.objectContaining({
             type: 'button',
-            body: expect.objectContaining({ text: expect.stringContaining('¿En qué puedo ayudarte hoy?') }),
+            body: expect.objectContaining({
+              text: expect.stringContaining('¿En qué puedo ayudarte hoy?'),
+            }),
             action: expect.objectContaining({
-               buttons: expect.arrayContaining([
-                 expect.objectContaining({ reply: expect.objectContaining({ id: 'info_planes' }) }),
-                 expect.objectContaining({ reply: expect.objectContaining({ id: 'realizar_pago' }) }),
-               ])
-            })
+              buttons: expect.arrayContaining([
+                expect.objectContaining({ reply: expect.objectContaining({ id: 'info_planes' }) }),
+                expect.objectContaining({
+                  reply: expect.objectContaining({ id: 'realizar_pago' }),
+                }),
+              ]),
+            }),
           }),
         }),
         expect.any(Object),
@@ -209,7 +213,7 @@ describe('ChatbotService', () => {
           type: 'interactive',
           interactive: expect.objectContaining({
             type: 'flow',
-            action: expect.objectContaining({ name: 'flow' })
+            action: expect.objectContaining({ name: 'flow' }),
           }),
         }),
         expect.any(Object),
@@ -218,11 +222,16 @@ describe('ChatbotService', () => {
 
     it('should process media capture after flow completion', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
-      await service.handleIncomingMessage(createNfmReplyMessage('123', JSON.stringify({
-        selected_invoices: ['inv1'],
-        payment_method: 'zelle',
-        total_amount: '100.00'
-      })));
+      await service.handleIncomingMessage(
+        createNfmReplyMessage(
+          '123',
+          JSON.stringify({
+            selected_invoices: ['inv1'],
+            payment_method: 'zelle',
+            total_amount: '100.00',
+          }),
+        ),
+      );
 
       mockedAxios.get
         .mockResolvedValueOnce({ data: { url: 'https://media.url/123' } }) // First get for URL
@@ -230,9 +239,9 @@ describe('ChatbotService', () => {
 
       mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
       mockOcrService.extractReceiptData.mockResolvedValue({
-         referencia: '123456',
-         monto: '100',
-         nombreBanco: 'Banesco'
+        referencia: '123456',
+        monto: '100',
+        nombreBanco: 'Banesco',
       });
 
       await service.handleIncomingMessage(createMetaMediaMessage('123', 'media123', 'image/jpeg'));

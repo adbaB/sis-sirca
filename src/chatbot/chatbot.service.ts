@@ -5,6 +5,7 @@ import { AwsService } from '../aws/aws.service';
 import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
 import { BillingService } from '../billing/services/billing.service';
+import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
   step:
@@ -160,6 +161,49 @@ export class ChatbotService {
         `Error sending flow message to ${to}:`,
         error?.response?.data || error.message,
       );
+    }
+  }
+
+  async handleEncryptedFlowDataExchange(body: any): Promise<any> {
+    const privateKey = this.configService.get<string>('config.meta.flowPrivateKey');
+    const passphrase = this.configService.get<string>('config.meta.flowPassphrase');
+
+    if (!privateKey) {
+      this.logger.warn(
+        'META_FLOW_PRIVATE_KEY not set. Flow Data Exchange cannot decrypt payload securely.',
+      );
+      throw new Error('Server not configured for secure Flow exchange.');
+    }
+
+    const { encrypted_aes_key, encrypted_flow_data, initial_vector } = body;
+
+    if (!encrypted_aes_key || !encrypted_flow_data || !initial_vector) {
+      throw new Error('Missing encrypted data fields in request.');
+    }
+
+    try {
+      const decryptedAesKey = FlowsCryptoUtil.decryptAesKey(
+        encrypted_aes_key,
+        privateKey,
+        passphrase,
+      );
+      const decryptedPayload = FlowsCryptoUtil.decryptPayload(
+        decryptedAesKey,
+        encrypted_flow_data,
+        initial_vector,
+      );
+
+      const responseObj = await this.handleFlowDataExchange(decryptedPayload);
+
+      const encryptedResponse = FlowsCryptoUtil.encryptResponse(
+        responseObj,
+        decryptedAesKey,
+        initial_vector,
+      );
+      return encryptedResponse;
+    } catch (e) {
+      this.logger.error('Error decrypting or encrypting flow data exchange:', e);
+      throw e;
     }
   }
 
@@ -330,7 +374,7 @@ export class ChatbotService {
         await this.sendInteractiveMessage(
           fromNumber,
           '¡Hola! Soy Helena, tu asistente virtual de SIRCA Seguros. ¿En qué puedo ayudarte hoy?',
-          buttons
+          buttons,
         );
 
         // Let's set the state to initialized after greeting to avoid repeated greetings
