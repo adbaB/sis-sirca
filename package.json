@@ -45,9 +45,11 @@
     "class-validator": "^0.15.1",
     "googleapis": "^171.4.0",
     "nodemailer": "^8.0.1",
+    "openai": "^6.32.0",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
+    "tesseract.js": "^7.0.0",
     "typeorm": "^0.3.28",
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5"
@@ -96,12 +98,7 @@
     ],
     "testRegex": ".*\\.spec\\.(t|j)s$",
     "transform": {
-      "^.+\\.(t|j)s$": [
-        "ts-jest",
-        {
-          "isolatedModules": true
-        }
-      ]
+      "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
