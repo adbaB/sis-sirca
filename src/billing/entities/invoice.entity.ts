@@ -21,6 +21,10 @@ export enum InvoiceStatus {
   PAID = 'PAID',
   CANCELLED = 'CANCELLED',
 }
+const decimalTransformer = {
+  to: (value: number) => value,
+  from: (value: string | null) => (value === null ? 0 : Number(value)),
+};
 
 @Entity('invoices')
 @Check('"total_amount" >= 0')
@@ -44,14 +48,7 @@ export class Invoice {
   @Column({ type: 'date', name: 'due_date' })
   dueDate: Date;
 
-const decimalTransformer = {
-  to: (value: number) => value,
-  from: (value: string | null) => (value === null ? 0 : Number(value)),
-};
-
-// ... other entity code ...
-
-  `@Column`({
+  @Column({
     type: 'decimal',
     precision: 10,
     scale: 2,
@@ -60,7 +57,7 @@ const decimalTransformer = {
   })
   totalAmount: number;
 
-  `@Column`({
+  @Column({
     type: 'decimal',
     precision: 10,
     scale: 2,

@@ -94,10 +94,23 @@ export class BillingCronService {
         return;
       }
 
+      const invalidPerson = activePersons.find(
+        (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
+      );
+      if (invalidPerson) {
+        throw new Error(
+          `Active person ${invalidPerson.id} in contract ${contract.id} has no valid plan amount`,
+        );
+      }
+
       let totalAmount = 0;
       const invoiceDetailsData = activePersons.map((person) => {
         const amount = Number(person.plan.amount);
         totalAmount += amount;
+
+        if (!Number.isFinite(amount) || amount < 0) {
+          throw new Error(`Invalid plan amount for person ${person.id} in contract ${contract.id}`);
+        }
 
         return {
           person: person,
