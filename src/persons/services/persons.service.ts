@@ -57,14 +57,10 @@ export class PersonsService {
     identityCard: string,
     typeIdentityCard: TypeIdentityCard,
   ): Promise<Person> {
-    const person = await this.personsRepository.findOne({
+    return this.personsRepository.findOne({
       where: { identityCard, typeIdentityCard },
       relations: ['plan', 'contract'],
     });
-    if (!person) {
-      throw new NotFoundException(`Person with ID "${identityCard}" not found`);
-    }
-    return person;
   }
 
   async findOne(id: string): Promise<Person> {

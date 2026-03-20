@@ -351,6 +351,15 @@ describe('SyncService', () => {
       expect(mockPersonsService.create).not.toHaveBeenCalled();
     });
 
+    it('should skip the record when affiliation date is empty', async () => {
+      mockPlansService.findByName.mockResolvedValue(makePlan());
+
+      await save([{ ...baseItem, affiliationDate: '' }]);
+
+      expect(mockContractsService.findByCode).not.toHaveBeenCalled();
+      expect(mockPersonsService.create).not.toHaveBeenCalled();
+    });
+
     it('should create a new contract when none exists for that code', async () => {
       mockPlansService.findByName.mockResolvedValue(makePlan());
       mockContractsService.findByCode.mockResolvedValue(null);

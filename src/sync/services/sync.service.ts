@@ -14,7 +14,7 @@ import { DataCleaned } from '../interface/data-cleaned.interface';
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
-
+  private readonly VALID_TYPE_IDENTITY_CARDS = Object.values(TypeIdentityCard);
   constructor(
     private readonly googleDriveService: GoogleDriveService,
     @Inject(config.KEY)
@@ -85,9 +85,15 @@ export class SyncService {
           identityCardNum = parts.slice(1).join('-');
         }
 
+        const typeIdentityCard = this.VALID_TYPE_IDENTITY_CARDS.includes(
+          typeIdentityCardStr as TypeIdentityCard,
+        )
+          ? (typeIdentityCardStr as TypeIdentityCard)
+          : TypeIdentityCard.V;
+
         return {
           name: item['Nombre Completo'].trim(),
-          typeIdentityCard: typeIdentityCardStr as TypeIdentityCard,
+          typeIdentityCard: typeIdentityCard,
           identityCard: identityCardNum,
           affiliationDate: this.excelDateToJSDate(item['Fecha de Afiliacion']),
           contract: item['Contrato'] ? String(item['Contrato']).trim() : '',
@@ -125,6 +131,14 @@ export class SyncService {
       if (!item.contract) {
         this.logger.warn(
           `[SKIP] No contract code for person "${item.name}" (${item.typeIdentityCard}-${item.identityCard}).`,
+        );
+        skipped++;
+        continue;
+      }
+
+      if (!item.affiliationDate) {
+        this.logger.warn(
+          `[SKIP] Missing affiliation date for contract "${item.contract}" (person "${item.name}").`,
         );
         skipped++;
         continue;
