@@ -15,7 +15,7 @@
   "screens": [
     {
       "id": "SCREEN_IDENTIFICATION",
-      "title": "Identificación",
+      "title": "Paso 1: Identificación",
       "data": {},
       "terminal": false,
       "layout": {
@@ -26,27 +26,36 @@
             "name": "identification_form",
             "children": [
               {
+                "type": "TextHeading",
+                "text": "¡Hagamos tu pago rápido y seguro! 💳"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Para empezar a buscar tus facturas pendientes, por favor indícame tu documento."
+              },
+              {
                 "type": "Dropdown",
                 "label": "Tipo de Documento",
                 "name": "doc_type",
                 "required": true,
                 "data-source": [
-                  { "id": "V", "title": "V" },
-                  { "id": "E", "title": "E" },
-                  { "id": "J", "title": "J" },
-                  { "id": "G", "title": "G" }
+                  { "id": "V", "title": "V - Venezolano" },
+                  { "id": "E", "title": "E - Extranjero" },
+                  { "id": "J", "title": "J - Jurídico" },
+                  { "id": "G", "title": "G - Gubernamental" },
+                  { "id": "C", "title": "C - Comuna" }
                 ]
               },
               {
                 "type": "TextInput",
-                "label": "Número de Identificación",
+                "label": "Número de documento",
                 "name": "doc_number",
                 "input-type": "number",
                 "required": true
               },
               {
                 "type": "Footer",
-                "label": "Continuar",
+                "label": "Buscar mis facturas",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
@@ -63,7 +72,7 @@
     },
     {
       "id": "SCREEN_INVOICES",
-      "title": "Seleccionar Facturas",
+      "title": "Tus Facturas",
       "data": {
         "invoices": {
           "type": "array",
@@ -92,12 +101,12 @@
                 "type": "CheckboxGroup",
                 "name": "selected_invoices",
                 "required": true,
-                "label": "Selecciona las facturas",
+                "label": "¿Cuáles facturas deseas pagar hoy?",
                 "data-source": "${data.invoices}"
               },
               {
                 "type": "Footer",
-                "label": "Continuar",
+                "label": "Continuar con el pago",
                 "on-click-action": {
                   "name": "navigate",
                   "next": {
@@ -129,12 +138,16 @@
         "type": "SingleColumnLayout",
         "children": [
           {
+              "type":"TextHeading",
+              "text": "¿Cómo prefieres pagar?"
+          },  
+          {
             "type": "Form",
             "name": "payment_form",
             "children": [
               {
                 "type": "Dropdown",
-                "label": "Método de Pago",
+                "label": "Elige una opción",
                 "name": "payment_method",
                 "required": true,
                 "data-source": [
@@ -145,7 +158,7 @@
               },
               {
                 "type": "Footer",
-                "label": "Continuar",
+                "label": "Ver datos bancarios",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
@@ -162,7 +175,7 @@
     },
     {
       "id": "SCREEN_PAYMENT_DETAILS",
-      "title": "Detalles de Pago",
+      "title": "Resumen Final",
       "data": {
         "payment_info": { "type": "string", "__example__": "Datos de transferencia..." },
         "total_amount": { "type": "string", "__example__": "100.00" },
@@ -187,7 +200,7 @@
           },
           {
             "type": "TextHeading",
-            "text": "Datos de Pago"
+            "text": "Instrucciones de Pago"
           },
           {
             "type": "TextBody",
@@ -195,11 +208,11 @@
           },
           {
             "type": "TextBody",
-            "text": "⚠️ ATENCIÓN: Al cerrar esta pantalla, deberás enviar por este mismo chat el capture (comprobante) de tu pago."
+            "text": "⚠️ **¡Último paso!** Al presionar el botón de abajo esta ventana se cerrará. Recuerda enviar la imagen (capture) de tu comprobante directamente en el chat para confirmar tu pago."
           },
           {
             "type": "Footer",
-            "label": "Cerrar y enviar comprobante",
+            "label": "Entendido, enviar comprobante",
             "on-click-action": {
               "name": "complete",
               "payload": {

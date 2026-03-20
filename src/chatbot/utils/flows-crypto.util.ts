@@ -35,7 +35,7 @@ export class FlowsCryptoUtil {
     decryptedAesKey: Buffer,
     encryptedPayload: string,
     iv: string,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const ivBuffer = Buffer.from(iv, 'base64');
     if (ivBuffer.length !== 12) {
       throw new Error(`Invalid IV length. Expected 12 bytes, got ${ivBuffer.length}`);
@@ -56,7 +56,7 @@ export class FlowsCryptoUtil {
     let decrypted = decipher.update(ciphertext, undefined, 'utf8');
     decrypted += decipher.final('utf8');
 
-    return JSON.parse(decrypted) as Record<string, any>;
+    return JSON.parse(decrypted) as Record<string, unknown>;
   }
 
   /**
@@ -67,7 +67,7 @@ export class FlowsCryptoUtil {
    * @returns Base64 encoded string containing the encrypted response payload.
    */
   static encryptResponse(
-    payloadObj: Record<string, any>,
+    payloadObj: Record<string, unknown>,
     decryptedAesKey: Buffer,
     iv: string,
   ): string {
