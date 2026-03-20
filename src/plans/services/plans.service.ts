@@ -30,12 +30,8 @@ export class PlansService {
     return plan;
   }
 
-  async findByName(name: string): Promise<Plan> {
-    const plan = await this.plansRepository.findOne({ where: { name: ILike(name) } });
-    if (!plan) {
-      throw new NotFoundException(`Plan with name "${name}" not found`);
-    }
-    return plan;
+  async findByName(name: string): Promise<Plan | null> {
+    return this.plansRepository.findOne({ where: { name: ILike(name) } });
   }
 
   async update(id: string, updatePlanDto: UpdatePlanDto): Promise<Plan> {

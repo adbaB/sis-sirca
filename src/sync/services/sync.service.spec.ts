@@ -194,7 +194,7 @@ describe('SyncService', () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Row processing failed (incrementing skipped). DB connection failed',
+          'row processing failed (incrementing skipped). DB connection failed',
         ),
       );
     });
@@ -226,7 +226,7 @@ describe('SyncService', () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Row processing failed (incrementing skipped). Unknown error: unexpected string error',
+          'row processing failed (incrementing skipped). Unknown error: unexpected string error',
         ),
       );
     });

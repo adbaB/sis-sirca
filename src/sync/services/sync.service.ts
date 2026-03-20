@@ -228,7 +228,9 @@ export class SyncService {
       } catch (error) {
         skipped++;
         const message = error instanceof Error ? error.message : `Unknown error: ${String(error)}`;
-        this.logger.error(`[ERROR] Row processing failed (incrementing skipped). ${message}.`);
+        this.logger.error(
+          `[ERROR] ${this.getRowLogContext(item)}: row processing failed (incrementing skipped). ${message}`,
+        );
       }
     }
 
