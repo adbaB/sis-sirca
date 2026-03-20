@@ -9,4 +9,6 @@ export interface DataCleaned {
   isTitular: boolean;
   plan: string;
   gender: boolean;
+  // Row number (1-indexed) for log traceability, without exposing PII.
+  rowNumber: number;
 }

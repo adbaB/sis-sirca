@@ -73,14 +73,32 @@ export class SyncService {
 
   private cleanData(data: object[]): DataCleaned[] {
     return data
-      .filter((item) => item['Nombre Completo'] && item['Nombre Completo'].trim() !== '')
-      .map((item) => {
-        const cedulaOrRif = item['Cédula O RIF'] ? String(item['Cédula O RIF']).trim() : '';
+      .map((item, idx) => {
+        const rowNumber = idx + 2; // +2 to account for header row + 0-index
+        const row = item as Record<string, unknown>;
+
+        // Normalize once per field to avoid failures with numeric/date-formatted cells.
+        // Also prevent introducing whitespace that causes false "[SKIP]" outcomes in lookups.
+        const name = String(row['Nombre Completo'] ?? '').trim();
+        const cedulaOrRif = String(row['Cédula O RIF'] ?? '').trim();
+
+        const affiliationRaw = row['Fecha de Afiliacion'];
+        const affiliationDate = this.excelDateToJSDate(
+          typeof affiliationRaw === 'number' ? affiliationRaw : Number(affiliationRaw),
+        );
+
+        const contract = String(row['Contrato'] ?? '').trim();
+        const plan = String(row['Plan'] ?? '').trim();
+
+        const isTitular = row['Titular'] === true || row['Titular'] === 'true';
+        const generoRaw = row['Genero'];
+        const gender = generoRaw === 'Masculino' || String(generoRaw ?? '').trim() === 'Masculino';
+
         let typeIdentityCardStr = 'V';
         let identityCardNum = cedulaOrRif;
 
         if (cedulaOrRif.includes('-')) {
-          const parts = cedulaOrRif.split('-');
+          const parts = cedulaOrRif.split('-').map((p) => p.trim());
           typeIdentityCardStr = parts[0].toUpperCase();
           identityCardNum = parts.slice(1).join('-');
         }
@@ -92,16 +110,35 @@ export class SyncService {
           : TypeIdentityCard.V;
 
         return {
-          name: item['Nombre Completo'].trim(),
+          name,
           typeIdentityCard: typeIdentityCard,
           identityCard: identityCardNum,
-          affiliationDate: this.excelDateToJSDate(item['Fecha de Afiliacion']),
-          contract: item['Contrato'] ? String(item['Contrato']).trim() : '',
-          isTitular: item['Titular'] || false,
-          plan: item['Plan'],
-          gender: item['Genero'] === 'Masculino' ? true : false,
+          affiliationDate,
+          contract,
+          isTitular,
+          plan,
+          gender,
+          rowNumber,
         };
-      });
+      })
+      .filter((row) => row.name !== '');
+  }
+
+  private maskIdentityCard(typeIdentityCard: string, identityCard: string): string {
+    const normalized = String(identityCard ?? '').trim();
+    if (!normalized) return '-';
+
+    const cleaned = normalized.replace(/[^a-zA-Z0-9]/g, '');
+    if (cleaned.length < 4) return `${typeIdentityCard}-****`;
+
+    const last4 = cleaned.slice(-4);
+    return `${typeIdentityCard}-****${last4}`;
+  }
+
+  private getRowLogContext(item: DataCleaned): string {
+    const contract = item.contract ? item.contract : '-';
+    const maskedId = this.maskIdentityCard(item.typeIdentityCard, item.identityCard);
+    return `fila=${item.rowNumber} contrato="${contract}" id="${maskedId}"`;
   }
 
   excelDateToJSDate(serial: number): string | null {
@@ -117,84 +154,81 @@ export class SyncService {
     let skipped = 0;
 
     for (const item of data) {
-      // Verify plan exists
-      const plan = await this.plansService.findByName(item.plan);
-      if (!plan) {
-        this.logger.warn(
-          `[SKIP] Plan "${item.plan}" not found for person "${item.name}" (${item.typeIdentityCard}-${item.identityCard}).`,
-        );
-        skipped++;
-        continue;
-      }
-
-      // Verify contract exists or create a new one
-      if (!item.contract) {
-        this.logger.warn(
-          `[SKIP] No contract code for person "${item.name}" (${item.typeIdentityCard}-${item.identityCard}).`,
-        );
-        skipped++;
-        continue;
-      }
-
-      if (!item.affiliationDate) {
-        this.logger.warn(
-          `[SKIP] Missing affiliation date for contract "${item.contract}" (person "${item.name}").`,
-        );
-        skipped++;
-        continue;
-      }
-
-      let contract = await this.contractsService.findByCode(item.contract);
-      if (!contract) {
-        this.logger.log(`[CONTRACT] Creating new contract with code "${item.contract}".`);
-        contract = await this.contractsService.create({
-          code: item.contract,
-          affiliationDate: item.affiliationDate,
-        });
-      }
-
-      // Verify person — update if exists, create if not
-      let person = null;
       try {
-        person = await this.personsService.findByIdentityCard(
-          item.identityCard,
-          item.typeIdentityCard,
-        );
-      } catch {
-        // Person not found — will be created below
-      }
+        const rowContext = this.getRowLogContext(item);
 
-      if (person) {
-        const hasChanges =
-          person.name !== item.name ||
-          person.plan?.id !== plan.id ||
-          person.contract?.id !== contract.id ||
-          person.gender !== item.gender;
-
-        if (!hasChanges) {
+        // Verify plan exists
+        const plan = await this.plansService.findByName(item.plan);
+        if (!plan) {
+          this.logger.warn(`[SKIP] ${rowContext}: plan "${item.plan}" not found.`);
+          skipped++;
           continue;
         }
 
-        await this.personsService.update(person.id, {
-          name: item.name,
-          planId: plan.id,
-          contractId: contract.id,
-          gender: item.gender,
-        });
-        updated++;
-      } else {
-        this.logger.log(
-          `[PERSON] Creating new person "${item.name}" (${item.typeIdentityCard}-${item.identityCard}).`,
+        // Verify contract exists or create a new one
+        if (!item.contract) {
+          this.logger.warn(`[SKIP] fila=${item.rowNumber}: missing contract code.`);
+          skipped++;
+          continue;
+        }
+
+        if (!item.affiliationDate) {
+          this.logger.warn(`[SKIP] ${rowContext}: missing affiliation date for contract.`);
+          skipped++;
+          continue;
+        }
+
+        let contract = await this.contractsService.findByCode(item.contract);
+        if (!contract) {
+          this.logger.log(
+            `[CONTRACT] Creating new contract with code "${item.contract}" (fila=${item.rowNumber}).`,
+          );
+          contract = await this.contractsService.create({
+            code: item.contract,
+            affiliationDate: item.affiliationDate,
+          });
+        }
+
+        // Verify person — update if exists, create if not
+        const person = await this.personsService.findByIdentityCard(
+          item.identityCard,
+          item.typeIdentityCard,
         );
-        await this.personsService.create({
-          name: item.name,
-          typeIdentityCard: item.typeIdentityCard,
-          identityCard: item.identityCard,
-          planId: plan.id,
-          contractId: contract.id,
-          gender: item.gender,
-        });
-        created++;
+
+        if (person) {
+          const hasChanges =
+            person.name !== item.name ||
+            person.plan?.id !== plan.id ||
+            person.contract?.id !== contract.id ||
+            person.gender !== item.gender;
+
+          if (!hasChanges) {
+            continue;
+          }
+
+          await this.personsService.update(person.id, {
+            name: item.name,
+            planId: plan.id,
+            contractId: contract.id,
+            gender: item.gender,
+          });
+          updated++;
+        } else {
+          this.logger.log(`[PERSON] ${rowContext}: creating new person.`);
+          await this.personsService.create({
+            name: item.name,
+            typeIdentityCard: item.typeIdentityCard,
+            identityCard: item.identityCard,
+            planId: plan.id,
+            contractId: contract.id,
+            gender: item.gender,
+          });
+          created++;
+        }
+      } catch (error) {
+        skipped++;
+        const message = error instanceof Error ? error.message : `Unknown error: ${String(error)}`;
+        this.logger.error(`[ERROR] Row processing failed (incrementing skipped). ${message}.`);
       }
     }
 

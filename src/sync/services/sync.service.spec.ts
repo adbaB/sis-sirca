@@ -165,7 +165,7 @@ describe('SyncService', () => {
       );
     });
 
-    it('should catch and log an Error instance thrown inside the try block', async () => {
+    it('should log and continue when an Error instance fails inside row processing', async () => {
       // Provide a valid buffer so we get past the buffer null-check and into the try block
       const ws = xlsx.utils.aoa_to_sheet([
         [
@@ -185,7 +185,7 @@ describe('SyncService', () => {
 
       const boom = new Error('DB connection failed');
       mockGoogleDriveService.downloadExcelFile.mockResolvedValue(buffer);
-      // Throw from inside saveDataToDatabase so the try/catch in handleHourlySync picks it up
+      // Reject inside saveDataToDatabase; it should be handled per-row (no abort of handleHourlySync)
       mockPlansService.findByName.mockRejectedValue(boom);
 
       const errorSpy = service['logger'].error as jest.Mock;
@@ -193,12 +193,13 @@ describe('SyncService', () => {
       await service.handleHourlySync();
 
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('DB connection failed'),
-        boom.stack,
+        expect.stringContaining(
+          'Row processing failed (incrementing skipped). DB connection failed',
+        ),
       );
     });
 
-    it('should catch and log a non-Error thrown inside the try block', async () => {
+    it('should log and continue when a non-Error fails inside row processing', async () => {
       const ws = xlsx.utils.aoa_to_sheet([
         [
           'Nombre Completo',
@@ -224,8 +225,9 @@ describe('SyncService', () => {
       await service.handleHourlySync();
 
       expect(errorSpy).toHaveBeenCalledWith(
-        'Error parsing Excel file: Unknown error',
-        'unexpected string error',
+        expect.stringContaining(
+          'Row processing failed (incrementing skipped). Unknown error: unexpected string error',
+        ),
       );
     });
   });
@@ -330,6 +332,7 @@ describe('SyncService', () => {
       isTitular: true,
       plan: 'Plan Basico',
       gender: true,
+      rowNumber: 2,
     };
 
     it('should skip the record when the plan is not found', async () => {
@@ -364,7 +367,7 @@ describe('SyncService', () => {
       mockPlansService.findByName.mockResolvedValue(makePlan());
       mockContractsService.findByCode.mockResolvedValue(null);
       mockContractsService.create.mockResolvedValue(makeContract());
-      mockPersonsService.findByIdentityCard.mockRejectedValue(new Error('Not found'));
+      mockPersonsService.findByIdentityCard.mockResolvedValue(null);
       mockPersonsService.create.mockResolvedValue({});
 
       await save([baseItem]);
@@ -374,10 +377,10 @@ describe('SyncService', () => {
       );
     });
 
-    it('should create a new person when findByIdentityCard throws', async () => {
+    it('should create a new person when findByIdentityCard returns null', async () => {
       mockPlansService.findByName.mockResolvedValue(makePlan());
       mockContractsService.findByCode.mockResolvedValue(makeContract());
-      mockPersonsService.findByIdentityCard.mockRejectedValue(new Error('Not found'));
+      mockPersonsService.findByIdentityCard.mockResolvedValue(null);
       mockPersonsService.create.mockResolvedValue({});
 
       await save([baseItem]);
@@ -443,7 +446,7 @@ describe('SyncService', () => {
       mockContractsService.findByCode.mockResolvedValue(contract);
 
       mockPersonsService.findByIdentityCard
-        .mockRejectedValueOnce(new Error('Not found')) // record 1 — new
+        .mockResolvedValueOnce(null) // record 1 — new
         .mockResolvedValueOnce(existingPerson); // record 3 — no changes
 
       mockPersonsService.create.mockResolvedValue({});
