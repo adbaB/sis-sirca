@@ -54,7 +54,7 @@ export class MetaSignatureGuard implements CanActivate {
       if (!match) {
         throw new Error('Signature mismatch');
       }
-    } catch (error) {
+    } catch {
       this.logger.warn('Invalid signature received from Meta webhook.');
       throw new UnauthorizedException('Invalid signature.');
     }

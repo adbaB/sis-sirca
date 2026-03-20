@@ -13,3 +13,4 @@ jest-e2e.json
 tsconfig.eslint.json
 .eslintrc.json
 script
+src/chatbot/flow/*

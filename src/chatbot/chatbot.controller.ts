@@ -3,19 +3,27 @@ import {
   Controller,
   Get,
   HttpStatus,
+  Logger,
   Post,
   Query,
   Req,
   Res,
   UseGuards,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ChatbotService } from './chatbot.service';
 import { MetaSignatureGuard } from './guards/meta-signature.guard';
 
+interface FlowEndpointBody {
+  encrypted_aes_key: string;
+  encrypted_flow_data: string;
+  initial_vector: string;
+}
+
 @Controller('chatbot')
 export class ChatbotController {
+  private readonly logger = new Logger(ChatbotController.name);
+
   constructor(private readonly chatbotService: ChatbotService) {}
 
   @Get('webhook')
@@ -48,20 +56,22 @@ export class ChatbotController {
       await this.chatbotService.handleIncomingMessage(body);
     } catch (error) {
       // Log the error but do not change the response sent to Meta
-      console.error('Error handling incoming message:', error);
+      this.logger.error('Error handling incoming message:', error);
     }
   }
 
   @Post('flow-endpoint')
-  async handleFlowEndpoint(@Body() body: any, @Res() response: Response) {
+  async handleFlowEndpoint(@Body() body: FlowEndpointBody, @Res() response: Response) {
     // Flow endpoints are decrypted and encrypted using the ChatbotService
     try {
       const encryptedResponse = await this.chatbotService.handleEncryptedFlowDataExchange(body);
       return response.status(HttpStatus.OK).send(encryptedResponse);
     } catch (error) {
-      console.error('Error in encrypted flow endpoint:', error);
+      this.logger.error('Error in encrypted flow endpoint:', error);
       // Meta expects an encrypted response or a plain text error, not a JSON object
-      return response.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Error processing secure flow request.');
+      return response
+        .status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .send('Error processing secure flow request.');
     }
   }
 }

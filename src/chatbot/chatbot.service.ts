@@ -20,7 +20,7 @@ interface UserState {
   selected_invoices?: string[];
   payment_method?: string;
   total_amount?: string;
-  extracted_data?: any;
+  extracted_data?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -67,7 +67,11 @@ export class ChatbotService {
     }
   }
 
-  private async sendInteractiveMessage(to: string, text: string, buttons: any[]): Promise<void> {
+  private async sendInteractiveMessage(
+    to: string,
+    text: string,
+    buttons: Array<{ type: string; reply: { id: string; title: string } }>,
+  ): Promise<void> {
     const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
     const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
 
@@ -165,7 +169,11 @@ export class ChatbotService {
     }
   }
 
-  async handleEncryptedFlowDataExchange(body: any): Promise<any> {
+  async handleEncryptedFlowDataExchange(body: {
+    encrypted_aes_key: string;
+    encrypted_flow_data: string;
+    initial_vector: string;
+  }): Promise<string> {
     const privateKey = this.configService.get<string>('config.meta.flowPrivateKey');
     const passphrase = this.configService.get<string>('config.meta.flowPassphrase');
 
@@ -208,9 +216,9 @@ export class ChatbotService {
     }
   }
 
-  async handleFlowDataExchange(body: any): Promise<any> {
-    const action = body?.action;
-    const data = body?.data || {};
+  async handleFlowDataExchange(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const action = body?.action as string | undefined;
+    const data = (body?.data || {}) as Record<string, unknown>;
 
     if (action === 'INIT') {
       return {
@@ -220,12 +228,12 @@ export class ChatbotService {
     }
 
     if (action === 'data_exchange') {
-      const payload = data;
-      const exchangeAction = payload.action;
+      const payload = data as Record<string, unknown>;
+      const exchangeAction = payload.action as string | undefined;
 
       if (exchangeAction === 'fetch_invoices') {
-        const docType = payload.doc_type;
-        const docNumber = payload.doc_number;
+        const docType = payload.doc_type as string;
+        const docNumber = payload.doc_number as string;
         const identityCard = `${docType}-${docNumber}`;
 
         const invoices = await this.billingService.findPendingInvoicesByIdentityCard(identityCard);
@@ -255,8 +263,8 @@ export class ChatbotService {
       }
 
       if (exchangeAction === 'fetch_payment_details') {
-        const selectedInvoiceIds = payload.selected_invoices || [];
-        const paymentMethod = payload.payment_method;
+        const selectedInvoiceIds = (payload.selected_invoices || []) as string[];
+        const paymentMethod = payload.payment_method as string;
 
         if (selectedInvoiceIds.length === 0) {
           return {
@@ -512,7 +520,7 @@ export class ChatbotService {
                     invoiceId: invoiceId,
                     amount: Number(state.total_amount) || 0,
                     paymentMethod: state.payment_method || 'transferencia',
-                    referenceNumber: state.extracted_data?.referencia || 'N/A',
+                    referenceNumber: (state.extracted_data?.referencia as string) || 'N/A',
                   });
                 }
               }
@@ -522,7 +530,7 @@ export class ChatbotService {
               await this.emailService.sendPaymentConfirmation(
                 'admin@sirca.com',
                 userInfo,
-                state.extracted_data?.receiptUrl,
+                state.extracted_data?.receiptUrl as string,
               );
 
               this.stateStore.delete(fromNumber);
@@ -547,7 +555,7 @@ export class ChatbotService {
           }
           break;
 
-        case 'AWAITING_MANUAL_INPUT':
+        case 'AWAITING_MANUAL_INPUT': {
           if (!incomingText || !incomingText.includes(',')) {
             await this.sendMessage(
               fromNumber,
@@ -576,7 +584,7 @@ export class ChatbotService {
             await this.emailService.sendPaymentConfirmation(
               'admin@sirca.com',
               userInfo,
-              state.extracted_data?.receiptUrl,
+              state.extracted_data?.receiptUrl as string,
             );
 
             this.stateStore.delete(fromNumber);
@@ -592,6 +600,7 @@ export class ChatbotService {
             );
           }
           break;
+        }
 
         default:
           this.stateStore.delete(fromNumber);
