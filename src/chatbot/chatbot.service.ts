@@ -137,15 +137,16 @@ export class ChatbotService {
               text,
             },
             footer: {
-              text: 'Sirca Seguros',
+              text: 'Seguro y rápido',
             },
             action: {
               name: 'flow',
               parameters: {
+                mode: 'draft',
                 flow_message_version: '3',
                 flow_token: 'payment_flow_token',
                 flow_id: flowId,
-                flow_cta: 'Realizar pago',
+                flow_cta: 'Abrir formulario',
                 flow_action: 'navigate',
                 flow_action_payload: {
                   screen: 'SCREEN_IDENTIFICATION',
