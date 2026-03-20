@@ -11,6 +11,7 @@ describe('ContractsController', () => {
 
   const mockContract: Contract = {
     id: '1',
+    code: '1',
     affiliationDate: new Date('2023-01-01'),
     monthlyAmount: 0,
     persons: [],
@@ -47,7 +48,7 @@ describe('ContractsController', () => {
 
   describe('create', () => {
     it('should create a contract', async () => {
-      const createContractDto: CreateContractDto = { affiliationDate: '2023-01-01' };
+      const createContractDto: CreateContractDto = { affiliationDate: '2023-01-01', code: '1' };
       jest.spyOn(service, 'create').mockResolvedValue(mockContract);
 
       const result = await controller.create(createContractDto);

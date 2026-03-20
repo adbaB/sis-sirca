@@ -1,6 +1,19 @@
-import { IsBoolean, IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
+import { TypeIdentityCard } from '../entities/person.entity';
 
 export class CreatePersonDto {
+  @IsEnum(TypeIdentityCard)
+  @IsNotEmpty()
+  typeIdentityCard: TypeIdentityCard;
+
   @IsString()
   @IsNotEmpty()
   identityCard: string;
@@ -10,10 +23,11 @@ export class CreatePersonDto {
   name: string;
 
   @IsDateString()
-  birthDate: string;
-
   @IsOptional()
+  birthDate?: string;
+
   @IsBoolean()
+  @IsNotEmpty()
   gender: boolean;
 
   @IsUUID()
@@ -21,6 +35,6 @@ export class CreatePersonDto {
   planId: string;
 
   @IsUUID()
-  @IsOptional()
-  contractId?: string;
+  @IsNotEmpty()
+  contractId: string;
 }

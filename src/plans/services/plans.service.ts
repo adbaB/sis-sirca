@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 
 import { CreatePlanDto } from '../dto/create-plan.dto';
 import { UpdatePlanDto } from '../dto/update-plan.dto';
@@ -28,6 +28,10 @@ export class PlansService {
       throw new NotFoundException(`Plan with ID "${id}" not found`);
     }
     return plan;
+  }
+
+  async findByName(name: string): Promise<Plan | null> {
+    return this.plansRepository.findOne({ where: { name: ILike(name) } });
   }
 
   async update(id: string, updatePlanDto: UpdatePlanDto): Promise<Plan> {

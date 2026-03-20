@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
-import { Person } from '../entities/person.entity';
+import { Person, TypeIdentityCard } from '../entities/person.entity';
 
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
@@ -51,6 +51,16 @@ export class PersonsService {
 
   async findAll(): Promise<Person[]> {
     return this.personsRepository.find({ relations: ['plan', 'contract'] });
+  }
+
+  async findByIdentityCard(
+    identityCard: string,
+    typeIdentityCard: TypeIdentityCard,
+  ): Promise<Person> {
+    return this.personsRepository.findOne({
+      where: { identityCard, typeIdentityCard },
+      relations: ['plan', 'contract'],
+    });
   }
 
   async findOne(id: string): Promise<Person> {

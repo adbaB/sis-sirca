@@ -9,7 +9,7 @@ import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
-import { Person, PersonStatus } from '../entities/person.entity';
+import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from './persons.service';
 
 describe('PersonsService', () => {
@@ -27,6 +27,7 @@ describe('PersonsService', () => {
 
   const mockPerson: Person = {
     id: '1',
+    typeIdentityCard: TypeIdentityCard.V,
     identityCard: '123456',
     name: 'John Doe',
     birthDate: new Date('1990-01-01'),
@@ -84,6 +85,7 @@ describe('PersonsService', () => {
   describe('create', () => {
     it('should successfully create a person', async () => {
       const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
         birthDate: '1990-01-01',
@@ -102,6 +104,7 @@ describe('PersonsService', () => {
       expect(plansService.findOne).toHaveBeenCalledWith('plan-1');
       expect(contractsService.findOne).toHaveBeenCalledWith('contract-1');
       expect(repository.create).toHaveBeenCalledWith({
+        typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
         birthDate: '1990-01-01',
@@ -116,11 +119,13 @@ describe('PersonsService', () => {
 
     it('should throw NotFoundException if plan does not exist', async () => {
       const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
         identityCard: 'invalid-id',
         name: 'John Doe',
         birthDate: '1990-01-01',
         gender: true,
         planId: 'invalid-plan',
+        contractId: 'contract-1',
       };
 
       jest.spyOn(plansService, 'findOne').mockResolvedValue(null);

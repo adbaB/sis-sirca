@@ -1,8 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { google, drive_v3 } from 'googleapis';
+import { drive_v3, google } from 'googleapis';
 import config from '../../config/configurations';
-import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class GoogleDriveService {
@@ -17,7 +16,7 @@ export class GoogleDriveService {
   }
 
   private initClient() {
-    const { clientEmail, privateKey } = this.configService.drive;
+    const { clientEmail, privateKey, clientId } = this.configService.drive;
 
     if (!clientEmail || !privateKey) {
       this.logger.warn(
@@ -27,6 +26,7 @@ export class GoogleDriveService {
     }
 
     const auth = new google.auth.JWT({
+      client_id: clientId,
       email: clientEmail,
       key: privateKey,
       scopes: ['https://www.googleapis.com/auth/drive.readonly'],
@@ -44,15 +44,22 @@ export class GoogleDriveService {
 
     try {
       this.logger.log(`Downloading file with ID: ${fileId}...`);
-      const response = await this.driveClient.files.get(
-        { fileId, alt: 'media' },
-        { responseType: 'arraybuffer' },
+      const response = await this.driveClient.files.export(
+        {
+          fileId: fileId,
+          // Especificamos que queremos que lo convierta a Excel
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        {
+          responseType: 'arraybuffer', // Importante para manejar el archivo en memoria
+        },
       );
 
       this.logger.log('File successfully downloaded.');
       return Buffer.from(response.data as ArrayBuffer);
     } catch (error) {
       if (error instanceof Error) {
+        console.error(error);
         this.logger.error(`Failed to download Google Drive file: ${error.message}`, error.stack);
       } else {
         this.logger.error('Failed to download Google Drive file: Unknown error', String(error));
