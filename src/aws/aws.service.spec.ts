@@ -85,6 +85,11 @@ describe('AwsService', () => {
     });
 
     it('should throw InternalServerErrorException on S3 upload failure', async () => {
+      const mockSend = jest.fn().mockRejectedValue(new Error('S3 Error'));
+      (S3Client as jest.Mock).mockImplementation(() => ({
+        send: mockSend,
+      }));
+
       service = new AwsService({
         aws: {
           region: 'us-east-1',
@@ -93,11 +98,6 @@ describe('AwsService', () => {
           s3Bucket: 'test-bucket',
         },
       } as unknown as ConfigType<typeof config>);
-
-      const mockSend = jest.fn().mockRejectedValue(new Error('S3 Error'));
-      (S3Client as jest.Mock).mockImplementation(() => ({
-        send: mockSend,
-      }));
 
       await expect(service.uploadFile(mockFile)).rejects.toThrow(InternalServerErrorException);
       await expect(service.uploadFile(mockFile)).rejects.toThrow(
