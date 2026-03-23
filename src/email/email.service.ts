@@ -12,7 +12,10 @@ export class EmailService {
     @Inject(configurations.KEY)
     private configService: ConfigType<typeof configurations>,
   ) {
-    const sesConfig: any = {
+    const sesConfig: {
+      region?: string;
+      credentials?: { accessKeyId: string; secretAccessKey: string };
+    } = {
       region: this.configService.aws.region,
     };
 
@@ -68,8 +71,11 @@ export class EmailService {
 
     try {
       await this.sesClient.send(command);
-    } catch (error: any) {
-      throw new InternalServerErrorException(`Failed to send email: ${error.message}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new InternalServerErrorException(`Failed to send email: ${error.message}`);
+      }
+      throw new InternalServerErrorException('Failed to send email with unknown error');
     }
   }
 }
