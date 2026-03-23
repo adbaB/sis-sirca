@@ -32,6 +32,13 @@ export default registerAs('config', () => {
       flowPassphrase: process.env.META_FLOW_PASSPHRASE,
     },
 
+    aws: {
+      region: process.env.AWS_REGION,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      sesFromEmail: process.env.SES_FROM_EMAIL || 'noreply@sirca.com',
+    },
+
     env: process.env.NODE_ENV || 'development',
   };
 });
