@@ -1,10 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import axios from 'axios';
+import * as crypto from 'crypto';
 import { AwsService } from '../aws/aws.service';
+import { BillingService } from '../billing/services/billing.service';
+import config from '../config/configurations';
 import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
-import { BillingService } from '../billing/services/billing.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
@@ -31,7 +33,8 @@ export class ChatbotService {
   private stateStore = new Map<string, UserState>();
 
   constructor(
-    private configService: ConfigService,
+    @Inject(config.KEY)
+    private readonly configService: ConfigType<typeof config>,
     private awsService: AwsService,
     private emailService: EmailService,
     private ocrService: OcrService,
@@ -39,8 +42,8 @@ export class ChatbotService {
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
-    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
       this.logger.error('Missing Meta access token or phone number ID in configuration.');
@@ -72,8 +75,8 @@ export class ChatbotService {
     text: string,
     buttons: Array<{ type: string; reply: { id: string; title: string } }>,
   ): Promise<void> {
-    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
       this.logger.error('Missing Meta access token or phone number ID in configuration.');
@@ -110,9 +113,9 @@ export class ChatbotService {
   }
 
   private async sendFlowMessage(to: string, text: string): Promise<void> {
-    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
-    const flowId = this.configService.get<string>('META_FLOW_ID');
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
+    const flowId = this.configService.meta.flowId;
 
     if (!accessToken || !phoneNumberId || !flowId) {
       this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
@@ -142,8 +145,9 @@ export class ChatbotService {
             action: {
               name: 'flow',
               parameters: {
+                mode: 'draft',
                 flow_message_version: '3',
-                flow_token: 'payment_flow_token',
+                flow_token: crypto.randomUUID(),
                 flow_id: flowId,
                 flow_cta: 'Realizar pago',
                 flow_action: 'navigate',
@@ -174,8 +178,8 @@ export class ChatbotService {
     encrypted_flow_data: string;
     initial_vector: string;
   }): Promise<string> {
-    const privateKey = this.configService.get<string>('config.meta.flowPrivateKey');
-    const passphrase = this.configService.get<string>('config.meta.flowPassphrase');
+    const privateKey = this.configService.meta.flowPrivateKey;
+    const passphrase = this.configService.meta.flowPassphrase;
 
     if (!privateKey) {
       this.logger.warn(
@@ -202,6 +206,20 @@ export class ChatbotService {
         initial_vector,
       );
 
+      // Debug: Meta Flow Data Exchange a veces hace "checks" (handshake/health).
+      // Logueamos lo mínimo para poder identificar la acción sin exponer payload completo.
+      const action = (decryptedPayload as Record<string, unknown>)?.action as string | undefined;
+      const data = ((decryptedPayload as Record<string, unknown>)?.data || {}) as Record<
+        string,
+        unknown
+      >;
+      const dataAction = data?.action as string | undefined;
+      this.logger.log(
+        `[FlowDataExchange] action=${action ?? 'undefined'} data.action=${dataAction ?? 'undefined'} dataKeys=${
+          Object.keys(data).join(',') || 'none'
+        }`,
+      );
+
       const responseObj = await this.handleFlowDataExchange(decryptedPayload);
 
       const encryptedResponse = FlowsCryptoUtil.encryptResponse(
@@ -219,6 +237,22 @@ export class ChatbotService {
   async handleFlowDataExchange(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const action = body?.action as string | undefined;
     const data = (body?.data || {}) as Record<string, unknown>;
+
+    const normalizedAction = action?.toUpperCase();
+    // Respuesta esperada para tests/health checks del Flow (evita caer en "Acción no reconocida").
+    if (
+      normalizedAction === 'CHECK' ||
+      normalizedAction === 'PING' ||
+      normalizedAction === 'STATUS' ||
+      normalizedAction === 'VERIFICATION'
+    ) {
+      return {
+        screen: 'SCREEN_IDENTIFICATION',
+        data: {
+          status: 'active',
+        },
+      };
+    }
 
     if (action === 'INIT') {
       return {
@@ -439,7 +473,7 @@ export class ChatbotService {
                 'Estamos procesando tu comprobante, un momento por favor...',
               );
 
-              const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+              const accessToken = this.configService.meta.accessToken;
 
               // 1. Get media URL
               const mediaResponse = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {

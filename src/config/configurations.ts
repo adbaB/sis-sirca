@@ -2,15 +2,15 @@ import { registerAs } from '@nestjs/config';
 
 export default registerAs('config', () => {
   return {
+    server: {
+      port: parseInt(process.env.PORT ?? '3000', 10),
+    },
     db: {
       database: process.env.POSTGRES_DB,
       host: process.env.POSTGRES_HOST,
       password: process.env.POSTGRES_PASSWORD,
       port: parseInt(process.env.POSTGRES_PORT, 10),
       username: process.env.POSTGRES_USER,
-    },
-    mail: {
-      port: parseInt(process.env.PORT, 10),
     },
     file: {
       maxSize: parseInt(process.env.FILE_MAX_SIZE, 10) || 100 * 1024 * 1024,
@@ -28,8 +28,27 @@ export default registerAs('config', () => {
 
     meta: {
       appSecret: process.env.META_APP_SECRET,
+      accessToken: process.env.META_ACCESS_TOKEN,
+      phoneNumberId: process.env.META_PHONE_NUMBER_ID,
+      flowId: process.env.META_FLOW_ID,
+      verifyToken: process.env.META_VERIFY_TOKEN,
       flowPrivateKey: process.env.META_FLOW_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       flowPassphrase: process.env.META_FLOW_PASSPHRASE,
+    },
+
+    aws: {
+      region: process.env.AWS_REGION,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      s3Bucket: process.env.AWS_S3_BUCKET,
+    },
+    smtp: {
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT ?? '0', 10),
+      secure: (process.env.SMTP_SECURE ?? '').toLowerCase() === 'true',
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+      from: process.env.SMTP_FROM,
     },
 
     env: process.env.NODE_ENV || 'development',

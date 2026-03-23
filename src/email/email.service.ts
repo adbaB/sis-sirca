@@ -1,20 +1,24 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import nodemailer from 'nodemailer';
+import config from '../config/configurations';
 import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
 
 @Injectable()
 export class EmailService {
   private transporter: nodemailer.Transporter;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    @Inject(config.KEY)
+    private readonly configService: ConfigType<typeof config>,
+  ) {
     this.transporter = nodemailer.createTransport({
-      host: this.configService.get<string>('SMTP_HOST'),
-      port: this.configService.get<number>('SMTP_PORT'),
-      secure: this.configService.get<boolean>('SMTP_SECURE') || false,
+      host: this.configService.smtp.host,
+      port: this.configService.smtp.port,
+      secure: this.configService.smtp.secure || false,
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user: this.configService.smtp.user,
+        pass: this.configService.smtp.pass,
       },
     });
   }
@@ -25,7 +29,7 @@ export class EmailService {
     receiptUrl: string,
   ): Promise<void> {
     const mailOptions = {
-      from: this.configService.get<string>('SMTP_FROM') || 'noreply@sirca.com',
+      from: this.configService.smtp.from || 'noreply@sirca.com.ve',
       to: to,
       subject: 'Confirmación de Pago - SIRCA Seguros',
       html: `

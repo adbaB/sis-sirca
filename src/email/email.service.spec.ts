@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { EmailService } from './email.service';
 import { InternalServerErrorException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
+import config from '../config/configurations';
 
 jest.mock('nodemailer');
 
@@ -11,20 +11,6 @@ describe('EmailService', () => {
   let service: EmailService;
 
   const mockSendMail = jest.fn();
-
-  const mockConfigService = {
-    get: jest.fn((key) => {
-      const config = {
-        SMTP_HOST: 'smtp.test.com',
-        SMTP_PORT: 587,
-        SMTP_SECURE: false,
-        SMTP_USER: 'test@test.com',
-        SMTP_PASS: 'password',
-        SMTP_FROM: 'noreply@sirca.com',
-      };
-      return config[key as keyof typeof config];
-    }),
-  };
 
   beforeEach(async () => {
     (nodemailer.createTransport as jest.Mock).mockReturnValue({
@@ -35,8 +21,17 @@ describe('EmailService', () => {
       providers: [
         EmailService,
         {
-          provide: ConfigService,
-          useValue: mockConfigService,
+          provide: config.KEY,
+          useValue: {
+            smtp: {
+              host: 'smtp.test.com',
+              port: 587,
+              secure: false,
+              user: 'test@test.com',
+              pass: 'password',
+              from: 'noreply@sirca.com',
+            },
+          },
         },
       ],
     }).compile();
