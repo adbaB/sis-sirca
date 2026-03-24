@@ -14,10 +14,14 @@ interface UserState {
     | 'AWAITING_RECEIPT'
     | 'AWAITING_CAPTURE'
     | 'AWAITING_CONFIRMATION'
-    | 'AWAITING_MANUAL_INPUT';
+    | 'AWAITING_MANUAL_INPUT'
+    | 'AWAITING_DOC_INFO_MANUAL'
+    | 'AWAITING_INVOICE_SELECTION_MANUAL'
+    | 'AWAITING_PAYMENT_METHOD_MANUAL';
   name?: string;
   email?: string;
   selected_invoices?: string[];
+  pending_invoices?: Array<{ id: string; title: string; description: string; amount: number }>;
   payment_method?: string;
   total_amount?: string;
   extracted_data?: Record<string, unknown>;
@@ -427,6 +431,20 @@ export class ChatbotService {
           fromNumber,
           'Haz clic en el botón de abajo para iniciar el proceso de pago seguro.',
         );
+        await this.sendMessage(
+          fromNumber,
+          'Si tienes problemas para abrir el formulario, escribe *pago manual* para continuar por chat.',
+        );
+        return;
+      }
+
+      if (incomingText.toLowerCase() === 'pago manual') {
+        state = { step: 'AWAITING_DOC_INFO_MANUAL' };
+        this.stateStore.set(fromNumber, state);
+        await this.sendMessage(
+          fromNumber,
+          'Por favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
+        );
         return;
       }
 
@@ -599,6 +617,143 @@ export class ChatbotService {
               'Hubo un error al guardar tu pago. Por favor contacta soporte.',
             );
           }
+          break;
+        }
+
+        case 'AWAITING_DOC_INFO_MANUAL': {
+          const docMatch = incomingText.match(/^([VvEeJjGg])[-]*(\d+)$/);
+          if (!docMatch) {
+            await this.sendMessage(
+              fromNumber,
+              'Formato inválido. Por favor ingresa el documento en este formato: V-1234567',
+            );
+            return;
+          }
+
+          const docType = docMatch[1].toUpperCase();
+          const docNumber = docMatch[2];
+          const identityCard = `${docType}-${docNumber}`;
+
+          try {
+            const invoices =
+              await this.billingService.findPendingInvoicesByIdentityCard(identityCard);
+
+            if (!invoices || invoices.length === 0) {
+              await this.sendMessage(
+                fromNumber,
+                'No se encontraron facturas pendientes para este documento. Escribe "Hola" para reiniciar.',
+              );
+              this.stateStore.delete(fromNumber);
+              return;
+            }
+
+            const pendingInvoices = invoices.map((inv) => ({
+              id: inv.id,
+              title: `Factura ${inv.billingMonth}`,
+              description: `Monto pendiente: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
+              amount: Number(inv.totalAmount) - Number(inv.paidAmount),
+            }));
+
+            state.step = 'AWAITING_INVOICE_SELECTION_MANUAL';
+            state.pending_invoices = pendingInvoices;
+            this.stateStore.set(fromNumber, state);
+
+            let invoiceText = 'Hemos encontrado las siguientes facturas pendientes:\n\n';
+            pendingInvoices.forEach((inv, index) => {
+              invoiceText += `${index + 1}. ${inv.title} - ${inv.description}\n`;
+            });
+            invoiceText +=
+              '\nPor favor, responde con los números de las facturas que deseas pagar, separados por comas (Ejemplo: 1, 2).';
+
+            await this.sendMessage(fromNumber, invoiceText);
+          } catch (error) {
+            this.logger.error('Error fetching invoices manually', error);
+            await this.sendMessage(fromNumber, 'Hubo un error al buscar tus facturas. Inténtalo más tarde.');
+            this.stateStore.delete(fromNumber);
+          }
+          break;
+        }
+
+        case 'AWAITING_INVOICE_SELECTION_MANUAL': {
+          const selections = incomingText
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n));
+
+          if (selections.length === 0 || !state.pending_invoices) {
+            await this.sendMessage(
+              fromNumber,
+              'Selección inválida. Por favor, responde con los números de las facturas separados por comas.',
+            );
+            return;
+          }
+
+          const selectedInvoices: string[] = [];
+          let totalAmount = 0;
+
+          for (const selection of selections) {
+            const idx = selection - 1;
+            if (idx >= 0 && idx < state.pending_invoices.length) {
+              const inv = state.pending_invoices[idx];
+              selectedInvoices.push(inv.id);
+              totalAmount += inv.amount;
+            }
+          }
+
+          if (selectedInvoices.length === 0) {
+            await this.sendMessage(
+              fromNumber,
+              'No ingresaste números de factura válidos. Inténtalo de nuevo.',
+            );
+            return;
+          }
+
+          state.step = 'AWAITING_PAYMENT_METHOD_MANUAL';
+          state.selected_invoices = selectedInvoices;
+          state.total_amount = totalAmount.toFixed(2);
+          this.stateStore.set(fromNumber, state);
+
+          const buttons = [
+            { type: 'reply', reply: { id: 'pm_transferencia', title: 'Transferencia' } },
+            { type: 'reply', reply: { id: 'pm_pago_movil', title: 'Pago Móvil' } },
+            { type: 'reply', reply: { id: 'pm_zelle', title: 'Zelle' } },
+          ];
+
+          await this.sendInteractiveMessage(
+            fromNumber,
+            `Has seleccionado ${selectedInvoices.length} factura(s).\nTotal a pagar: ${state.total_amount}\n\nSelecciona tu método de pago:`,
+            buttons,
+          );
+          break;
+        }
+
+        case 'AWAITING_PAYMENT_METHOD_MANUAL': {
+          let paymentMethodStr = '';
+          let paymentInfo = '';
+
+          if (incomingText === 'pm_transferencia' || incomingText.toLowerCase() === 'transferencia') {
+            paymentMethodStr = 'transferencia';
+            paymentInfo =
+              'Banco: Mercantil\nCuenta: 0105-XXXX-XXXX-XXXX\nTitular: SIRCA Seguros\nRIF: J-XXXXXXX';
+          } else if (incomingText === 'pm_pago_movil' || incomingText.toLowerCase() === 'pago movil') {
+            paymentMethodStr = 'pago_movil';
+            paymentInfo = 'Banco: Mercantil\nTeléfono: 0414-XXXXXXX\nRIF: J-XXXXXXX';
+          } else if (incomingText === 'pm_zelle' || incomingText.toLowerCase() === 'zelle') {
+            paymentMethodStr = 'zelle';
+            paymentInfo = 'Zelle: pagos@sirca.com\nTitular: SIRCA Seguros';
+          } else {
+            await this.sendMessage(fromNumber, 'Por favor, selecciona una opción válida usando los botones.');
+            return;
+          }
+
+          state.step = 'AWAITING_CAPTURE';
+          state.payment_method = paymentMethodStr;
+          this.stateStore.set(fromNumber, state);
+
+          await this.sendMessage(
+            fromNumber,
+            `Aquí tienes los datos para tu pago:\n\n${paymentInfo}\n\nUna vez realizado el pago, por favor envía la imagen del comprobante (capture) por aquí.`,
+          );
           break;
         }
 

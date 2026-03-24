@@ -203,7 +203,7 @@ describe('ChatbotService', () => {
       );
     });
 
-    it('should open flow on realizar_pago', async () => {
+    it('should open flow and offer manual payment on realizar_pago', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
@@ -216,6 +216,82 @@ describe('ChatbotService', () => {
             type: 'flow',
             action: expect.objectContaining({ name: 'flow' }),
           }),
+        }),
+        expect.any(Object),
+      );
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('pago manual') },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should handle manual payment flow successfully', async () => {
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
+      await service.handleIncomingMessage(createMetaMessage('123', 'pago manual'));
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('tipo y número de documento') },
+        }),
+        expect.any(Object),
+      );
+
+      mockBillingService.findPendingInvoicesByIdentityCard.mockResolvedValueOnce([
+        { id: 'inv1', billingMonth: 'Jan 2024', totalAmount: '100', paidAmount: '0' },
+        { id: 'inv2', billingMonth: 'Feb 2024', totalAmount: '50', paidAmount: '0' },
+      ]);
+
+      await service.handleIncomingMessage(createMetaMessage('123', 'V-1234567'));
+
+      expect(mockBillingService.findPendingInvoicesByIdentityCard).toHaveBeenCalledWith(
+        'V-1234567',
+      );
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('Factura Jan 2024') },
+        }),
+        expect.any(Object),
+      );
+
+      await service.handleIncomingMessage(createMetaMessage('123', '1, 2'));
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          type: 'interactive',
+          interactive: expect.objectContaining({
+            type: 'button',
+            body: expect.objectContaining({
+              text: expect.stringContaining('Total a pagar: 150.00'),
+            }),
+            action: expect.objectContaining({
+              buttons: expect.arrayContaining([
+                expect.objectContaining({ reply: expect.objectContaining({ id: 'pm_zelle' }) }),
+              ]),
+            }),
+          }),
+        }),
+        expect.any(Object),
+      );
+
+      await service.handleIncomingMessage(createButtonReplyMessage('123', 'pm_zelle'));
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('Zelle: pagos@sirca.com') },
         }),
         expect.any(Object),
       );
