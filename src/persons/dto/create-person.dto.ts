@@ -35,6 +35,10 @@ export class CreatePersonDto {
   planId: string;
 
   @IsUUID()
-  @IsNotEmpty()
-  contractId: string;
+  @IsOptional()
+  contractId?: string;
+
+  @IsEnum(['TITULAR', 'AFILIADO'])
+  @IsOptional()
+  role?: 'TITULAR' | 'AFILIADO';
 }

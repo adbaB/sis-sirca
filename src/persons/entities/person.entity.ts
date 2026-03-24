@@ -5,11 +5,12 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   Unique,
 } from 'typeorm';
-import type { Contract } from '../../contracts/entities/contract.entity';
+import type { ContractPerson } from '../../contracts/entities/contract-person.entity';
 import type { Plan } from '../../plans/entities/plan.entity';
 
 export enum PersonStatus {
@@ -48,13 +49,12 @@ export class Person {
   @Column({ type: 'boolean', name: 'gender', nullable: true })
   gender?: boolean;
 
-  @ManyToOne('Plan', (plan: Plan) => plan.persons, { nullable: false })
+  @ManyToOne('Plan', (plan: Plan) => plan.persons, { nullable: true })
   @JoinColumn({ name: 'plan_id' })
   plan: Plan;
 
-  @ManyToOne('Contract', (contract: Contract) => contract.persons, { nullable: true })
-  @JoinColumn({ name: 'contract_id' })
-  contract: Contract;
+  @OneToMany('ContractPerson', (contractPerson: ContractPerson) => contractPerson.person)
+  contractPersons: ContractPerson[];
 
   @Column({ type: 'enum', enum: PersonStatus, default: PersonStatus.ACTIVE })
   status?: PersonStatus;

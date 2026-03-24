@@ -19,7 +19,7 @@ describe('ContractsService', () => {
     code: '1',
     affiliationDate: new Date('2023-01-01'),
     monthlyAmount: 0,
-    persons: [],
+    contractPersons: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -77,7 +77,9 @@ describe('ContractsService', () => {
 
       const result = await service.findAll();
 
-      expect(repository.find).toHaveBeenCalledWith({ relations: ['persons', 'persons.plan'] });
+      expect(repository.find).toHaveBeenCalledWith({
+        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+      });
       expect(result).toEqual([mockContract]);
     });
   });
@@ -90,7 +92,7 @@ describe('ContractsService', () => {
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: '1' },
-        relations: ['persons', 'persons.plan'],
+        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
       });
       expect(result).toEqual(mockContract);
     });
@@ -145,7 +147,11 @@ describe('ContractsService', () => {
 
       const contractWithPersons: Contract = {
         ...mockContract,
-        persons: [mockPerson1, mockPerson2, mockPersonWithoutPlan],
+        contractPersons: [
+          { role: 'AFILIADO', person: mockPerson1 },
+          { role: 'AFILIADO', person: mockPerson2 },
+          { role: 'TITULAR', person: mockPersonWithoutPlan }, // should not be counted even if it had a plan
+        ] as any[],
       };
 
       jest.spyOn(repository, 'findOne').mockResolvedValue(contractWithPersons);
@@ -154,10 +160,10 @@ describe('ContractsService', () => {
       await service.recalculateMonthlyAmount('1');
 
       expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1', persons: { status: PersonStatus.ACTIVE } },
-        relations: ['persons', 'persons.plan'],
+        where: { id: '1', contractPersons: { person: { status: PersonStatus.ACTIVE } } },
+        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
       });
-      expect(contractWithPersons.monthlyAmount).toEqual(30); // 10 + 20 + 0
+      expect(contractWithPersons.monthlyAmount).toEqual(30); // 10 + 20
       expect(repository.save).toHaveBeenCalledWith(contractWithPersons);
     });
 

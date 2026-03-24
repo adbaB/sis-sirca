@@ -314,8 +314,8 @@ describe('ChatbotService', () => {
       );
 
       mockBillingService.findPendingInvoicesByIdentityCard.mockResolvedValueOnce([
-        { id: 'inv1', billingMonth: 'Jan 2024', totalAmount: '100', paidAmount: '0' },
-        { id: 'inv2', billingMonth: 'Feb 2024', totalAmount: '50', paidAmount: '0' },
+        { id: 'inv1', billingMonth: 'Jan 2024', totalAmount: '100', paidAmount: '0', contract: { code: 'CT-1' } },
+        { id: 'inv2', billingMonth: 'Feb 2024', totalAmount: '50', paidAmount: '0', contract: { code: 'CT-2' } },
       ]);
 
       await service.handleIncomingMessage(createMetaMessage('123', 'V-1234567'));
@@ -327,7 +327,7 @@ describe('ChatbotService', () => {
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('Factura Jan 2024') },
+          text: { body: expect.stringContaining('Contrato CT-1') },
         }),
         expect.any(Object),
       );

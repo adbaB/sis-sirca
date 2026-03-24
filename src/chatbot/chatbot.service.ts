@@ -258,7 +258,7 @@ export class ChatbotService {
         const mappedInvoices = invoices.map((inv) => ({
           id: inv.id,
           title: `Factura ${inv.billingMonth}`,
-          description: `Monto pendiente: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
+          description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
         }));
 
         return {
@@ -689,7 +689,7 @@ export class ChatbotService {
             const pendingInvoices = invoices.map((inv) => ({
               id: inv.id,
               title: `Factura ${inv.billingMonth}`,
-              description: `Monto pendiente: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
+              description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
               amount: Number(inv.totalAmount) - Number(inv.paidAmount),
             }));
 

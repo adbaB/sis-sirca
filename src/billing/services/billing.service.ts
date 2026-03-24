@@ -75,8 +75,9 @@ export class BillingService {
   async findPendingInvoicesByIdentityCard(identityCard: string): Promise<Invoice[]> {
     return this.invoiceRepository
       .createQueryBuilder('invoice')
-      .innerJoin('invoice.contract', 'contract')
-      .innerJoin('contract.persons', 'person')
+      .innerJoinAndSelect('invoice.contract', 'contract')
+      .innerJoin('contract.contractPersons', 'contractPerson')
+      .innerJoin('contractPerson.person', 'person')
       .where('person.identityCard = :identityCard', { identityCard })
       .andWhere('invoice.status IN (:...statuses)', {
         statuses: [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL],
