@@ -36,16 +36,26 @@ const makePlan = (id = 'plan-1', name = 'Plan Basico') => ({
 
 const makeContract = (id = 'contract-1', code = 'CON-001') => ({ id, code });
 
-const makePerson = (overrides: Record<string, unknown> = {}) => ({
-  id: 'person-1',
-  name: 'Juan Perez',
-  typeIdentityCard: TypeIdentityCard.V,
-  identityCard: '26149461',
-  gender: true,
-  plan: makePlan(),
-  contract: makeContract(),
-  ...overrides,
-});
+const makePerson = (overrides: Record<string, unknown> = {}) => {
+  const overridesCopy = { ...overrides };
+  let defaultContractPersons = [{ role: 'AFILIADO', contract: makeContract() }];
+
+  if (overridesCopy.contract) {
+    defaultContractPersons = [{ role: 'AFILIADO', contract: overridesCopy.contract as import('../../contracts/entities/contract.entity').Contract }];
+    delete overridesCopy.contract;
+  }
+
+  return {
+    id: 'person-1',
+    name: 'Juan Perez',
+    typeIdentityCard: TypeIdentityCard.V,
+    identityCard: '26149461',
+    gender: true,
+    plan: makePlan(),
+    contractPersons: defaultContractPersons,
+    ...overridesCopy,
+  };
+};
 
 /** Build a raw Excel row with the Spanish column names expected by cleanData */
 const makeExcelRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({

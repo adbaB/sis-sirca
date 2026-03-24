@@ -35,7 +35,7 @@ export class PersonsService {
     }
 
     if (resolvedRole === PersonRole.TITULAR && planId) {
-       throw new BadRequestException('A TITULAR person cannot have a plan.');
+      throw new BadRequestException('A TITULAR person cannot have a plan.');
     }
 
     let contract = null;
@@ -171,9 +171,9 @@ export class PersonsService {
 
     // Attempting to recalculate affected contracts (e.g. if their plan changed)
     if (person.contractPersons && person.contractPersons.length > 0) {
-       for (const cp of person.contractPersons) {
-         contractsToRecalculate.add(cp.contract.id);
-       }
+      for (const cp of person.contractPersons) {
+        contractsToRecalculate.add(cp.contract.id);
+      }
     }
 
     for (const idToRecalculate of contractsToRecalculate) {

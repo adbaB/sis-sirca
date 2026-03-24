@@ -196,10 +196,15 @@ export class SyncService {
         );
 
         if (person) {
+          // Check if person is already linked to this contract with AFILIADO role
+          const isLinkedToContract = person.contractPersons?.some(
+            (cp) => cp.contract?.id === contract.id && cp.role === 'AFILIADO'
+          );
+
           const hasChanges =
             person.name !== item.name ||
             person.plan?.id !== plan.id ||
-            person.contract?.id !== contract.id ||
+            !isLinkedToContract ||
             person.gender !== item.gender;
 
           if (!hasChanges) {

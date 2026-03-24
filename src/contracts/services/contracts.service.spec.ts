@@ -151,7 +151,7 @@ describe('ContractsService', () => {
           { role: 'AFILIADO', person: mockPerson1 },
           { role: 'AFILIADO', person: mockPerson2 },
           { role: 'TITULAR', person: mockPersonWithoutPlan }, // should not be counted even if it had a plan
-        ] as any[],
+        ] as unknown as import('../entities/contract-person.entity').ContractPerson[],
       };
 
       jest.spyOn(repository, 'findOne').mockResolvedValue(contractWithPersons);

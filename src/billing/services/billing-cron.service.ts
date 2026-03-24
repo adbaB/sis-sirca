@@ -38,7 +38,7 @@ export class BillingCronService {
     while (true) {
       const contracts = await this.contractRepository.find({
         where: { status: ContractStatus.ACTIVE },
-        relations: ['persons', 'persons.plan'],
+        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
         order: { id: 'ASC' },
         skip: offset,
         take: chunkSize,
@@ -86,30 +86,32 @@ export class BillingCronService {
         return; // Skip this contract as it already has an invoice for this month
       }
 
-      const activePersons = contract.persons.filter((p) => p.status === PersonStatus.ACTIVE);
+      const activeAfiliados = contract.contractPersons?.filter(
+        (cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE,
+      ).map(cp => cp.person) || [];
 
-      if (activePersons.length === 0) {
-        // No active persons, skip invoice generation
+      if (activeAfiliados.length === 0) {
+        // No active afiliado persons, skip invoice generation
         await queryRunner.rollbackTransaction();
         return;
       }
 
-      const invalidPerson = activePersons.find(
+      const invalidPerson = activeAfiliados.find(
         (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
       );
       if (invalidPerson) {
         throw new Error(
-          `Active person ${invalidPerson.id} in contract ${contract.id} has no valid plan amount`,
+          `Active afiliado ${invalidPerson.id} in contract ${contract.id} has no valid plan amount`,
         );
       }
 
       let totalAmount = 0;
-      const invoiceDetailsData = activePersons.map((person) => {
+      const invoiceDetailsData = activeAfiliados.map((person) => {
         const amount = Number(person.plan.amount);
         totalAmount += amount;
 
         if (!Number.isFinite(amount) || amount < 0) {
-          throw new Error(`Invalid plan amount for person ${person.id} in contract ${contract.id}`);
+          throw new Error(`Invalid plan amount for afiliado ${person.id} in contract ${contract.id}`);
         }
 
         return {

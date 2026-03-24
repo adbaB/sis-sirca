@@ -68,7 +68,7 @@ export class ContractsService {
     const totalAmount = contract.contractPersons.reduce((sum, cp) => {
       // Sum the plan amount if the person is an AFILIADO and has a plan
       if (cp.role === 'AFILIADO' && cp.person && cp.person.plan) {
-         return sum + Number(cp.person.plan.amount);
+        return sum + Number(cp.person.plan.amount);
       }
       return sum;
     }, 0);

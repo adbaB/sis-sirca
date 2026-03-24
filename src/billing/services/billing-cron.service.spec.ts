@@ -81,25 +81,26 @@ describe('BillingCronService', () => {
       gender: true,
       plan: createMockPlan(planAmount),
       status,
-      contract: {} as Contract,
+      contractPersons: [],
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: new Date(),
-    } as Person;
+    } as unknown as Person;
   };
 
   const createMockContract = (id: string, persons: Person[]): Contract => {
+    const contractPersons = persons.map((person) => ({ role: 'AFILIADO', person }));
     return {
       id,
       affiliationDate: new Date(),
       monthlyAmount: 0,
       status: ContractStatus.ACTIVE,
-      persons,
+      contractPersons,
       invoices: [],
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: new Date(),
-    } as Contract;
+    } as unknown as Contract;
   };
 
   it('should be defined', () => {

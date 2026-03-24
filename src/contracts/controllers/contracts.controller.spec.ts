@@ -14,7 +14,7 @@ describe('ContractsController', () => {
     code: '1',
     affiliationDate: new Date('2023-01-01'),
     monthlyAmount: 0,
-    persons: [],
+    contractPersons: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,

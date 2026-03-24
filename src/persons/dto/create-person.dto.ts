@@ -8,6 +8,7 @@ import {
   IsUUID,
 } from 'class-validator';
 import { TypeIdentityCard } from '../entities/person.entity';
+import { PersonRole } from '../../contracts/entities/contract-person.entity';
 
 export class CreatePersonDto {
   @IsEnum(TypeIdentityCard)
@@ -38,7 +39,7 @@ export class CreatePersonDto {
   @IsOptional()
   contractId?: string;
 
-  @IsEnum(['TITULAR', 'AFILIADO'])
+  @IsEnum(PersonRole)
   @IsOptional()
-  role?: 'TITULAR' | 'AFILIADO';
+  role?: PersonRole;
 }

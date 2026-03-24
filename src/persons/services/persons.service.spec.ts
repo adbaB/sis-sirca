@@ -113,7 +113,7 @@ describe('PersonsService', () => {
         gender: true,
         planId: 'plan-1',
         contractId: 'contract-1',
-        role: 'AFILIADO',
+        role: PersonRole.AFILIADO,
       };
 
       jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
@@ -138,7 +138,7 @@ describe('PersonsService', () => {
       expect(cpRepository.create).toHaveBeenCalledWith({
         contract: mockContract,
         person: mockPerson,
-        role: 'AFILIADO',
+        role: PersonRole.AFILIADO,
       });
       expect(cpRepository.save).toHaveBeenCalledWith(mockContractPerson);
       expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
@@ -195,7 +195,7 @@ describe('PersonsService', () => {
 
   describe('update', () => {
     it('should update and return a person and recalculate contract amounts', async () => {
-      const updatePersonDto: UpdatePersonDto = { name: 'Jane Doe', planId: 'plan-1', contractId: 'contract-1', role: 'AFILIADO' };
+      const updatePersonDto: UpdatePersonDto = { name: 'Jane Doe', planId: 'plan-1', contractId: 'contract-1', role: PersonRole.AFILIADO };
       const updatedPerson = { ...mockPerson, name: 'Jane Doe' };
 
       jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
@@ -216,7 +216,7 @@ describe('PersonsService', () => {
     });
 
     it('should handle removing an AFILIADO from their old contract when added to a new one', async () => {
-      const updatePersonDto: UpdatePersonDto = { contractId: 'contract-2', role: 'AFILIADO' };
+      const updatePersonDto: UpdatePersonDto = { contractId: 'contract-2', role: PersonRole.AFILIADO };
 
       const newContract: Contract = { id: 'contract-2' } as Contract;
       const oldJunction: ContractPerson = { ...mockContractPerson, contract: mockContract };
@@ -239,16 +239,16 @@ describe('PersonsService', () => {
     });
 
     it('should not wipe global plan when adding a TITULAR to a new contract', async () => {
-      const updatePersonDto: UpdatePersonDto = { contractId: 'contract-2', role: 'TITULAR' };
+      const updatePersonDto: UpdatePersonDto = { contractId: 'contract-2', role: PersonRole.TITULAR };
       const newContract: Contract = { id: 'contract-2' } as Contract;
 
       jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson); // Mock person has a plan
       jest.spyOn(contractsService, 'findOne').mockResolvedValue(newContract);
 
       // Let's assert what is saved to the Person repository
-      let savedPerson: any;
+      let savedPerson: Partial<Person> = {};
       jest.spyOn(repository, 'save').mockImplementation(async (personToSave) => {
-        savedPerson = personToSave;
+        savedPerson = personToSave as unknown as Person;
         return personToSave as Person;
       });
 
