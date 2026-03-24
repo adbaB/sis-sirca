@@ -1,35 +1,34 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { AwsService } from './aws.service';
 import { InternalServerErrorException } from '@nestjs/common';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { ConfigType } from '@nestjs/config';
-import config from '../config/configurations';
 
 // Mock the AWS SDK
 jest.mock('@aws-sdk/client-s3');
 
 describe('AwsService', () => {
   let service: AwsService;
+  let configService: ConfigService;
+
+  const mockConfigService = {
+    get: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AwsService,
         {
-          provide: config.KEY,
-          useValue: {
-            aws: {
-              region: 'us-east-1',
-              accessKeyId: 'mock-access-key',
-              secretAccessKey: 'mock-secret',
-              s3Bucket: 'test-bucket',
-            },
-          },
+          provide: ConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();
 
     service = module.get<AwsService>(AwsService);
+    configService = module.get<ConfigService>(ConfigService);
+
     jest.clearAllMocks();
   });
 
@@ -45,20 +44,19 @@ describe('AwsService', () => {
     } as Express.Multer.File;
 
     it('should successfully upload a file and return the URL', async () => {
+      mockConfigService.get.mockImplementation((key) => {
+        if (key === 'AWS_S3_BUCKET') return 'test-bucket';
+        if (key === 'AWS_REGION') return 'us-east-1';
+        return 'mock-value';
+      });
+
       const mockSend = jest.fn().mockResolvedValue({});
       (S3Client as jest.Mock).mockImplementation(() => ({
         send: mockSend,
       }));
 
       // Re-initialize the service to use the mocked S3Client
-      service = new AwsService({
-        aws: {
-          region: 'us-east-1',
-          accessKeyId: 'mock-access-key',
-          secretAccessKey: 'mock-secret',
-          s3Bucket: 'test-bucket',
-        },
-      } as unknown as ConfigType<typeof config>);
+      service = new AwsService(configService);
 
       const result = await service.uploadFile(mockFile, 'test-folder');
 
@@ -69,14 +67,10 @@ describe('AwsService', () => {
     });
 
     it('should throw an error if AWS_S3_BUCKET is not configured', async () => {
-      service = new AwsService({
-        aws: {
-          region: 'us-east-1',
-          accessKeyId: 'mock-access-key',
-          secretAccessKey: 'mock-secret',
-          s3Bucket: undefined,
-        },
-      } as unknown as ConfigType<typeof config>);
+      mockConfigService.get.mockImplementation((key) => {
+        if (key === 'AWS_S3_BUCKET') return undefined; // Missing bucket
+        return 'mock-value';
+      });
 
       await expect(service.uploadFile(mockFile)).rejects.toThrow(InternalServerErrorException);
       await expect(service.uploadFile(mockFile)).rejects.toThrow(
@@ -85,19 +79,18 @@ describe('AwsService', () => {
     });
 
     it('should throw InternalServerErrorException on S3 upload failure', async () => {
+      mockConfigService.get.mockImplementation((key) => {
+        if (key === 'AWS_S3_BUCKET') return 'test-bucket';
+        if (key === 'AWS_REGION') return 'us-east-1';
+        return 'mock-value';
+      });
+
       const mockSend = jest.fn().mockRejectedValue(new Error('S3 Error'));
       (S3Client as jest.Mock).mockImplementation(() => ({
         send: mockSend,
       }));
 
-      service = new AwsService({
-        aws: {
-          region: 'us-east-1',
-          accessKeyId: 'mock-access-key',
-          secretAccessKey: 'mock-secret',
-          s3Bucket: 'test-bucket',
-        },
-      } as unknown as ConfigType<typeof config>);
+      service = new AwsService(configService);
 
       await expect(service.uploadFile(mockFile)).rejects.toThrow(InternalServerErrorException);
       await expect(service.uploadFile(mockFile)).rejects.toThrow(

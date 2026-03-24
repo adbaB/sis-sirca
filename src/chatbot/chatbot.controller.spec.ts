@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Request, Response } from 'express';
 import { ChatbotController } from './chatbot.controller';
 import { ChatbotService } from './chatbot.service';
-import config from '../config/configurations';
+import { ConfigService } from '@nestjs/config';
 
 describe('ChatbotController', () => {
   let controller: ChatbotController;
@@ -22,11 +22,9 @@ describe('ChatbotController', () => {
           useValue: mockChatbotService,
         },
         {
-          provide: config.KEY,
+          provide: ConfigService,
           useValue: {
-            meta: {
-              verifyToken: 'test_token',
-            },
+            get: jest.fn().mockReturnValue('mockAppSecret'),
           },
         },
       ],
@@ -41,6 +39,16 @@ describe('ChatbotController', () => {
   });
 
   describe('verifyWebhook', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv, META_VERIFY_TOKEN: 'test_token' };
+    });
+
+    afterAll(() => {
+      process.env = originalEnv;
+    });
+
     it('should return challenge when token is valid', () => {
       const mockResponse = {
         status: jest.fn().mockReturnThis(),

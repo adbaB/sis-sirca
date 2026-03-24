@@ -5,19 +5,14 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
-import { ConfigType } from '@nestjs/config';
-import { Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import config from '../../config/configurations';
 
 @Injectable()
 export class MetaSignatureGuard implements CanActivate {
   private readonly logger = new Logger(MetaSignatureGuard.name);
 
-  constructor(
-    @Inject(config.KEY)
-    private readonly configService: ConfigType<typeof config>,
-  ) {}
+  constructor(private readonly configService: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
@@ -28,7 +23,7 @@ export class MetaSignatureGuard implements CanActivate {
       throw new UnauthorizedException('Missing signature header.');
     }
 
-    const appSecret = this.configService.meta.appSecret;
+    const appSecret = this.configService.get<string>('config.meta.appSecret');
 
     if (!appSecret) {
       this.logger.error(

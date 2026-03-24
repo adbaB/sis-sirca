@@ -1,12 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigType } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import * as crypto from 'crypto';
 import { AwsService } from '../aws/aws.service';
-import { BillingService } from '../billing/services/billing.service';
-import config from '../config/configurations';
 import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
+import { BillingService } from '../billing/services/billing.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
@@ -24,6 +22,7 @@ interface UserState {
   name?: string;
   email?: string;
   selected_invoices?: string[];
+  selected_invoices_details?: Array<{ id: string; amount: number }>;
   pending_invoices?: Array<{ id: string; title: string; description: string; amount: number }>;
   payment_method?: string;
   total_amount?: string;
@@ -38,8 +37,7 @@ export class ChatbotService {
   private stateStore = new Map<string, UserState>();
 
   constructor(
-    @Inject(config.KEY)
-    private readonly configService: ConfigType<typeof config>,
+    private configService: ConfigService,
     private awsService: AwsService,
     private emailService: EmailService,
     private ocrService: OcrService,
@@ -47,8 +45,8 @@ export class ChatbotService {
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
-    const accessToken = this.configService.meta.accessToken;
-    const phoneNumberId = this.configService.meta.phoneNumberId;
+    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
 
     if (!accessToken || !phoneNumberId) {
       this.logger.error('Missing Meta access token or phone number ID in configuration.');
@@ -80,8 +78,8 @@ export class ChatbotService {
     text: string,
     buttons: Array<{ type: string; reply: { id: string; title: string } }>,
   ): Promise<void> {
-    const accessToken = this.configService.meta.accessToken;
-    const phoneNumberId = this.configService.meta.phoneNumberId;
+    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
 
     if (!accessToken || !phoneNumberId) {
       this.logger.error('Missing Meta access token or phone number ID in configuration.');
@@ -118,9 +116,9 @@ export class ChatbotService {
   }
 
   private async sendFlowMessage(to: string, text: string): Promise<boolean> {
-    const accessToken = this.configService.meta.accessToken;
-    const phoneNumberId = this.configService.meta.phoneNumberId;
-    const flowId = this.configService.meta.flowId;
+    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const flowId = this.configService.get<string>('META_FLOW_ID');
 
     if (!accessToken || !phoneNumberId || !flowId) {
       this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
@@ -150,9 +148,8 @@ export class ChatbotService {
             action: {
               name: 'flow',
               parameters: {
-                mode: 'draft',
                 flow_message_version: '3',
-                flow_token: crypto.randomUUID(),
+                flow_token: 'payment_flow_token',
                 flow_id: flowId,
                 flow_cta: 'Realizar pago',
                 flow_action: 'navigate',
@@ -185,8 +182,8 @@ export class ChatbotService {
     encrypted_flow_data: string;
     initial_vector: string;
   }): Promise<string> {
-    const privateKey = this.configService.meta.flowPrivateKey;
-    const passphrase = this.configService.meta.flowPassphrase;
+    const privateKey = this.configService.get<string>('config.meta.flowPrivateKey');
+    const passphrase = this.configService.get<string>('config.meta.flowPassphrase');
 
     if (!privateKey) {
       this.logger.warn(
@@ -213,20 +210,6 @@ export class ChatbotService {
         initial_vector,
       );
 
-      // Debug: Meta Flow Data Exchange a veces hace "checks" (handshake/health).
-      // Logueamos lo mínimo para poder identificar la acción sin exponer payload completo.
-      const action = (decryptedPayload as Record<string, unknown>)?.action as string | undefined;
-      const data = ((decryptedPayload as Record<string, unknown>)?.data || {}) as Record<
-        string,
-        unknown
-      >;
-      const dataAction = data?.action as string | undefined;
-      this.logger.log(
-        `[FlowDataExchange] action=${action ?? 'undefined'} data.action=${dataAction ?? 'undefined'} dataKeys=${
-          Object.keys(data).join(',') || 'none'
-        }`,
-      );
-
       const responseObj = await this.handleFlowDataExchange(decryptedPayload);
 
       const encryptedResponse = FlowsCryptoUtil.encryptResponse(
@@ -244,22 +227,6 @@ export class ChatbotService {
   async handleFlowDataExchange(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const action = body?.action as string | undefined;
     const data = (body?.data || {}) as Record<string, unknown>;
-
-    const normalizedAction = action?.toUpperCase();
-    // Respuesta esperada para tests/health checks del Flow (evita caer en "Acción no reconocida").
-    if (
-      normalizedAction === 'CHECK' ||
-      normalizedAction === 'PING' ||
-      normalizedAction === 'STATUS' ||
-      normalizedAction === 'VERIFICATION'
-    ) {
-      return {
-        screen: 'SCREEN_IDENTIFICATION',
-        data: {
-          status: 'active',
-        },
-      };
-    }
 
     if (action === 'INIT') {
       return {
@@ -445,13 +412,13 @@ export class ChatbotService {
         this.stateStore.delete(fromNumber); // Reset
 
         const buttons = [
-          { type: 'reply', reply: { id: 'info_planes', title: 'Ver planes 📋' } },
-          { type: 'reply', reply: { id: 'realizar_pago', title: 'Pagar mi seguro 💳' } },
+          { type: 'reply', reply: { id: 'info_planes', title: '1. Info de planes' } },
+          { type: 'reply', reply: { id: 'realizar_pago', title: '2. Realizar pago' } },
         ];
 
         await this.sendInteractiveMessage(
           fromNumber,
-          '¡Hola! Soy Helena de SIRCA Seguros. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
+          '¡Hola! Soy Helena, tu asistente virtual de SIRCA Seguros. ¿En qué puedo ayudarte hoy?',
           buttons,
         );
 
@@ -473,7 +440,7 @@ export class ChatbotService {
           this.stateStore.set(fromNumber, state);
           await this.sendMessage(
             fromNumber,
-            '¡Perfecto! Para completar tu registro, por favor envíame por aquí una captura o foto de tu comprobante de pago. ✨',
+            'Por favor, envía la imagen del comprobante de pago (capture) por aquí.',
           );
           return;
         } catch (e) {
@@ -485,7 +452,7 @@ export class ChatbotService {
       if (incomingText === 'info_planes') {
         await this.sendMessage(
           fromNumber,
-          '¡Claro! Te pongo en contacto con nuestro asesor comercial para que te dé todos los detalles de los planes. ✨\n\nÉl te espera por aquí:\n📱 *WhatsApp:* +58 412-1201012 (https://wa.me/584121201012)\n\n¡Seguro encontrará el plan ideal para ti! 😊',
+          'Para información sobre nuestros planes, por favor contacta a nuestro asesor comercial:\n\n📱 WhatsApp: +58 414-XXXXXXX\n📧 Correo: ventas@sirca.com',
         );
         this.stateStore.delete(fromNumber);
         return;
@@ -494,7 +461,7 @@ export class ChatbotService {
       if (incomingText === 'realizar_pago') {
         const success = await this.sendFlowMessage(
           fromNumber,
-          '¡Perfecto! Para que sea más rápido, he preparado un pequeño formulario aquí mismo. Haz clic abajo para completar tus datos de pago de forma segura. ✨',
+          'Haz clic en el botón de abajo para iniciar el proceso de pago seguro.',
         );
 
         if (!success) {
@@ -519,10 +486,10 @@ export class ChatbotService {
             try {
               await this.sendMessage(
                 fromNumber,
-                '¡Recibido! 📥 Dame tan solo un momento mientras valido los datos de tu comprobante. ¡Ya casi terminamos!',
+                'Estamos procesando tu comprobante, un momento por favor...',
               );
 
-              const accessToken = this.configService.meta.accessToken;
+              const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
 
               // 1. Get media URL
               const mediaResponse = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
@@ -566,11 +533,7 @@ export class ChatbotService {
 
                 await this.sendInteractiveMessage(
                   fromNumber,
-                  `¡Listo! He revisado tu comprobante y esto es lo que encontré: ✨\n\n` +
-                    `📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n` +
-                    `💰 *Monto:* ${extractedData.monto || 'No detectado'}\n` +
-                    `🏦 *Banco:* ${extractedData.nombreBanco || 'No detectado'}\n\n` +
-                    `¿Me confirmas si los datos están correctos para continuar? 👍`,
+                  `Hemos detectado los siguientes datos de tu pago:\n\nReferencia: ${extractedData.referencia || 'No detectada'}\nMonto: ${extractedData.monto || 'No detectado'}\nBanco: ${extractedData.nombreBanco || 'No detectado'}\n\n¿Son correctos?`,
                   buttons,
                 );
               } catch (ocrError) {
@@ -579,20 +542,20 @@ export class ChatbotService {
                 this.stateStore.set(fromNumber, state);
                 await this.sendMessage(
                   fromNumber,
-                  '¡Uy! No logré leer todos los datos de tu comprobante automáticamente. 📝\n\n¿Podrías escribirlos tú mismo para avanzar? Usa este formato, por favor:\n\nReferencia, Banco, Monto\n\n*(Ejemplo: 123456, Mercantil, 100)*',
+                  'No pudimos extraer los datos del comprobante automáticamente. Por favor, escribe los datos manualmente en el siguiente formato:\n\nReferencia, Banco, Monto',
                 );
               }
             } catch (error) {
               this.logger.error('Error processing media:', error?.response?.data || error.message);
               await this.sendMessage(
                 fromNumber,
-                '¡Lo siento! Hubo un pequeño problema al procesar la imagen de tu comprobante. 🔄\n\n¿Podrías intentar enviarla de nuevo? Asegúrate de que se vea clarito. ✨',
+                'Hubo un error al procesar tu comprobante. Por favor, intenta enviarlo de nuevo.',
               );
             }
           } else {
             await this.sendMessage(
               fromNumber,
-              'Aún no me ha llegado la imagen. 🧐\n\nRecuerda adjuntar la captura de tu comprobante de pago por aquí para que pueda ayudarte a registrarlo.',
+              'Aún no he recibido ninguna imagen. Por favor, adjunta tu comprobante de pago (capture).',
             );
           }
           break;
@@ -601,11 +564,22 @@ export class ChatbotService {
           if (incomingText === 'datos_correctos') {
             // Create payment
             try {
-              if (state.selected_invoices && state.selected_invoices.length > 0) {
+              if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
+                for (const invoice of state.selected_invoices_details) {
+                  await this.billingService.createPayment({
+                    invoiceId: invoice.id,
+                    amount: invoice.amount,
+                    paymentMethod: state.payment_method || 'transferencia',
+                    referenceNumber: (state.extracted_data?.referencia as string) || 'N/A',
+                  });
+                }
+              } else if (state.selected_invoices && state.selected_invoices.length > 0) {
+                // Fallback for flows that only sent IDs
+                const splitAmount = (Number(state.total_amount) || 0) / state.selected_invoices.length;
                 for (const invoiceId of state.selected_invoices) {
                   await this.billingService.createPayment({
                     invoiceId: invoiceId,
-                    amount: Number(state.total_amount) || 0,
+                    amount: splitAmount,
                     paymentMethod: state.payment_method || 'transferencia',
                     referenceNumber: (state.extracted_data?.referencia as string) || 'N/A',
                   });
@@ -623,13 +597,13 @@ export class ChatbotService {
               this.stateStore.delete(fromNumber);
               await this.sendMessage(
                 fromNumber,
-                '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
+                '¡Tu pago ha sido registrado exitosamente! Hemos notificado a nuestro equipo administrativo. Gracias por confiar en SIRCA Seguros.',
               );
             } catch (e) {
               this.logger.error('Error saving payment', e);
               await this.sendMessage(
                 fromNumber,
-                '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
+                'Hubo un error al guardar tu pago. Por favor contacta soporte.',
               );
             }
           } else if (incomingText === 'datos_incorrectos') {
@@ -637,7 +611,7 @@ export class ChatbotService {
             this.stateStore.set(fromNumber, state);
             await this.sendMessage(
               fromNumber,
-              'Para que el sistema lo reconozca rápido, por favor escribe los datos separados por comas, así: ✍️\n\nReferencia, Banco, Monto\n\n💡 Ejemplo: 123456, Mercantil, 100',
+              'Por favor, escribe los datos de tu pago en el siguiente formato, separados por comas:\n\nReferencia, Banco, Monto\n\nEjemplo: 123456, Mercantil, 100',
             );
           }
           break;
@@ -646,7 +620,7 @@ export class ChatbotService {
           if (!incomingText || !incomingText.includes(',')) {
             await this.sendMessage(
               fromNumber,
-              '¡Casi lo tenemos! Pero el formato no es el correcto. ✨\n\nInténtalo de nuevo así: Referencia, Banco, Monto\n(Por ejemplo: 123456, Mercantil, 100)',
+              'Formato inválido. Por favor, usa el formato: Referencia, Banco, Monto\nEjemplo: 123456, Mercantil, 100',
             );
             return;
           }
@@ -656,11 +630,26 @@ export class ChatbotService {
           const amount = parts[2] ? Number(parts[2]) : Number(state.total_amount);
 
           try {
-            if (state.selected_invoices && state.selected_invoices.length > 0) {
+            if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
+               // If the user manually provided a total amount, proportionally split it based on their original invoices.
+               // Otherwise, use the original exact invoice amounts.
+               const manuallyAdjusted = parts[2] !== undefined;
+               const ratio = manuallyAdjusted ? amount / (Number(state.total_amount) || 1) : 1;
+
+               for (const invoice of state.selected_invoices_details) {
+                  await this.billingService.createPayment({
+                    invoiceId: invoice.id,
+                    amount: manuallyAdjusted ? invoice.amount * ratio : invoice.amount,
+                    paymentMethod: state.payment_method || 'transferencia',
+                    referenceNumber: ref,
+                  });
+                }
+            } else if (state.selected_invoices && state.selected_invoices.length > 0) {
+              const splitAmount = amount / state.selected_invoices.length;
               for (const invoiceId of state.selected_invoices) {
                 await this.billingService.createPayment({
                   invoiceId: invoiceId,
-                  amount: amount || 0,
+                  amount: splitAmount,
                   paymentMethod: state.payment_method || 'transferencia',
                   referenceNumber: ref,
                 });
@@ -677,20 +666,29 @@ export class ChatbotService {
             this.stateStore.delete(fromNumber);
             await this.sendMessage(
               fromNumber,
-              '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
+              '¡Tu pago ha sido registrado exitosamente! Hemos notificado a nuestro equipo administrativo. Gracias por confiar en SIRCA Seguros.',
             );
           } catch (e) {
             this.logger.error('Error saving payment manual', e);
             await this.sendMessage(
               fromNumber,
-              '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
+              'Hubo un error al guardar tu pago. Por favor contacta soporte.',
             );
           }
           break;
         }
 
         case 'AWAITING_FLOW_INTERACTION':
-          // Wait for Flow completion (handled above via nfm_reply) or failure (handled above via webhook statuses)
+          // If the user sends any text while we are waiting for the Flow to open (e.g. they couldn't open it),
+          // transition them to the manual flow immediately.
+          if (incomingText) {
+            state.step = 'AWAITING_DOC_INFO_MANUAL';
+            this.stateStore.set(fromNumber, state);
+            await this.sendMessage(
+              fromNumber,
+              'Parece que tuviste problemas con el formulario. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
+            );
+          }
           break;
 
         case 'AWAITING_DOC_INFO_MANUAL': {
@@ -756,10 +754,11 @@ export class ChatbotService {
             await this.sendMessage(fromNumber, 'Por favor, responde con los números de las facturas.');
             return;
           }
-          const selections = incomingText
+          // Deduplicate the choices to prevent double-charging for the same invoice selection (e.g. "1, 1")
+          const selections = [...new Set(incomingText
             .split(',')
             .map((s) => parseInt(s.trim(), 10))
-            .filter((n) => !isNaN(n));
+            .filter((n) => !isNaN(n)))];
 
           if (selections.length === 0 || !state.pending_invoices) {
             await this.sendMessage(
@@ -770,6 +769,7 @@ export class ChatbotService {
           }
 
           const selectedInvoices: string[] = [];
+          const selectedInvoicesDetails: Array<{ id: string; amount: number }> = [];
           let totalAmount = 0;
 
           for (const selection of selections) {
@@ -777,6 +777,7 @@ export class ChatbotService {
             if (idx >= 0 && idx < state.pending_invoices.length) {
               const inv = state.pending_invoices[idx];
               selectedInvoices.push(inv.id);
+              selectedInvoicesDetails.push({ id: inv.id, amount: inv.amount });
               totalAmount += inv.amount;
             }
           }
@@ -791,6 +792,7 @@ export class ChatbotService {
 
           state.step = 'AWAITING_PAYMENT_METHOD_MANUAL';
           state.selected_invoices = selectedInvoices;
+          state.selected_invoices_details = selectedInvoicesDetails;
           state.total_amount = totalAmount.toFixed(2);
           this.stateStore.set(fromNumber, state);
 

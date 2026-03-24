@@ -2,10 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { useContainer } from 'class-validator';
-import { ConfigType } from '@nestjs/config';
-
-import config from './config/configurations';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -29,8 +27,9 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  const appConfig = app.get<ConfigType<typeof config>>(config.KEY);
-  await app.listen(appConfig.server.port ?? 3000);
+  const configService = app.get(ConfigService);
+  const port = configService.get('PORT');
+  await app.listen(port ?? 3000);
   Logger.log(`Application is running on: ${await app.getUrl()}`, 'Bootstrap');
 }
 bootstrap();

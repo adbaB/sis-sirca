@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { OcrService } from './ocr.service';
 import * as Tesseract from 'tesseract.js';
-import config from '../config/configurations';
 
 jest.mock('tesseract.js');
 jest.mock('openai');
@@ -14,10 +14,14 @@ describe('OcrService', () => {
       providers: [
         OcrService,
         {
-          provide: config.KEY,
+          provide: ConfigService,
           useValue: {
-            openrouter: { apiKey: 'test-api-key' },
-            env: 'test',
+            get: jest.fn().mockImplementation((key: string) => {
+              if (key === 'config.openrouter.apiKey') {
+                return 'test-api-key';
+              }
+              return null;
+            }),
           },
         },
       ],

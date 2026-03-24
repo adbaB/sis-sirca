@@ -98,7 +98,31 @@ export class PersonsService {
   async update(id: string, updatePersonDto: UpdatePersonDto): Promise<Person> {
     const person = await this.findOne(id);
     const { planId, contractId, role, ...updateData } = updatePersonDto;
-    const resolvedRole = role || PersonRole.AFILIADO;
+
+    // Fast-fail: Validate contract existence before touching the database
+    let contract = null;
+    if (contractId) {
+      contract = await this.contractsService.findOne(contractId);
+      if (!contract) {
+        throw new NotFoundException(`Contract with ID "${contractId}" not found`);
+      }
+    }
+
+    // Determine the role. If omitted in the DTO, default to their existing role in the target contract,
+    // or fallback to AFILIADO if this is a brand new junction.
+    let resolvedRole = role;
+    let existingJunction = null;
+
+    if (contractId) {
+      existingJunction = await this.contractPersonRepository.findOne({
+        where: { contract: { id: contractId }, person: { id: person.id } },
+      });
+      if (!resolvedRole) {
+        resolvedRole = existingJunction ? existingJunction.role : PersonRole.AFILIADO;
+      }
+    } else {
+      resolvedRole = role || PersonRole.AFILIADO;
+    }
 
     let plan = person.plan;
     // Update global plan if specified and we are dealing with an AFILIADO context.
@@ -127,17 +151,7 @@ export class PersonsService {
             contractsToRecalculate.add(cp.contract.id);
           }
         }
-      } else {
-        const contract = await this.contractsService.findOne(contractId);
-        if (!contract) {
-          throw new NotFoundException(`Contract with ID "${contractId}" not found`);
-        }
-
-        // Check if person is already in the contract
-        const existingJunction = await this.contractPersonRepository.findOne({
-          where: { contract: { id: contractId }, person: { id: savedPerson.id } },
-        });
-
+      } else if (contract) {
         if (resolvedRole === PersonRole.AFILIADO) {
           // Validation: an AFILIADO can only be in one contract. If they are in others, remove them.
           const existingAfiliadoJunctions = await this.contractPersonRepository.find({
@@ -154,8 +168,11 @@ export class PersonsService {
         }
 
         if (existingJunction) {
-          existingJunction.role = resolvedRole;
-          await this.contractPersonRepository.save(existingJunction);
+          // Update the existing role if a new one was provided
+          if (role) {
+            existingJunction.role = role;
+            await this.contractPersonRepository.save(existingJunction);
+          }
         } else {
           const contractPerson = this.contractPersonRepository.create({
             contract,
@@ -187,7 +204,11 @@ export class PersonsService {
     const person = await this.findOne(id);
     const contractIds = person.contractPersons?.map((cp) => cp.contract.id) || [];
 
-    // We soft remove the person. This cascades, or we need to clean up junctions.
+    // Clean up junction tables to prevent orphaned records.
+    if (person.contractPersons && person.contractPersons.length > 0) {
+      await this.contractPersonRepository.remove(person.contractPersons);
+    }
+
     await this.personsRepository.softRemove(person);
 
     for (const contractId of contractIds) {
