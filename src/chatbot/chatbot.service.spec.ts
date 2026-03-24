@@ -203,7 +203,7 @@ describe('ChatbotService', () => {
       );
     });
 
-    it('should open flow and offer manual payment on realizar_pago', async () => {
+    it('should open flow and NOT offer manual payment proactively on realizar_pago if successful', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
@@ -219,6 +219,56 @@ describe('ChatbotService', () => {
         }),
         expect.any(Object),
       );
+
+      expect(mockedAxios.post).not.toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          text: { body: expect.stringContaining('pago manual') },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should offer manual payment if sendFlowMessage fails', async () => {
+      mockedAxios.post.mockRejectedValueOnce(new Error('Flow failed'));
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      mockedAxios.post.mockClear();
+      mockedAxios.post.mockRejectedValueOnce(new Error('Flow failed')); // Reject flow message
+
+      await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '123',
+          text: { body: expect.stringContaining('pago manual') },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should handle webhook failed statuses by offering manual payment', async () => {
+      const failedStatusMessage = {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  statuses: [
+                    {
+                      status: 'failed',
+                      recipient_id: '123',
+                      errors: [{ code: 130429, title: 'Rate limit hit' }],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      await service.handleIncomingMessage(failedStatusMessage);
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',

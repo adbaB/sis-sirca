@@ -113,14 +113,14 @@ export class ChatbotService {
     }
   }
 
-  private async sendFlowMessage(to: string, text: string): Promise<void> {
+  private async sendFlowMessage(to: string, text: string): Promise<boolean> {
     const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
     const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
     const flowId = this.configService.get<string>('META_FLOW_ID');
 
     if (!accessToken || !phoneNumberId || !flowId) {
       this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
-      return;
+      return false;
     }
 
     try {
@@ -165,11 +165,13 @@ export class ChatbotService {
           },
         },
       );
+      return true;
     } catch (error) {
       this.logger.error(
         `Error sending flow message to ${to}:`,
         error?.response?.data || error.message,
       );
+      return false;
     }
   }
 
@@ -321,6 +323,14 @@ export class ChatbotService {
     entry?: Array<{
       changes?: Array<{
         value?: {
+          statuses?: Array<{
+            status: string;
+            recipient_id: string;
+            errors?: Array<{
+              code: number;
+              title: string;
+            }>;
+          }>;
           messages?: Array<{
             from: string;
             type?: string;
@@ -348,7 +358,18 @@ export class ChatbotService {
       const entry = body.entry?.[0];
       const changes = entry?.changes?.[0];
       const value = changes?.value;
+
+      const statusObj = value?.statuses?.[0];
       const message = value?.messages?.[0];
+
+      if (statusObj && statusObj.status === 'failed' && statusObj.errors) {
+        this.logger.warn(`Message delivery failed for ${statusObj.recipient_id}. Offering manual flow fallback.`);
+        await this.sendMessage(
+          statusObj.recipient_id,
+          'Tuvimos problemas para enviar o abrir el formulario seguro en tu dispositivo. Por favor, escribe *pago manual* para continuar por este chat.',
+        );
+        return;
+      }
 
       if (!message) {
         return;
@@ -373,8 +394,8 @@ export class ChatbotService {
       // If no state or user wants to restart, initialize state.
       if (
         !state ||
-        incomingText.toLowerCase() === 'hola' ||
-        incomingText.toLowerCase() === 'reiniciar'
+        incomingText?.toLowerCase() === 'hola' ||
+        incomingText?.toLowerCase() === 'reiniciar'
       ) {
         state = { step: 'AWAITING_NAME' };
         this.stateStore.delete(fromNumber); // Reset
@@ -427,18 +448,20 @@ export class ChatbotService {
       }
 
       if (incomingText === 'realizar_pago') {
-        await this.sendFlowMessage(
+        const success = await this.sendFlowMessage(
           fromNumber,
           'Haz clic en el botón de abajo para iniciar el proceso de pago seguro.',
         );
-        await this.sendMessage(
-          fromNumber,
-          'Si tienes problemas para abrir el formulario, escribe *pago manual* para continuar por chat.',
-        );
+        if (!success) {
+          await this.sendMessage(
+            fromNumber,
+            'Si tienes problemas para abrir el formulario, escribe *pago manual* para continuar por chat.',
+          );
+        }
         return;
       }
 
-      if (incomingText.toLowerCase() === 'pago manual') {
+      if (incomingText?.toLowerCase() === 'pago manual') {
         state = { step: 'AWAITING_DOC_INFO_MANUAL' };
         this.stateStore.set(fromNumber, state);
         await this.sendMessage(
