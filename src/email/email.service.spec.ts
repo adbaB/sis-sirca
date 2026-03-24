@@ -1,41 +1,41 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { EmailService } from './email.service';
 import { InternalServerErrorException } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import configurations from '../config/configurations';
 import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
 
-jest.mock('nodemailer');
+jest.mock('@aws-sdk/client-ses', () => {
+  return {
+    SESClient: jest.fn(),
+    SendEmailCommand: jest.fn((input) => ({ input })),
+  };
+});
 
 describe('EmailService', () => {
   let service: EmailService;
-
-  const mockSendMail = jest.fn();
+  let sesClientSendMock: jest.Mock;
 
   const mockConfigService = {
-    get: jest.fn((key) => {
-      const config = {
-        SMTP_HOST: 'smtp.test.com',
-        SMTP_PORT: 587,
-        SMTP_SECURE: false,
-        SMTP_USER: 'test@test.com',
-        SMTP_PASS: 'password',
-        SMTP_FROM: 'noreply@sirca.com',
-      };
-      return config[key as keyof typeof config];
-    }),
+    aws: {
+      region: 'us-east-1',
+      accessKeyId: 'test-access-key',
+      secretAccessKey: 'test-secret-key',
+      sesFromEmail: 'noreply@sirca.com',
+    },
   };
 
   beforeEach(async () => {
-    (nodemailer.createTransport as jest.Mock).mockReturnValue({
-      sendMail: mockSendMail,
-    });
+    sesClientSendMock = jest.fn();
+    (SESClient as jest.Mock).mockImplementation(() => ({
+      send: sesClientSendMock,
+    }));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EmailService,
         {
-          provide: ConfigService,
+          provide: configurations.KEY,
           useValue: mockConfigService,
         },
       ],
@@ -52,7 +52,7 @@ describe('EmailService', () => {
 
   describe('sendPaymentConfirmation', () => {
     it('should successfully send an email', async () => {
-      mockSendMail.mockResolvedValueOnce({ messageId: '12345' });
+      sesClientSendMock.mockResolvedValueOnce({ MessageId: '12345' });
 
       const userInfo: SubmitPaymentDto = {
         name: 'Test Customer',
@@ -62,18 +62,20 @@ describe('EmailService', () => {
 
       await service.sendPaymentConfirmation('recipient@test.com', userInfo, receiptUrl);
 
-      expect(mockSendMail).toHaveBeenCalledWith(
+      expect(sesClientSendMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          from: 'noreply@sirca.com',
-          to: 'recipient@test.com',
-          subject: 'Confirmación de Pago - SIRCA Seguros',
-          html: expect.stringContaining(receiptUrl),
+          input: expect.objectContaining({
+            Source: 'noreply@sirca.com',
+            Destination: { ToAddresses: ['recipient@test.com'] },
+          }),
         }),
       );
+      const commandArgs = sesClientSendMock.mock.calls[0][0].input;
+      expect(commandArgs.Message.Body.Html.Data).toContain(receiptUrl);
     });
 
     it('should throw InternalServerErrorException on mail failure', async () => {
-      mockSendMail.mockRejectedValue(new Error('SMTP Error'));
+      sesClientSendMock.mockRejectedValue(new Error('SES Error'));
 
       const userInfo: SubmitPaymentDto = {
         name: 'Test Customer',
@@ -86,7 +88,7 @@ describe('EmailService', () => {
 
       await expect(
         service.sendPaymentConfirmation('recipient@test.com', userInfo, 'url'),
-      ).rejects.toThrow('Failed to send email: SMTP Error');
+      ).rejects.toThrow('Failed to send email: SES Error');
     });
   });
 });
