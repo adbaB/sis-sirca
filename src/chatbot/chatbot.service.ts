@@ -1,10 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import axios from 'axios';
+import * as crypto from 'crypto';
 import { AwsService } from '../aws/aws.service';
+import { BillingService } from '../billing/services/billing.service';
+import config from '../config/configurations';
 import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
-import { BillingService } from '../billing/services/billing.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
@@ -36,7 +38,8 @@ export class ChatbotService {
   private stateStore = new Map<string, UserState>();
 
   constructor(
-    private configService: ConfigService,
+    @Inject(config.KEY)
+    private readonly configService: ConfigType<typeof config>,
     private awsService: AwsService,
     private emailService: EmailService,
     private ocrService: OcrService,
@@ -44,8 +47,8 @@ export class ChatbotService {
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
-    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
       this.logger.error('Missing Meta access token or phone number ID in configuration.');
@@ -77,8 +80,8 @@ export class ChatbotService {
     text: string,
     buttons: Array<{ type: string; reply: { id: string; title: string } }>,
   ): Promise<void> {
-    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
       this.logger.error('Missing Meta access token or phone number ID in configuration.');
@@ -115,9 +118,9 @@ export class ChatbotService {
   }
 
   private async sendFlowMessage(to: string, text: string): Promise<boolean> {
-    const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
-    const phoneNumberId = this.configService.get<string>('META_PHONE_NUMBER_ID');
-    const flowId = this.configService.get<string>('META_FLOW_ID');
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
+    const flowId = this.configService.meta.flowId;
 
     if (!accessToken || !phoneNumberId || !flowId) {
       this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
@@ -147,8 +150,9 @@ export class ChatbotService {
             action: {
               name: 'flow',
               parameters: {
+                mode: 'draft',
                 flow_message_version: '3',
-                flow_token: 'payment_flow_token',
+                flow_token: crypto.randomUUID(),
                 flow_id: flowId,
                 flow_cta: 'Realizar pago',
                 flow_action: 'navigate',
@@ -181,8 +185,8 @@ export class ChatbotService {
     encrypted_flow_data: string;
     initial_vector: string;
   }): Promise<string> {
-    const privateKey = this.configService.get<string>('config.meta.flowPrivateKey');
-    const passphrase = this.configService.get<string>('config.meta.flowPassphrase');
+    const privateKey = this.configService.meta.flowPrivateKey;
+    const passphrase = this.configService.meta.flowPassphrase;
 
     if (!privateKey) {
       this.logger.warn(
@@ -209,6 +213,20 @@ export class ChatbotService {
         initial_vector,
       );
 
+      // Debug: Meta Flow Data Exchange a veces hace "checks" (handshake/health).
+      // Logueamos lo mínimo para poder identificar la acción sin exponer payload completo.
+      const action = (decryptedPayload as Record<string, unknown>)?.action as string | undefined;
+      const data = ((decryptedPayload as Record<string, unknown>)?.data || {}) as Record<
+        string,
+        unknown
+      >;
+      const dataAction = data?.action as string | undefined;
+      this.logger.log(
+        `[FlowDataExchange] action=${action ?? 'undefined'} data.action=${dataAction ?? 'undefined'} dataKeys=${
+          Object.keys(data).join(',') || 'none'
+        }`,
+      );
+
       const responseObj = await this.handleFlowDataExchange(decryptedPayload);
 
       const encryptedResponse = FlowsCryptoUtil.encryptResponse(
@@ -226,6 +244,22 @@ export class ChatbotService {
   async handleFlowDataExchange(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const action = body?.action as string | undefined;
     const data = (body?.data || {}) as Record<string, unknown>;
+
+    const normalizedAction = action?.toUpperCase();
+    // Respuesta esperada para tests/health checks del Flow (evita caer en "Acción no reconocida").
+    if (
+      normalizedAction === 'CHECK' ||
+      normalizedAction === 'PING' ||
+      normalizedAction === 'STATUS' ||
+      normalizedAction === 'VERIFICATION'
+    ) {
+      return {
+        screen: 'SCREEN_IDENTIFICATION',
+        data: {
+          status: 'active',
+        },
+      };
+    }
 
     if (action === 'INIT') {
       return {
@@ -411,13 +445,13 @@ export class ChatbotService {
         this.stateStore.delete(fromNumber); // Reset
 
         const buttons = [
-          { type: 'reply', reply: { id: 'info_planes', title: '1. Info de planes' } },
-          { type: 'reply', reply: { id: 'realizar_pago', title: '2. Realizar pago' } },
+          { type: 'reply', reply: { id: 'info_planes', title: 'Ver planes 📋' } },
+          { type: 'reply', reply: { id: 'realizar_pago', title: 'Pagar mi seguro 💳' } },
         ];
 
         await this.sendInteractiveMessage(
           fromNumber,
-          '¡Hola! Soy Helena, tu asistente virtual de SIRCA Seguros. ¿En qué puedo ayudarte hoy?',
+          '¡Hola! Soy Helena de SIRCA Seguros. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
           buttons,
         );
 
@@ -439,7 +473,7 @@ export class ChatbotService {
           this.stateStore.set(fromNumber, state);
           await this.sendMessage(
             fromNumber,
-            'Por favor, envía la imagen del comprobante de pago (capture) por aquí.',
+            '¡Perfecto! Para completar tu registro, por favor envíame por aquí una captura o foto de tu comprobante de pago. ✨',
           );
           return;
         } catch (e) {
@@ -451,7 +485,7 @@ export class ChatbotService {
       if (incomingText === 'info_planes') {
         await this.sendMessage(
           fromNumber,
-          'Para información sobre nuestros planes, por favor contacta a nuestro asesor comercial:\n\n📱 WhatsApp: +58 414-XXXXXXX\n📧 Correo: ventas@sirca.com',
+          '¡Claro! Te pongo en contacto con nuestro asesor comercial para que te dé todos los detalles de los planes. ✨\n\nÉl te espera por aquí:\n📱 *WhatsApp:* +58 412-1201012 (https://wa.me/584121201012)\n\n¡Seguro encontrará el plan ideal para ti! 😊',
         );
         this.stateStore.delete(fromNumber);
         return;
@@ -460,7 +494,7 @@ export class ChatbotService {
       if (incomingText === 'realizar_pago') {
         const success = await this.sendFlowMessage(
           fromNumber,
-          'Haz clic en el botón de abajo para iniciar el proceso de pago seguro.',
+          '¡Perfecto! Para que sea más rápido, he preparado un pequeño formulario aquí mismo. Haz clic abajo para completar tus datos de pago de forma segura. ✨',
         );
 
         if (!success) {
@@ -485,10 +519,10 @@ export class ChatbotService {
             try {
               await this.sendMessage(
                 fromNumber,
-                'Estamos procesando tu comprobante, un momento por favor...',
+                '¡Recibido! 📥 Dame tan solo un momento mientras valido los datos de tu comprobante. ¡Ya casi terminamos!',
               );
 
-              const accessToken = this.configService.get<string>('META_ACCESS_TOKEN');
+              const accessToken = this.configService.meta.accessToken;
 
               // 1. Get media URL
               const mediaResponse = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
@@ -532,7 +566,11 @@ export class ChatbotService {
 
                 await this.sendInteractiveMessage(
                   fromNumber,
-                  `Hemos detectado los siguientes datos de tu pago:\n\nReferencia: ${extractedData.referencia || 'No detectada'}\nMonto: ${extractedData.monto || 'No detectado'}\nBanco: ${extractedData.nombreBanco || 'No detectado'}\n\n¿Son correctos?`,
+                  `¡Listo! He revisado tu comprobante y esto es lo que encontré: ✨\n\n` +
+                    `📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n` +
+                    `💰 *Monto:* ${extractedData.monto || 'No detectado'}\n` +
+                    `🏦 *Banco:* ${extractedData.nombreBanco || 'No detectado'}\n\n` +
+                    `¿Me confirmas si los datos están correctos para continuar? 👍`,
                   buttons,
                 );
               } catch (ocrError) {
@@ -541,20 +579,20 @@ export class ChatbotService {
                 this.stateStore.set(fromNumber, state);
                 await this.sendMessage(
                   fromNumber,
-                  'No pudimos extraer los datos del comprobante automáticamente. Por favor, escribe los datos manualmente en el siguiente formato:\n\nReferencia, Banco, Monto',
+                  '¡Uy! No logré leer todos los datos de tu comprobante automáticamente. 📝\n\n¿Podrías escribirlos tú mismo para avanzar? Usa este formato, por favor:\n\nReferencia, Banco, Monto\n\n*(Ejemplo: 123456, Mercantil, 100)*',
                 );
               }
             } catch (error) {
               this.logger.error('Error processing media:', error?.response?.data || error.message);
               await this.sendMessage(
                 fromNumber,
-                'Hubo un error al procesar tu comprobante. Por favor, intenta enviarlo de nuevo.',
+                '¡Lo siento! Hubo un pequeño problema al procesar la imagen de tu comprobante. 🔄\n\n¿Podrías intentar enviarla de nuevo? Asegúrate de que se vea clarito. ✨',
               );
             }
           } else {
             await this.sendMessage(
               fromNumber,
-              'Aún no he recibido ninguna imagen. Por favor, adjunta tu comprobante de pago (capture).',
+              'Aún no me ha llegado la imagen. 🧐\n\nRecuerda adjuntar la captura de tu comprobante de pago por aquí para que pueda ayudarte a registrarlo.',
             );
           }
           break;
@@ -585,13 +623,13 @@ export class ChatbotService {
               this.stateStore.delete(fromNumber);
               await this.sendMessage(
                 fromNumber,
-                '¡Tu pago ha sido registrado exitosamente! Hemos notificado a nuestro equipo administrativo. Gracias por confiar en SIRCA Seguros.',
+                '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
               );
             } catch (e) {
               this.logger.error('Error saving payment', e);
               await this.sendMessage(
                 fromNumber,
-                'Hubo un error al guardar tu pago. Por favor contacta soporte.',
+                '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
               );
             }
           } else if (incomingText === 'datos_incorrectos') {
@@ -599,7 +637,7 @@ export class ChatbotService {
             this.stateStore.set(fromNumber, state);
             await this.sendMessage(
               fromNumber,
-              'Por favor, escribe los datos de tu pago en el siguiente formato, separados por comas:\n\nReferencia, Banco, Monto\n\nEjemplo: 123456, Mercantil, 100',
+              'Para que el sistema lo reconozca rápido, por favor escribe los datos separados por comas, así: ✍️\n\nReferencia, Banco, Monto\n\n💡 Ejemplo: 123456, Mercantil, 100',
             );
           }
           break;
@@ -608,7 +646,7 @@ export class ChatbotService {
           if (!incomingText || !incomingText.includes(',')) {
             await this.sendMessage(
               fromNumber,
-              'Formato inválido. Por favor, usa el formato: Referencia, Banco, Monto\nEjemplo: 123456, Mercantil, 100',
+              '¡Casi lo tenemos! Pero el formato no es el correcto. ✨\n\nInténtalo de nuevo así: Referencia, Banco, Monto\n(Por ejemplo: 123456, Mercantil, 100)',
             );
             return;
           }
@@ -639,13 +677,13 @@ export class ChatbotService {
             this.stateStore.delete(fromNumber);
             await this.sendMessage(
               fromNumber,
-              '¡Tu pago ha sido registrado exitosamente! Hemos notificado a nuestro equipo administrativo. Gracias por confiar en SIRCA Seguros.',
+              '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
             );
           } catch (e) {
             this.logger.error('Error saving payment manual', e);
             await this.sendMessage(
               fromNumber,
-              'Hubo un error al guardar tu pago. Por favor contacta soporte.',
+              '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
             );
           }
           break;

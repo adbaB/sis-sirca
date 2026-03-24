@@ -5,6 +5,25 @@ import * as crypto from 'crypto';
  * Complies with Meta's AES-GCM and RSA-OAEP specifications.
  */
 export class FlowsCryptoUtil {
+  // WhatsApp Flows Data Exchange con AES-256-GCM puede venir con nonces/IV de 12 o 16 bytes.
+  // Usamos ambos porque el cliente observado envía 16 bytes.
+  private static readonly ALLOWED_IV_LENGTHS = new Set<number>([12, 16]);
+
+  private static decodeBase64OrBase64Url(input: string): Buffer {
+    // Meta puede enviar strings en base64url (caracteres '-' y '_').
+    // Convertimos a base64 estándar y agregamos padding si falta.
+    const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
+    const padLen = normalized.length % 4;
+    const padded = padLen === 0 ? normalized : normalized + '='.repeat(4 - padLen);
+    return Buffer.from(padded, 'base64');
+  }
+
+  private static getAesGcmAlgorithmByKeyLength(keyLengthBytes: number): string {
+    if (keyLengthBytes === 16) return 'aes-128-gcm';
+    if (keyLengthBytes === 32) return 'aes-256-gcm';
+    throw new Error(`Invalid AES key length: ${keyLengthBytes} bytes. Expected 16 or 32.`);
+  }
+
   /**
    * Decrypts the AES key using the RSA Private Key.
    * @param encryptedAesKey Base64 encoded encrypted AES key from the client.
@@ -20,7 +39,7 @@ export class FlowsCryptoUtil {
         padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
         oaepHash: 'sha256',
       },
-      Buffer.from(encryptedAesKey, 'base64'),
+      FlowsCryptoUtil.decodeBase64OrBase64Url(encryptedAesKey),
     );
   }
 
@@ -36,12 +55,12 @@ export class FlowsCryptoUtil {
     encryptedPayload: string,
     iv: string,
   ): Record<string, unknown> {
-    const ivBuffer = Buffer.from(iv, 'base64');
-    if (ivBuffer.length !== 12) {
-      throw new Error(`Invalid IV length. Expected 12 bytes, got ${ivBuffer.length}`);
+    const ivBuffer = FlowsCryptoUtil.decodeBase64OrBase64Url(iv);
+    if (!FlowsCryptoUtil.ALLOWED_IV_LENGTHS.has(ivBuffer.length)) {
+      throw new Error(`Invalid IV length. Expected 12 or 16 bytes, got ${ivBuffer.length}`);
     }
 
-    const payloadBuffer = Buffer.from(encryptedPayload, 'base64');
+    const payloadBuffer = FlowsCryptoUtil.decodeBase64OrBase64Url(encryptedPayload);
     const authTagLength = 16;
     if (payloadBuffer.length <= authTagLength) {
       throw new Error('Encrypted payload is too short to contain a valid AES-GCM auth tag.');
@@ -50,7 +69,12 @@ export class FlowsCryptoUtil {
     const ciphertext = payloadBuffer.subarray(0, payloadBuffer.length - authTagLength);
     const authTag = payloadBuffer.subarray(payloadBuffer.length - authTagLength);
 
-    const decipher = crypto.createDecipheriv('aes-256-gcm', decryptedAesKey, ivBuffer);
+    const algorithm = FlowsCryptoUtil.getAesGcmAlgorithmByKeyLength(decryptedAesKey.length);
+    const decipher = crypto.createDecipheriv(
+      algorithm,
+      decryptedAesKey,
+      ivBuffer,
+    ) as crypto.DecipherGCM;
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(ciphertext, undefined, 'utf8');
@@ -71,18 +95,20 @@ export class FlowsCryptoUtil {
     decryptedAesKey: Buffer,
     iv: string,
   ): string {
-    const ivBuffer = Buffer.from(iv, 'base64');
-    if (ivBuffer.length !== 12) {
-      throw new Error(`Invalid IV length. Expected 12 bytes, got ${ivBuffer.length}`);
+    const ivBuffer = FlowsCryptoUtil.decodeBase64OrBase64Url(iv);
+    if (!FlowsCryptoUtil.ALLOWED_IV_LENGTHS.has(ivBuffer.length)) {
+      throw new Error(`Invalid IV length. Expected 12 or 16 bytes, got ${ivBuffer.length}`);
     }
 
     // Flip the IV per Meta specifications (XOR inverted IV)
-    const flippedIv = Buffer.alloc(12);
-    for (let i = 0; i < 12; i++) {
-      flippedIv[i] = ~ivBuffer[i];
+    const flippedIv = Buffer.alloc(ivBuffer.length);
+    for (let i = 0; i < ivBuffer.length; i++) {
+      // Garantiza el comportamiento de byte (0..255)
+      flippedIv[i] = ~ivBuffer[i] & 0xff;
     }
 
-    const cipher = crypto.createCipheriv('aes-256-gcm', decryptedAesKey, flippedIv);
+    const algorithm = FlowsCryptoUtil.getAesGcmAlgorithmByKeyLength(decryptedAesKey.length);
+    const cipher = crypto.createCipheriv(algorithm, decryptedAesKey, flippedIv) as crypto.CipherGCM;
 
     const jsonString = JSON.stringify(payloadObj);
     const encryptedBuffer = Buffer.concat([cipher.update(jsonString, 'utf8'), cipher.final()]);
