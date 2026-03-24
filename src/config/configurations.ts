@@ -40,15 +40,8 @@ export default registerAs('config', () => {
       region: process.env.AWS_REGION,
       accessKeyId: process.env.AWS_ACCESS_KEY_ID,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      sesFromEmail: process.env.SES_FROM_EMAIL || 'noreply@sirca.com',
       s3Bucket: process.env.AWS_S3_BUCKET,
-    },
-    smtp: {
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT ?? '0', 10),
-      secure: (process.env.SMTP_SECURE ?? '').toLowerCase() === 'true',
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-      from: process.env.SMTP_FROM,
     },
 
     env: process.env.NODE_ENV || 'development',
