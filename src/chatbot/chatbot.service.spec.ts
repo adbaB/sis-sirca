@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import axios from 'axios';
 import { AwsService } from '../aws/aws.service';
@@ -6,6 +5,7 @@ import { EmailService } from '../email/email.service';
 import { ChatbotService } from './chatbot.service';
 import { OcrService } from '../ocr/ocr.service';
 import { BillingService } from '../billing/services/billing.service';
+import config from '../config/configurations';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -14,10 +14,6 @@ describe('ChatbotService', () => {
   let service: ChatbotService;
   // let awsService: AwsService;
   // let emailService: EmailService;
-
-  const mockConfigService = {
-    get: jest.fn(),
-  };
 
   const mockAwsService = {
     uploadFile: jest.fn(),
@@ -41,7 +37,20 @@ describe('ChatbotService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatbotService,
-        { provide: ConfigService, useValue: mockConfigService },
+        {
+          provide: config.KEY,
+          useValue: {
+            meta: {
+              accessToken: 'token',
+              phoneNumberId: 'phoneid',
+              flowId: '123456789',
+              appSecret: 'mockAppSecret',
+              flowPrivateKey: 'mockFlowPrivateKey',
+              flowPassphrase: 'mockPassphrase',
+              verifyToken: 'mockVerifyToken',
+            },
+          },
+        },
         { provide: AwsService, useValue: mockAwsService },
         { provide: EmailService, useValue: mockEmailService },
         { provide: OcrService, useValue: mockOcrService },
@@ -64,12 +73,6 @@ describe('ChatbotService', () => {
 
   describe('handleIncomingMessage', () => {
     beforeEach(() => {
-      mockConfigService.get.mockImplementation((key: string) => {
-        if (key === 'META_ACCESS_TOKEN') return 'token';
-        if (key === 'META_PHONE_NUMBER_ID') return 'phoneid';
-        if (key === 'META_FLOW_ID') return '123456789';
-        return null;
-      });
       mockedAxios.post.mockResolvedValue({});
     });
 
@@ -148,7 +151,7 @@ describe('ChatbotService', () => {
           interactive: expect.objectContaining({
             type: 'button',
             body: expect.objectContaining({
-              text: expect.stringContaining('¿En qué puedo ayudarte hoy?'),
+              text: expect.stringContaining('¿en qué puedo apoyarte hoy?'),
             }),
             action: expect.objectContaining({
               buttons: expect.arrayContaining([
@@ -285,7 +288,23 @@ describe('ChatbotService', () => {
 
     it('should safely ignore failed webhooks for non-flow interactions', async () => {
       const failedStatusMessage = {
-        entry: [{ changes: [{ value: { statuses: [{ status: 'failed', recipient_id: '456', errors: [{ code: 1, title: 'error' }] }] } }] }],
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  statuses: [
+                    {
+                      status: 'failed',
+                      recipient_id: '456',
+                      errors: [{ code: 1, title: 'error' }],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
       };
       await service.handleIncomingMessage(failedStatusMessage);
 
@@ -314,8 +333,20 @@ describe('ChatbotService', () => {
       );
 
       mockBillingService.findPendingInvoicesByIdentityCard.mockResolvedValueOnce([
-        { id: 'inv1', billingMonth: 'Jan 2024', totalAmount: '100', paidAmount: '0', contract: { code: 'CT-1' } },
-        { id: 'inv2', billingMonth: 'Feb 2024', totalAmount: '50', paidAmount: '0', contract: { code: 'CT-2' } },
+        {
+          id: 'inv1',
+          billingMonth: 'Jan 2024',
+          totalAmount: '100',
+          paidAmount: '0',
+          contract: { code: 'CT-1' },
+        },
+        {
+          id: 'inv2',
+          billingMonth: 'Feb 2024',
+          totalAmount: '50',
+          paidAmount: '0',
+          contract: { code: 'CT-2' },
+        },
       ]);
 
       await service.handleIncomingMessage(createMetaMessage('123', 'V-1234567'));

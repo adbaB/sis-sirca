@@ -41,7 +41,13 @@ const makePerson = (overrides: Record<string, unknown> = {}) => {
   let defaultContractPersons = [{ role: 'AFILIADO', contract: makeContract() }];
 
   if (overridesCopy.contract) {
-    defaultContractPersons = [{ role: 'AFILIADO', contract: overridesCopy.contract as import('../../contracts/entities/contract.entity').Contract }];
+    defaultContractPersons = [
+      {
+        role: 'AFILIADO',
+        contract:
+          overridesCopy.contract as import('../../contracts/entities/contract.entity').Contract,
+      },
+    ];
     delete overridesCopy.contract;
   }
 

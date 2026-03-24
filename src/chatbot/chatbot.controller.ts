@@ -4,6 +4,7 @@ import {
   Get,
   HttpStatus,
   Logger,
+  Inject,
   Post,
   Query,
   Req,
@@ -13,6 +14,8 @@ import {
 import { Request, Response } from 'express';
 import { ChatbotService } from './chatbot.service';
 import { MetaSignatureGuard } from './guards/meta-signature.guard';
+import { ConfigType } from '@nestjs/config';
+import config from '../config/configurations';
 
 interface FlowEndpointBody {
   encrypted_aes_key: string;
@@ -24,7 +27,11 @@ interface FlowEndpointBody {
 export class ChatbotController {
   private readonly logger = new Logger(ChatbotController.name);
 
-  constructor(private readonly chatbotService: ChatbotService) {}
+  constructor(
+    private readonly chatbotService: ChatbotService,
+    @Inject(config.KEY)
+    private readonly configService: ConfigType<typeof config>,
+  ) {}
 
   @Get('webhook')
   verifyWebhook(
@@ -33,7 +40,7 @@ export class ChatbotController {
     @Query('hub.challenge') challenge: string,
     @Res() response: Response,
   ) {
-    const verifyToken = process.env.META_VERIFY_TOKEN;
+    const verifyToken = this.configService.meta.verifyToken;
 
     if (mode && token) {
       if (mode === 'subscribe' && token === verifyToken) {

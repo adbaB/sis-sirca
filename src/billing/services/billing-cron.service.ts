@@ -86,9 +86,10 @@ export class BillingCronService {
         return; // Skip this contract as it already has an invoice for this month
       }
 
-      const activeAfiliados = contract.contractPersons?.filter(
-        (cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE,
-      ).map(cp => cp.person) || [];
+      const activeAfiliados =
+        contract.contractPersons
+          ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
+          .map((cp) => cp.person) || [];
 
       if (activeAfiliados.length === 0) {
         // No active afiliado persons, skip invoice generation
@@ -111,7 +112,9 @@ export class BillingCronService {
         totalAmount += amount;
 
         if (!Number.isFinite(amount) || amount < 0) {
-          throw new Error(`Invalid plan amount for afiliado ${person.id} in contract ${contract.id}`);
+          throw new Error(
+            `Invalid plan amount for afiliado ${person.id} in contract ${contract.id}`,
+          );
         }
 
         return {

@@ -198,7 +198,7 @@ export class SyncService {
         if (person) {
           // Check if person is already linked to this contract with AFILIADO role
           const isLinkedToContract = person.contractPersons?.some(
-            (cp) => cp.contract?.id === contract.id && cp.role === 'AFILIADO'
+            (cp) => cp.contract?.id === contract.id && cp.role === 'AFILIADO',
           );
 
           const hasChanges =
