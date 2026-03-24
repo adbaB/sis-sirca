@@ -15,6 +15,7 @@ interface UserState {
     | 'AWAITING_CAPTURE'
     | 'AWAITING_CONFIRMATION'
     | 'AWAITING_MANUAL_INPUT'
+    | 'AWAITING_FLOW_INTERACTION'
     | 'AWAITING_DOC_INFO_MANUAL'
     | 'AWAITING_INVOICE_SELECTION_MANUAL'
     | 'AWAITING_PAYMENT_METHOD_MANUAL';
@@ -363,11 +364,20 @@ export class ChatbotService {
       const message = value?.messages?.[0];
 
       if (statusObj && statusObj.status === 'failed' && statusObj.errors) {
-        this.logger.warn(`Message delivery failed for ${statusObj.recipient_id}. Offering manual flow fallback.`);
-        await this.sendMessage(
-          statusObj.recipient_id,
-          'Tuvimos problemas para enviar o abrir el formulario seguro en tu dispositivo. Por favor, escribe *pago manual* para continuar por este chat.',
-        );
+        const recipientId = statusObj.recipient_id;
+        const recipientState = this.stateStore.get(recipientId);
+
+        // Only initiate manual fallback if we specifically failed to send/deliver the Flow message
+        if (recipientState?.step === 'AWAITING_FLOW_INTERACTION') {
+          this.logger.warn(`Flow message delivery failed for ${recipientId}. Initiating manual flow fallback.`);
+          this.stateStore.set(recipientId, { step: 'AWAITING_DOC_INFO_MANUAL' });
+          await this.sendMessage(
+            recipientId,
+            'Tuvimos problemas para enviar o abrir el formulario seguro en tu dispositivo. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
+          );
+        } else {
+          this.logger.error(`Message delivery failed for ${recipientId}. Errors:`, statusObj.errors);
+        }
         return;
       }
 
@@ -452,22 +462,20 @@ export class ChatbotService {
           fromNumber,
           'Haz clic en el botón de abajo para iniciar el proceso de pago seguro.',
         );
+
         if (!success) {
+          // If flow sending synchronously fails, transition automatically
+          state = { step: 'AWAITING_DOC_INFO_MANUAL' };
+          this.stateStore.set(fromNumber, state);
           await this.sendMessage(
             fromNumber,
-            'Si tienes problemas para abrir el formulario, escribe *pago manual* para continuar por chat.',
+            'Tuvimos problemas para iniciar el formulario seguro. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
           );
+        } else {
+          // Await flow interaction or a webhook failure status
+          state = { step: 'AWAITING_FLOW_INTERACTION' };
+          this.stateStore.set(fromNumber, state);
         }
-        return;
-      }
-
-      if (incomingText?.toLowerCase() === 'pago manual') {
-        state = { step: 'AWAITING_DOC_INFO_MANUAL' };
-        this.stateStore.set(fromNumber, state);
-        await this.sendMessage(
-          fromNumber,
-          'Por favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
-        );
         return;
       }
 
@@ -643,7 +651,15 @@ export class ChatbotService {
           break;
         }
 
+        case 'AWAITING_FLOW_INTERACTION':
+          // Wait for Flow completion (handled above via nfm_reply) or failure (handled above via webhook statuses)
+          break;
+
         case 'AWAITING_DOC_INFO_MANUAL': {
+          if (!incomingText) {
+            await this.sendMessage(fromNumber, 'Por favor, envía texto con tu tipo y número de documento.');
+            return;
+          }
           const docMatch = incomingText.match(/^([VvEeJjGg])[-]*(\d+)$/);
           if (!docMatch) {
             await this.sendMessage(
@@ -698,6 +714,10 @@ export class ChatbotService {
         }
 
         case 'AWAITING_INVOICE_SELECTION_MANUAL': {
+          if (!incomingText) {
+            await this.sendMessage(fromNumber, 'Por favor, responde con los números de las facturas.');
+            return;
+          }
           const selections = incomingText
             .split(',')
             .map((s) => parseInt(s.trim(), 10))
@@ -751,6 +771,10 @@ export class ChatbotService {
         }
 
         case 'AWAITING_PAYMENT_METHOD_MANUAL': {
+          if (!incomingText) {
+            await this.sendMessage(fromNumber, 'Por favor, selecciona una opción válida usando los botones.');
+            return;
+          }
           let paymentMethodStr = '';
           let paymentInfo = '';
 

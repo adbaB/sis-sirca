@@ -229,7 +229,7 @@ describe('ChatbotService', () => {
       );
     });
 
-    it('should offer manual payment if sendFlowMessage fails', async () => {
+    it('should initiate manual payment automatically if sendFlowMessage fails', async () => {
       mockedAxios.post.mockRejectedValueOnce(new Error('Flow failed'));
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
       mockedAxios.post.mockClear();
@@ -241,13 +241,16 @@ describe('ChatbotService', () => {
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('pago manual') },
+          text: { body: expect.stringContaining('tipo y número de documento') },
         }),
         expect.any(Object),
       );
     });
 
-    it('should handle webhook failed statuses by offering manual payment', async () => {
+    it('should handle webhook failed statuses by initiating manual payment automatically', async () => {
+      await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
+
       const failedStatusMessage = {
         entry: [
           {
@@ -274,16 +277,32 @@ describe('ChatbotService', () => {
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('pago manual') },
+          text: { body: expect.stringContaining('tipo y número de documento') },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should safely ignore failed webhooks for non-flow interactions', async () => {
+      const failedStatusMessage = {
+        entry: [{ changes: [{ value: { statuses: [{ status: 'failed', recipient_id: '456', errors: [{ code: 1, title: 'error' }] }] } }] }],
+      };
+      await service.handleIncomingMessage(failedStatusMessage);
+
+      expect(mockedAxios.post).not.toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/phoneid/messages',
+        expect.objectContaining({
+          to: '456',
         }),
         expect.any(Object),
       );
     });
 
     it('should handle manual payment flow successfully', async () => {
+      // Setup state by failing the flow message to trigger the fallback state
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+      mockedAxios.post.mockRejectedValueOnce(new Error('Flow failed'));
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
-      await service.handleIncomingMessage(createMetaMessage('123', 'pago manual'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
