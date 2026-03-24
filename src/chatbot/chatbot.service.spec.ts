@@ -151,7 +151,7 @@ describe('ChatbotService', () => {
           interactive: expect.objectContaining({
             type: 'button',
             body: expect.objectContaining({
-              text: expect.stringContaining('¿En qué puedo ayudarte hoy?'),
+              text: expect.stringContaining('¿en qué puedo apoyarte hoy?'),
             }),
             action: expect.objectContaining({
               buttons: expect.arrayContaining([
