@@ -11,10 +11,12 @@ import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from './persons.service';
+import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 
 describe('PersonsService', () => {
   let service: PersonsService;
   let repository: Repository<Person>;
+  let cpRepository: Repository<ContractPerson>;
   let plansService: PlansService;
   let contractsService: ContractsService;
 
@@ -25,6 +27,13 @@ describe('PersonsService', () => {
     monthlyAmount: 0,
   } as Contract;
 
+  const mockContractPerson: ContractPerson = {
+    id: 'cp-1',
+    contract: mockContract,
+    person: {} as Person,
+    role: PersonRole.AFILIADO,
+  } as ContractPerson;
+
   const mockPerson: Person = {
     id: '1',
     typeIdentityCard: TypeIdentityCard.V,
@@ -33,7 +42,7 @@ describe('PersonsService', () => {
     birthDate: new Date('1990-01-01'),
     gender: true,
     plan: mockPlan,
-    contract: mockContract,
+    contractPersons: [mockContractPerson],
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -41,6 +50,7 @@ describe('PersonsService', () => {
   };
 
   const PERSONS_REPOSITORY_TOKEN = getRepositoryToken(Person);
+  const CP_REPOSITORY_TOKEN = getRepositoryToken(ContractPerson);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -54,6 +64,16 @@ describe('PersonsService', () => {
             find: jest.fn(),
             findOne: jest.fn(),
             softRemove: jest.fn(),
+          },
+        },
+        {
+          provide: CP_REPOSITORY_TOKEN,
+          useValue: {
+            create: jest.fn(),
+            save: jest.fn(),
+            findOne: jest.fn(),
+            find: jest.fn(),
+            remove: jest.fn(),
           },
         },
         {
@@ -74,6 +94,7 @@ describe('PersonsService', () => {
 
     service = module.get<PersonsService>(PersonsService);
     repository = module.get<Repository<Person>>(PERSONS_REPOSITORY_TOKEN);
+    cpRepository = module.get<Repository<ContractPerson>>(CP_REPOSITORY_TOKEN);
     plansService = module.get<PlansService>(PlansService);
     contractsService = module.get<ContractsService>(ContractsService);
   });
@@ -92,12 +113,14 @@ describe('PersonsService', () => {
         gender: true,
         planId: 'plan-1',
         contractId: 'contract-1',
+        role: PersonRole.AFILIADO,
       };
 
       jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
       jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
       jest.spyOn(repository, 'create').mockReturnValue(mockPerson);
       jest.spyOn(repository, 'save').mockResolvedValue(mockPerson);
+      jest.spyOn(cpRepository, 'create').mockReturnValue(mockContractPerson);
 
       const result = await service.create(createPersonDto);
 
@@ -110,9 +133,14 @@ describe('PersonsService', () => {
         birthDate: '1990-01-01',
         gender: true,
         plan: mockPlan,
-        contract: mockContract,
       });
       expect(repository.save).toHaveBeenCalledWith(mockPerson);
+      expect(cpRepository.create).toHaveBeenCalledWith({
+        contract: mockContract,
+        person: mockPerson,
+        role: PersonRole.AFILIADO,
+      });
+      expect(cpRepository.save).toHaveBeenCalledWith(mockContractPerson);
       expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
       expect(result).toEqual(mockPerson);
     });
@@ -140,7 +168,9 @@ describe('PersonsService', () => {
 
       const result = await service.findAll();
 
-      expect(repository.find).toHaveBeenCalledWith({ relations: ['plan', 'contract'] });
+      expect(repository.find).toHaveBeenCalledWith({
+        relations: ['plan', 'contractPersons', 'contractPersons.contract'],
+      });
       expect(result).toEqual([mockPerson]);
     });
   });
@@ -153,7 +183,7 @@ describe('PersonsService', () => {
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: '1' },
-        relations: ['plan', 'contract'],
+        relations: ['plan', 'contractPersons', 'contractPersons.contract'],
       });
       expect(result).toEqual(mockPerson);
     });
@@ -167,12 +197,20 @@ describe('PersonsService', () => {
 
   describe('update', () => {
     it('should update and return a person and recalculate contract amounts', async () => {
-      const updatePersonDto: UpdatePersonDto = { name: 'Jane Doe', planId: 'plan-1' };
+      const updatePersonDto: UpdatePersonDto = {
+        name: 'Jane Doe',
+        planId: 'plan-1',
+        contractId: 'contract-1',
+        role: PersonRole.AFILIADO,
+      };
       const updatedPerson = { ...mockPerson, name: 'Jane Doe' };
 
       jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
       jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
       jest.spyOn(repository, 'save').mockResolvedValue(updatedPerson as Person);
+      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(mockContractPerson);
+      jest.spyOn(cpRepository, 'find').mockResolvedValue([mockContractPerson]);
 
       const result = await service.update('1', updatePersonDto);
 
@@ -180,9 +218,57 @@ describe('PersonsService', () => {
       expect(plansService.findOne).toHaveBeenCalledWith('plan-1');
       expect(repository.save).toHaveBeenCalled();
 
-      // Contract hasn't changed, but plan was provided, so it should recalculate
       expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
       expect(result.name).toEqual('Jane Doe');
+    });
+
+    it('should handle removing an AFILIADO from their old contract when added to a new one', async () => {
+      const updatePersonDto: UpdatePersonDto = {
+        contractId: 'contract-2',
+        role: PersonRole.AFILIADO,
+      };
+
+      const newContract: Contract = { id: 'contract-2' } as Contract;
+      const oldJunction: ContractPerson = { ...mockContractPerson, contract: mockContract };
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(newContract);
+      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson as Person);
+      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null); // Not in the new contract yet
+      jest.spyOn(cpRepository, 'find').mockResolvedValue([oldJunction]); // In the old contract
+      jest.spyOn(cpRepository, 'remove').mockResolvedValue(oldJunction);
+
+      await service.update('1', updatePersonDto);
+
+      // Verify the old junction was removed
+      expect(cpRepository.remove).toHaveBeenCalledWith(oldJunction);
+
+      // Verify both the new and old contracts are recalculated
+      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
+      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-2');
+    });
+
+    it('should not wipe global plan when adding a TITULAR to a new contract', async () => {
+      const updatePersonDto: UpdatePersonDto = {
+        contractId: 'contract-2',
+        role: PersonRole.TITULAR,
+      };
+      const newContract: Contract = { id: 'contract-2' } as Contract;
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson); // Mock person has a plan
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(newContract);
+
+      // Let's assert what is saved to the Person repository
+      let savedPerson: Partial<Person> = {};
+      jest.spyOn(repository, 'save').mockImplementation(async (personToSave) => {
+        savedPerson = personToSave as unknown as Person;
+        return personToSave as Person;
+      });
+
+      await service.update('1', updatePersonDto);
+
+      // Ensure the plan was NOT nullified.
+      expect(savedPerson.plan).toEqual(mockPlan);
     });
 
     it('should throw NotFoundException if new plan does not exist', async () => {

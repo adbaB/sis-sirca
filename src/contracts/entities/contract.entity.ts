@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Person } from '../../persons/entities/person.entity';
+import type { ContractPerson } from './contract-person.entity';
 import type { Invoice } from '../../billing/entities/invoice.entity';
 
 export enum ContractStatus {
@@ -35,8 +35,8 @@ export class Contract {
   @Column({ type: 'varchar', length: 255, unique: true, nullable: false })
   code: string;
 
-  @OneToMany('Person', (person: Person) => person.contract)
-  persons: Person[];
+  @OneToMany('ContractPerson', (contractPerson: ContractPerson) => contractPerson.contract)
+  contractPersons: ContractPerson[];
 
   @OneToMany('Invoice', (invoice: Invoice) => invoice.contract)
   invoices?: Invoice[] | null;

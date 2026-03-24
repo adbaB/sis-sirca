@@ -16,11 +16,11 @@ describe('PersonsController', () => {
     birthDate: new Date('1990-01-01'),
     gender: true,
     plan: null,
-    contract: null,
+    contractPersons: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
-  } as Person;
+  } as unknown as Person;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({

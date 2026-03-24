@@ -8,6 +8,7 @@ import {
   IsUUID,
 } from 'class-validator';
 import { TypeIdentityCard } from '../entities/person.entity';
+import { PersonRole } from '../../contracts/entities/contract-person.entity';
 
 export class CreatePersonDto {
   @IsEnum(TypeIdentityCard)
@@ -35,6 +36,10 @@ export class CreatePersonDto {
   planId: string;
 
   @IsUUID()
-  @IsNotEmpty()
-  contractId: string;
+  @IsOptional()
+  contractId?: string;
+
+  @IsEnum(PersonRole)
+  @IsOptional()
+  role?: PersonRole;
 }

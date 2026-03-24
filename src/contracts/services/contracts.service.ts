@@ -20,19 +20,21 @@ export class ContractsService {
   }
 
   async findAll(): Promise<Contract[]> {
-    return this.contractsRepository.find({ relations: ['persons', 'persons.plan'] });
+    return this.contractsRepository.find({
+      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+    });
   }
 
   async findByCode(code: string): Promise<Contract> {
     return this.contractsRepository.findOne({
       where: { code },
-      relations: ['persons', 'persons.plan'],
+      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
     });
   }
   async findOne(id: string): Promise<Contract> {
     const contract = await this.contractsRepository.findOne({
       where: { id },
-      relations: ['persons', 'persons.plan'],
+      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
     });
     if (!contract) {
       throw new NotFoundException(`Contract with ID "${id}" not found`);
@@ -53,20 +55,22 @@ export class ContractsService {
 
   /**
    * Recalculates the monthly amount for a given contract ID
-   * by summing the amount of all plans associated to its persons.
+   * by summing the amount of all plans associated to its persons (only AFILIADOS have plans).
    */
   async recalculateMonthlyAmount(contractId: string): Promise<void> {
     const contract = await this.contractsRepository.findOne({
-      where: { id: contractId, persons: { status: PersonStatus.ACTIVE } },
-      relations: ['persons', 'persons.plan'],
+      where: { id: contractId, contractPersons: { person: { status: PersonStatus.ACTIVE } } },
+      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
     });
 
-    if (!contract) return;
+    if (!contract || !contract.contractPersons) return;
 
-    const totalAmount = contract.persons.reduce((sum, person) => {
-      // Sum the plan amount if the person has a plan
-      const amount = person.plan ? Number(person.plan.amount) : 0;
-      return sum + amount;
+    const totalAmount = contract.contractPersons.reduce((sum, cp) => {
+      // Sum the plan amount if the person is an AFILIADO and has a plan
+      if (cp.role === 'AFILIADO' && cp.person && cp.person.plan) {
+        return sum + Number(cp.person.plan.amount);
+      }
+      return sum;
     }, 0);
 
     contract.monthlyAmount = totalAmount;
