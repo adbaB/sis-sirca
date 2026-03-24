@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as Tesseract from 'tesseract.js';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import OpenAI from 'openai';
+import * as Tesseract from 'tesseract.js';
+import config from '../config/configurations';
 
 export interface ReceiptData {
   monto: string | null;
@@ -12,6 +13,7 @@ export interface ReceiptData {
   origen: string | null;
   descripcion: string | null;
   nombreBanco: string | null;
+  moneda?: string | null;
 }
 
 @Injectable()
@@ -19,10 +21,13 @@ export class OcrService {
   private readonly logger = new Logger(OcrService.name);
   private openai: OpenAI;
 
-  constructor(private configService: ConfigService) {
-    const apiKey = this.configService.get<string>('config.openrouter.apiKey');
+  constructor(
+    @Inject(config.KEY)
+    private readonly configService: ConfigType<typeof config>,
+  ) {
+    const apiKey = this.configService.openrouter.apiKey;
 
-    const isTestEnv = process.env.NODE_ENV === 'test';
+    const isTestEnv = this.configService.env === 'test';
 
     if (!apiKey && !isTestEnv) {
       this.logger.warn(
@@ -37,8 +42,8 @@ export class OcrService {
   }
 
   async extractReceiptData(imageBufferOrUrl: string | Buffer): Promise<ReceiptData> {
-    const apiKey = this.configService.get<string>('config.openrouter.apiKey');
-    const isTestEnv = process.env.NODE_ENV === 'test';
+    const apiKey = this.configService.openrouter.apiKey;
+    const isTestEnv = this.configService.env === 'test';
 
     if (!apiKey && !isTestEnv) {
       throw new Error('Missing OPENROUTER_API_KEY. Cannot process OCR.');
@@ -77,7 +82,7 @@ export class OcrService {
 
       const completion = await this.openai.chat.completions.create(
         {
-          model: 'openai/gpt-4o-mini', // or any preferred model available in OpenRouter
+          model: 'deepseek/deepseek-v3.2', // or any preferred model available in OpenRouter
           messages: [
             {
               role: 'system',
@@ -89,7 +94,7 @@ export class OcrService {
               content: prompt,
             },
           ],
-          // response_format: { type: 'json_object' }, // Supported by many OpenRouter models
+          response_format: { type: 'json_object' }, // Supported by many OpenRouter models
           temperature: 0,
         },
         { timeout: 15_000 },

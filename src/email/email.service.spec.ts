@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EmailService } from './email.service';
 import { InternalServerErrorException } from '@nestjs/common';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { SESClient } from '@aws-sdk/client-ses';
 import configurations from '../config/configurations';
 import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
 
