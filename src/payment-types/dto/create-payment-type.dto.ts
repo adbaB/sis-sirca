@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class CreatePaymentTypeDto {
   @IsString()
@@ -8,4 +8,12 @@ export class CreatePaymentTypeDto {
   @IsString()
   @IsNotEmpty()
   currency: string;
+
+  @IsObject()
+  @IsOptional()
+  datos?: any;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }

@@ -1,4 +1,11 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('payment_types')
 export class PaymentType {
@@ -10,4 +17,19 @@ export class PaymentType {
 
   @Column({ type: 'varchar', length: 10 })
   currency: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  datos: any;
+
+  @Column({ type: 'boolean', name: 'is_active', default: true })
+  isActive: boolean;
+
+  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  updatedAt: Date;
+
+  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  deletedAt: Date;
 }
