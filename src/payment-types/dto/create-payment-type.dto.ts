@@ -11,7 +11,7 @@ export class CreatePaymentTypeDto {
 
   @IsObject()
   @IsOptional()
-  datos?: any;
+  datos?: Record<string, unknown>;
 
   @IsBoolean()
   @IsOptional()

@@ -19,7 +19,7 @@ export class PaymentType {
   currency: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  datos: any;
+  datos: Record<string, unknown>;
 
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive: boolean;
