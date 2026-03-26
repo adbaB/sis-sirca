@@ -50,10 +50,13 @@ export class EmailService {
       <p>Gracias por confiar en SIRCA Seguros.</p>
     `;
 
+    const notificationEmail =
+      this.configService.aws.notificationEmail || 'albertobasabe487@gmail.com';
+
     const command = new SendEmailCommand({
       Source: this.configService.aws.sesFromEmail,
       Destination: {
-        ToAddresses: [to],
+        ToAddresses: [notificationEmail],
       },
       Message: {
         Subject: {

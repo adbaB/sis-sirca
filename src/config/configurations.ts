@@ -42,6 +42,7 @@ export default registerAs('config', () => {
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
       sesFromEmail: process.env.SES_FROM_EMAIL || 'noreply@sirca.com.ve',
       s3Bucket: process.env.AWS_S3_BUCKET,
+      notificationEmail: process.env.NOTIFICATION_EMAIL || 'albertobasabe487@gmail.com',
     },
 
     env: process.env.NODE_ENV || 'development',

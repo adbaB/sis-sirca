@@ -392,7 +392,7 @@ describe('ChatbotService', () => {
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('Zelle: pagos@sirca.com') },
+          text: { body: expect.stringContaining('Zelle: platinumclubadmon2@gmail.com') },
         }),
         expect.any(Object),
       );

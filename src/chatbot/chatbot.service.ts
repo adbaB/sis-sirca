@@ -817,16 +817,18 @@ export class ChatbotService {
           ) {
             paymentMethodStr = 'transferencia';
             paymentInfo =
-              'Banco: Mercantil\nCuenta: 0105-XXXX-XXXX-XXXX\nTitular: SIRCA Seguros\nRIF: J-XXXXXXX';
+              'Banco: Banco Nacional de Credito*\nCuenta: 0191-0169-02-2100132011\nTitular: Salud Integral El Rosario C.A\nRIF: J-501776385';
           } else if (
             incomingText === 'pm_pago_movil' ||
             incomingText.toLowerCase() === 'pago movil'
           ) {
             paymentMethodStr = 'pago_movil';
-            paymentInfo = 'Banco: Mercantil\nTeléfono: 0414-XXXXXXX\nRIF: J-XXXXXXX';
+            paymentInfo =
+              'Banco: Banco Nacional de Credito\nTeléfono: 0412-7313398\nRIF: J-501776385\nTitular: Salud Integral El Rosario C.A';
           } else if (incomingText === 'pm_zelle' || incomingText.toLowerCase() === 'zelle') {
             paymentMethodStr = 'zelle';
-            paymentInfo = 'Zelle: pagos@sirca.com\nTitular: SIRCA Seguros';
+            paymentInfo =
+              'Zelle: platinumclubadmon2@gmail.com\nTitular: Platinum Club Corp\n Cuenta citibank: 9154165049';
           } else {
             await this.sendMessage(
               fromNumber,
