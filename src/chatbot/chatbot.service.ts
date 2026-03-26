@@ -7,6 +7,7 @@ import { BillingService } from '../billing/services/billing.service';
 import config from '../config/configurations';
 import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
+import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
@@ -244,6 +245,7 @@ export class ChatbotService {
 
   async handleFlowDataExchange(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const action = body?.action as string | undefined;
+    const screen = body?.screen as string | undefined;
     const data = (body?.data || {}) as Record<string, unknown>;
 
     const normalizedAction = action?.toUpperCase();
@@ -271,15 +273,25 @@ export class ChatbotService {
 
     if (action === 'data_exchange') {
       const payload = data as Record<string, unknown>;
-      const exchangeAction = payload.action as string | undefined;
+      let exchangeAction = payload.action as string | undefined;
+
+      // Fallback para versiones de Flow que omiten la acción en el payload
+      if (!exchangeAction) {
+        if (screen === 'SCREEN_IDENTIFICATION') {
+          exchangeAction = 'fetch_invoices';
+        } else if (screen === 'SCREEN_PAYMENT_METHOD') {
+          exchangeAction = 'fetch_payment_details';
+        }
+      }
 
       if (exchangeAction === 'fetch_invoices') {
         const docType = payload.doc_type as string;
         const docNumber = payload.doc_number as string;
-        const identityCard = `${docType}-${docNumber}`;
 
-        const invoices = await this.billingService.findPendingInvoicesByIdentityCard(identityCard);
-
+        const invoices = await this.billingService.findPendingInvoicesByIdentityCard(
+          docNumber,
+          docType as TypeIdentityCard,
+        );
         if (!invoices || invoices.length === 0) {
           return {
             screen: 'SCREEN_IDENTIFICATION',
@@ -293,7 +305,7 @@ export class ChatbotService {
         const mappedInvoices = invoices.map((inv) => ({
           id: inv.id,
           title: `Factura ${inv.billingMonth}`,
-          description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
+          description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}$`,
         }));
 
         return {
@@ -318,10 +330,9 @@ export class ChatbotService {
           };
         }
 
-        const invoices = await this.billingService.findInvoicesByIds(selectedInvoiceIds);
-        const totalAmount = invoices.reduce(
-          (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
-          0,
+        const totalAmount = await this.billingService.calculateAmountByInvoicesIds(
+          selectedInvoiceIds,
+          paymentMethod,
         );
 
         let paymentInfo = '';
@@ -338,7 +349,7 @@ export class ChatbotService {
           screen: 'SCREEN_PAYMENT_DETAILS',
           data: {
             payment_info: paymentInfo,
-            total_amount: totalAmount.toFixed(2),
+            total_amount: `${totalAmount.toFixed(2)} ${paymentMethod === 'transferencia' || paymentMethod === 'pago_movil' ? 'Bs' : '$'}`,
             selected_invoices: selectedInvoiceIds,
             payment_method: paymentMethod,
           },
@@ -452,12 +463,12 @@ export class ChatbotService {
 
         const buttons = [
           { type: 'reply', reply: { id: 'info_planes', title: 'Ver planes 📋' } },
-          { type: 'reply', reply: { id: 'realizar_pago', title: 'Pagar mi seguro 💳' } },
+          { type: 'reply', reply: { id: 'realizar_pago', title: 'Pagar mi Plan 💳' } },
         ];
 
         await this.sendInteractiveMessage(
           fromNumber,
-          '¡Hola! Soy Helena de SIRCA Seguros. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
+          '¡Hola! Soy Helena de SIRCA Plan de seguros. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
           buttons,
         );
 
@@ -491,7 +502,7 @@ export class ChatbotService {
       if (incomingText === 'info_planes') {
         await this.sendMessage(
           fromNumber,
-          '¡Claro! Te pongo en contacto con nuestro asesor comercial para que te dé todos los detalles de los planes. ✨\n\nÉl te espera por aquí:\n📱 *WhatsApp:* +58 412-1201012 (https://wa.me/584121201012)\n\n¡Seguro encontrará el plan ideal para ti! 😊',
+          '¡Claro! Te pongo en contacto con nuestro asesor comercial para que te dé todos los detalles de los planes. ✨\n\nÉl te espera por aquí:\n📱 *WhatsApp:* +58 412-1201012\n\n¡Seguro encontrará el plan ideal para ti! 😊',
         );
         this.stateStore.delete(fromNumber);
         return;
@@ -566,17 +577,13 @@ export class ChatbotService {
                   { type: 'reply', reply: { id: 'datos_correctos', title: 'Sí, son correctos' } },
                   {
                     type: 'reply',
-                    reply: { id: 'datos_incorrectos', title: 'No, ingresarlos manual' },
+                    reply: { id: 'datos_incorrectos', title: 'Ingreso manual' },
                   },
                 ];
 
                 await this.sendInteractiveMessage(
                   fromNumber,
-                  '¡Listo! He revisado tu comprobante y esto es lo que encontré: ✨\n\n' +
-                    `📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n` +
-                    `💰 *Monto:* ${extractedData.monto || 'No detectado'}\n` +
-                    `🏦 *Banco:* ${extractedData.nombreBanco || 'No detectado'}\n\n` +
-                    '¿Me confirmas si los datos están correctos para continuar? 👍',
+                  `¡Listo! He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n💰 *Monto:* ${extractedData.monto || 'No detectado'}${extractedData.moneda || ''}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
                   buttons,
                 );
               } catch (ocrError) {
@@ -606,50 +613,15 @@ export class ChatbotService {
         case 'AWAITING_CONFIRMATION':
           if (incomingText === 'datos_correctos') {
             // Create payment
-            try {
-              if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
-                for (const invoice of state.selected_invoices_details) {
-                  await this.billingService.createPayment({
-                    invoiceId: invoice.id,
-                    amount: invoice.amount,
-                    paymentMethod: state.payment_method || 'transferencia',
-                    referenceNumber: (state.extracted_data?.referencia as string) || 'N/A',
-                  });
-                }
-              } else if (state.selected_invoices && state.selected_invoices.length > 0) {
-                // Fallback for flows that only sent IDs
-                const splitAmount =
-                  (Number(state.total_amount) || 0) / state.selected_invoices.length;
-                for (const invoiceId of state.selected_invoices) {
-                  await this.billingService.createPayment({
-                    invoiceId: invoiceId,
-                    amount: splitAmount,
-                    paymentMethod: state.payment_method || 'transferencia',
-                    referenceNumber: (state.extracted_data?.referencia as string) || 'N/A',
-                  });
-                }
-              }
+            const ref = (state.extracted_data?.referencia as string) || 'N/A';
+            const amount = Number(state.extracted_data?.monto);
 
-              // Send email
-              const userInfo = { name: 'Cliente', email: 'admin@sirca.com', phone: fromNumber };
-              await this.emailService.sendPaymentConfirmation(
-                'admin@sirca.com',
-                userInfo,
-                state.extracted_data?.receiptUrl as string,
-              );
-
-              this.stateStore.delete(fromNumber);
-              await this.sendMessage(
-                fromNumber,
-                '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
-              );
-            } catch (e) {
-              this.logger.error('Error saving payment', e);
-              await this.sendMessage(
-                fromNumber,
-                '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
-              );
-            }
+            await this.processPaymentForInvoices(
+              fromNumber,
+              state,
+              ref,
+              isNaN(amount) ? undefined : amount,
+            );
           } else if (incomingText === 'datos_incorrectos') {
             state.step = 'AWAITING_MANUAL_INPUT';
             this.stateStore.set(fromNumber, state);
@@ -673,52 +645,12 @@ export class ChatbotService {
           const ref = parts[0] || 'N/A';
           const amount = parts[2] ? Number(parts[2]) : Number(state.total_amount);
 
-          try {
-            if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
-              // If the user manually provided a total amount, proportionally split it based on their original invoices.
-              // Otherwise, use the original exact invoice amounts.
-              const manuallyAdjusted = parts[2] !== undefined;
-              const ratio = manuallyAdjusted ? amount / (Number(state.total_amount) || 1) : 1;
-
-              for (const invoice of state.selected_invoices_details) {
-                await this.billingService.createPayment({
-                  invoiceId: invoice.id,
-                  amount: manuallyAdjusted ? invoice.amount * ratio : invoice.amount,
-                  paymentMethod: state.payment_method || 'transferencia',
-                  referenceNumber: ref,
-                });
-              }
-            } else if (state.selected_invoices && state.selected_invoices.length > 0) {
-              const splitAmount = amount / state.selected_invoices.length;
-              for (const invoiceId of state.selected_invoices) {
-                await this.billingService.createPayment({
-                  invoiceId: invoiceId,
-                  amount: splitAmount,
-                  paymentMethod: state.payment_method || 'transferencia',
-                  referenceNumber: ref,
-                });
-              }
-            }
-
-            const userInfo = { name: 'Cliente', email: 'admin@sirca.com', phone: fromNumber };
-            await this.emailService.sendPaymentConfirmation(
-              'admin@sirca.com',
-              userInfo,
-              state.extracted_data?.receiptUrl as string,
-            );
-
-            this.stateStore.delete(fromNumber);
-            await this.sendMessage(
-              fromNumber,
-              '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
-            );
-          } catch (e) {
-            this.logger.error('Error saving payment manual', e);
-            await this.sendMessage(
-              fromNumber,
-              '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
-            );
-          }
+          await this.processPaymentForInvoices(
+            fromNumber,
+            state,
+            ref,
+            parts[2] !== undefined ? amount : undefined,
+          );
           break;
         }
 
@@ -754,11 +686,12 @@ export class ChatbotService {
 
           const docType = docMatch[1].toUpperCase();
           const docNumber = docMatch[2];
-          const identityCard = `${docType}-${docNumber}`;
 
           try {
-            const invoices =
-              await this.billingService.findPendingInvoicesByIdentityCard(identityCard);
+            const invoices = await this.billingService.findPendingInvoicesByIdentityCard(
+              docNumber,
+              docType as TypeIdentityCard,
+            );
 
             if (!invoices || invoices.length === 0) {
               await this.sendMessage(
@@ -923,6 +856,104 @@ export class ChatbotService {
       }
     } catch (error) {
       this.logger.error('Error handling incoming message:', error);
+    }
+  }
+
+  private async processPaymentForInvoices(
+    fromNumber: string,
+    state: UserState,
+    referenceNumber: string,
+    extractedAmount: number | undefined,
+  ): Promise<void> {
+    try {
+      const paymentMethod = state.payment_method || 'transferencia';
+      const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
+      const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
+
+      if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
+        const totalExpectedUsd =
+          state.selected_invoices_details.reduce((sum, inv) => sum + inv.amount, 0) || 1;
+
+        for (const invoice of state.selected_invoices_details) {
+          const weight = invoice.amount / totalExpectedUsd;
+
+          let amount = invoice.amount;
+          let currentAmountExtracted: number | undefined;
+
+          if (paymentMethod === 'zelle') {
+            amount = hasAmount ? extractedAmount * weight : invoice.amount;
+          } else {
+            currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
+          }
+
+          await this.billingService.createPayment({
+            invoiceId: invoice.id,
+            amount: amount,
+            amountExtracted: currentAmountExtracted,
+            paymentMethod,
+            referenceNumber,
+          });
+        }
+      } else if (state.selected_invoices && state.selected_invoices.length > 0) {
+        const invoicesList = Array.isArray(state.selected_invoices)
+          ? state.selected_invoices
+          : String(state.selected_invoices)
+              .split(',')
+              .map((id) => id.trim());
+
+        const invoices = await this.billingService.findInvoicesByIds(invoicesList);
+        const fallbackTotalUsd =
+          invoices.reduce(
+            (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
+            0,
+          ) || 1;
+
+        for (const invoice of invoices) {
+          const pendingUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
+          const weight = pendingUsd / fallbackTotalUsd;
+
+          let amount = pendingUsd;
+          let currentAmountExtracted: number | undefined;
+
+          if (paymentMethod === 'zelle') {
+            amount = hasAmount ? extractedAmount * weight : pendingUsd;
+          } else {
+            currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
+          }
+
+          await this.billingService.createPayment({
+            invoiceId: invoice.id,
+            amount: amount,
+            amountExtracted: currentAmountExtracted,
+            paymentMethod,
+            referenceNumber,
+          });
+        }
+      }
+
+      const userInfo = {
+        name: 'Cliente',
+        email: 'atencion@sirca.com.ve',
+        phone: fromNumber,
+      };
+
+      await this.emailService.sendPaymentConfirmation(
+        'noreply@sirca.com.ve',
+        userInfo,
+        receiptUrl || '',
+      );
+
+      this.stateStore.delete(fromNumber);
+      await this.sendMessage(
+        fromNumber,
+        '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
+      );
+    } catch (e) {
+      this.logger.error('Error saving payment', e);
+      await this.sendMessage(
+        fromNumber,
+        '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
+      );
     }
   }
 }

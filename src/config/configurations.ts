@@ -40,7 +40,7 @@ export default registerAs('config', () => {
       region: process.env.AWS_REGION,
       accessKeyId: process.env.AWS_ACCESS_KEY_ID,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      sesFromEmail: process.env.SES_FROM_EMAIL || 'noreply@sirca.com',
+      sesFromEmail: process.env.SES_FROM_EMAIL || 'noreply@sirca.com.ve',
       s3Bucket: process.env.AWS_S3_BUCKET,
     },
 
