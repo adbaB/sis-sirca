@@ -894,6 +894,7 @@ export class ChatbotService {
             amountExtracted: currentAmountExtracted,
             paymentMethod,
             referenceNumber,
+            url: receiptUrl,
           });
         }
       } else if (state.selected_invoices && state.selected_invoices.length > 0) {
@@ -929,6 +930,7 @@ export class ChatbotService {
             amountExtracted: currentAmountExtracted,
             paymentMethod,
             referenceNumber,
+            url: receiptUrl,
           });
         }
       }

@@ -68,6 +68,7 @@ export class BillingService {
         amount: amountUsd,
         amountBs: createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted : 0,
         paymentMethod: createPaymentDto.paymentMethod,
+        url: createPaymentDto.url,
       });
 
       await queryRunner.manager.save(payment);

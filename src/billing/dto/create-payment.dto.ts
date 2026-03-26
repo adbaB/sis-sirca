@@ -21,4 +21,8 @@ export class CreatePaymentDto {
   @IsString()
   @IsNotEmpty()
   referenceNumber: string;
+
+  @IsString()
+  @IsOptional()
+  url?: string;
 }
