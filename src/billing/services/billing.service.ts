@@ -125,9 +125,15 @@ export class BillingService {
   }
 
   async calculateAmountByInvoicesIds(ids: string[], paymentMethod: string): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+
     const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
     const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
-    if (!ids || ids.length === 0) return 0;
+
+    if (!exchangeRate) {
+      throw new BadRequestException('Exchange rate not found for date');
+    }
+
     const invoices = await this.findInvoicesByIds(ids);
     const totalAmount = invoices.reduce(
       (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
