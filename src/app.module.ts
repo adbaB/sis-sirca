@@ -15,6 +15,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { GoogleDriveModule } from './google-drive/google-drive.module';
 import { SyncModule } from './sync/sync.module';
 import { OcrModule } from './ocr/ocr.module';
+import { ExchangeRateModule } from './exchange-rate/exchange-rate.module';
 import { PaymentTypesModule } from './payment-types/payment-types.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { PaymentTypesModule } from './payment-types/payment-types.module';
     GoogleDriveModule,
     SyncModule,
     OcrModule,
+    ExchangeRateModule,
     PaymentTypesModule,
   ],
   controllers: [AppController],

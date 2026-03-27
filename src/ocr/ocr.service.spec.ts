@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OcrService } from './ocr.service';
 import * as Tesseract from 'tesseract.js';
 import config from '../config/configurations';
+import { OcrService } from './ocr.service';
 
 jest.mock('tesseract.js');
 jest.mock('openai');
@@ -53,6 +53,7 @@ describe('OcrService', () => {
                 bancoDestino: 'Banco de Venezuela',
                 fecha: '10/10/2023',
                 origen: 'Banesco',
+                moneda: 'BS',
                 descripcion: 'Pago de seguro',
                 nombreBanco: 'Banesco',
               }),
@@ -86,6 +87,7 @@ describe('OcrService', () => {
         origen: 'Banesco',
         descripcion: 'Pago de seguro',
         nombreBanco: 'Banesco',
+        moneda: 'BS',
       });
     });
 

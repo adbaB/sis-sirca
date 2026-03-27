@@ -5,7 +5,7 @@ import * as Tesseract from 'tesseract.js';
 import config from '../config/configurations';
 
 export interface ReceiptData {
-  monto: string | null;
+  monto: number | null;
   referencia: string | null;
   beneficiario: string | null;
   bancoDestino: string | null;
@@ -65,7 +65,7 @@ export class OcrService {
         Tu tarea es extraer los siguientes datos y devolver ÚNICAMENTE un objeto JSON válido, sin formato adicional, markdown ni texto explicativo. Si no encuentras algún dato, usa null.
 
         Datos a extraer:
-        - monto
+        - monto (formato numérico, sin símbolos de moneda, e.g. 100.50)
         - referencia
         - beneficiario
         - bancoDestino
@@ -73,7 +73,7 @@ export class OcrService {
         - origen
         - descripcion
         - nombreBanco
-
+        - moneda
         Texto del recibo:
         """
         ${text}
@@ -119,6 +119,7 @@ export class OcrService {
         origen: raw.origen ?? null,
         descripcion: raw.descripcion ?? null,
         nombreBanco: raw.nombreBanco ?? null,
+        moneda: raw.moneda ?? null,
       };
       return parsedData;
     } catch (error) {

@@ -31,6 +31,12 @@ export class Payment {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, name: 'amount_bs', nullable: true })
+  amountBs: number;
+
+  @Column({ type: 'varchar', length: 255, name: 'url', nullable: true })
+  url?: string | null;
+
   @Column({ type: 'varchar', length: 50, name: 'payment_method' })
   paymentMethod: string;
 

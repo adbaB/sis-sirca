@@ -59,7 +59,6 @@ export class GoogleDriveService {
       return Buffer.from(response.data as ArrayBuffer);
     } catch (error) {
       if (error instanceof Error) {
-        console.error(error);
         this.logger.error(`Failed to download Google Drive file: ${error.message}`, error.stack);
       } else {
         this.logger.error('Failed to download Google Drive file: Unknown error', String(error));

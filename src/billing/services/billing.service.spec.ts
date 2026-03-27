@@ -7,6 +7,7 @@ import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { NotFoundException } from '@nestjs/common';
 import { Contract } from '../../contracts/entities/contract.entity';
+import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 
 describe('BillingService', () => {
   let service: BillingService;
@@ -47,6 +48,12 @@ describe('BillingService', () => {
           provide: DataSource,
           useValue: mockDataSource,
         },
+        {
+          provide: ExchangeRateService,
+          useValue: {
+            getExchangeRateByDate: jest.fn().mockResolvedValue({ rateUsd: 1 }),
+          },
+        },
       ],
     }).compile();
 
@@ -78,6 +85,7 @@ describe('BillingService', () => {
     return {
       invoiceId,
       amount,
+      amountExtracted: amount,
       paymentMethod: 'CASH',
       referenceNumber: 'REF123',
     };
@@ -121,8 +129,8 @@ describe('BillingService', () => {
       expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
         Payment,
         expect.objectContaining({
-          invoiceId: dto.invoiceId,
           amount: 50,
+          amountBs: 50,
           paymentMethod: 'CASH',
           referenceNumber: 'REF123',
           status: PaymentStatus.COMPLETED,

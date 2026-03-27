@@ -22,6 +22,7 @@ describe('EmailService', () => {
       accessKeyId: 'test-access-key',
       secretAccessKey: 'test-secret-key',
       sesFromEmail: 'noreply@sirca.com',
+      notificationEmail: 'test-admin@sirca.com',
     },
   };
 
@@ -66,7 +67,7 @@ describe('EmailService', () => {
         expect.objectContaining({
           input: expect.objectContaining({
             Source: 'noreply@sirca.com',
-            Destination: { ToAddresses: ['recipient@test.com'] },
+            Destination: { ToAddresses: ['test-admin@sirca.com'] },
           }),
         }),
       );

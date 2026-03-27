@@ -352,7 +352,8 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'V-1234567'));
 
       expect(mockBillingService.findPendingInvoicesByIdentityCard).toHaveBeenCalledWith(
-        'V-1234567',
+        '1234567',
+        'V',
       );
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://graph.facebook.com/v18.0/phoneid/messages',
@@ -391,7 +392,7 @@ describe('ChatbotService', () => {
         'https://graph.facebook.com/v18.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('Zelle: pagos@sirca.com') },
+          text: { body: expect.stringContaining('Zelle: platinumclubadmon2@gmail.com') },
         }),
         expect.any(Object),
       );
@@ -417,7 +418,7 @@ describe('ChatbotService', () => {
       mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
       mockOcrService.extractReceiptData.mockResolvedValue({
         referencia: '123456',
-        monto: '100',
+        monto: 100,
         nombreBanco: 'Banesco',
       });
 
