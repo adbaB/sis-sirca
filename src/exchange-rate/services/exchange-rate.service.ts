@@ -10,7 +10,7 @@ export class ExchangeRateService {
     private readonly exchangeRateRepository: Repository<ExchangeRate>,
   ) {}
 
-  async getExchangeRateByDate(date: Date): Promise<ExchangeRate> {
+  async getExchangeRateByDate(date: Date): Promise<ExchangeRate | null> {
     return this.exchangeRateRepository.findOne({ where: { date } });
   }
 }
