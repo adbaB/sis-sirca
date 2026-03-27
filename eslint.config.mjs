@@ -1,7 +1,7 @@
 import pluginJs from '@eslint/js';
 import stylisticTs from '@stylistic/eslint-plugin';
 import typescriptEslint from '@typescript-eslint/parser';
-import prettier from 'eslint-plugin-prettier/recommended';
+import prettierPluginRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -24,7 +24,6 @@ export default [
   {
     files: ['**/*.{js,mjs,cjs,ts}'],
     plugins: {
-      prettier,
       '@stylistic/ts': stylisticTs,
     },
     languageOptions: {
@@ -39,9 +38,6 @@ export default [
       'no-console': 'warn',
       '@typescript-eslint/no-unused-vars': 'error',
       '@typescript-eslint/consistent-type-assertions': 'error',
-      '@stylistic/ts/indent': ['warn', 2],
-      '@stylistic/ts/quotes': ['warn', 'single'],
-      'no-trailing-spaces': 'warn',
     },
   },
   {
@@ -57,10 +53,10 @@ export default [
       'script',
       '.github',
       '.eslintrc.json',
-      'script',
     ],
   },
   { languageOptions: { globals: globals.browser } },
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
+  prettierPluginRecommended,
 ];

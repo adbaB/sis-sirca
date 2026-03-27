@@ -30,6 +30,9 @@ interface UserState {
   payment_method?: string;
   total_amount?: string;
   extracted_data?: Record<string, unknown>;
+  full_name?: string;
+  identity_card?: string;
+  type_identity_card?: TypeIdentityCard;
 }
 
 @Injectable()
@@ -147,12 +150,11 @@ export class ChatbotService {
               text,
             },
             footer: {
-              text: 'Sirca Seguros',
+              text: 'Sirca Plan de salud',
             },
             action: {
               name: 'flow',
               parameters: {
-                mode: 'draft',
                 flow_message_version: '3',
                 flow_token: crypto.randomUUID(),
                 flow_id: flowId,
@@ -338,11 +340,13 @@ export class ChatbotService {
         let paymentInfo = '';
         if (paymentMethod === 'transferencia') {
           paymentInfo =
-            'Banco: Mercantil\nCuenta: 0105-XXXX-XXXX-XXXX\nTitular: SIRCA Seguros\nRIF: J-XXXXXXX';
+            'Banco: Banco Nacional de Credito\nCuenta: 0191-0169-02-2100132011\nTitular: Salud Integral El Rosario C.A.\nRIF: J-501776385';
         } else if (paymentMethod === 'pago_movil') {
-          paymentInfo = 'Banco: Mercantil\nTeléfono: 0414-XXXXXXX\nRIF: J-XXXXXXX';
+          paymentInfo =
+            'Banco: Banco Nacional de Credito\nTeléfono: 0412-7313398\nRIF: J-501776385';
         } else if (paymentMethod === 'zelle') {
-          paymentInfo = 'Zelle: pagos@sirca.com\nTitular: SIRCA Seguros';
+          paymentInfo =
+            'Zelle: platinumclubadmon2@gmail.com\nTitular: Platinum Club Corp\nCuenta Citi Bank: 9154165049\n';
         }
 
         return {
@@ -935,11 +939,39 @@ export class ChatbotService {
         }
       }
 
-      const userInfo = {
-        name: 'Cliente',
-        email: 'atencion@sirca.com.ve',
-        phone: fromNumber,
+      const invoicesList = state.selected_invoices_details
+        ? state.selected_invoices_details.map((i) => i.id)
+        : Array.isArray(state.selected_invoices)
+          ? state.selected_invoices
+          : String(state.selected_invoices || '')
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean);
+
+      const invoices = await this.billingService.findInvoicesByIds(invoicesList);
+      console.log(invoices);
+      const contractCodes =
+        invoices
+          .map((inv) => inv.contract?.code)
+          .filter(Boolean)
+          .join(', ') || 'No especificado';
+
+      const userInfo: Record<string, unknown> = {
+        name: 'Administración',
+        'Persona/Teléfono': fromNumber,
+        'Fecha y Hora': new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' }),
+        'Contrato(s)': contractCodes,
       };
+
+      if (state.extracted_data) {
+        const ocrData = { ...state.extracted_data };
+        delete ocrData.receiptUrl;
+        if (Object.keys(ocrData).length > 0) {
+          userInfo['Datos Extraídos (OCR)'] = Object.entries(ocrData)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(' | ');
+        }
+      }
 
       await this.emailService.sendPaymentConfirmation(
         'noreply@sirca.com.ve',

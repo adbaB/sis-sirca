@@ -31,7 +31,7 @@ export class EmailService {
 
   async sendPaymentConfirmation(
     to: string,
-    userInfo: SubmitPaymentDto,
+    userInfo: SubmitPaymentDto | Record<string, unknown>,
     receiptUrl: string,
   ): Promise<void> {
     const htmlBody = `

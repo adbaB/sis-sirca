@@ -119,6 +119,7 @@ export class BillingService {
     if (!ids || ids.length === 0) return [];
     return this.invoiceRepository
       .createQueryBuilder('invoice')
+      .innerJoinAndSelect('invoice.contract', 'contract')
       .where('invoice.id IN (:...ids)', { ids })
       .getMany();
   }
