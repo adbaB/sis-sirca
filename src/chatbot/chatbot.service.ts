@@ -876,6 +876,8 @@ export class ChatbotService {
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
+      let paymentsCreated = 0;
+
       if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
         const totalExpectedUsd =
           state.selected_invoices_details.reduce((sum, inv) => sum + inv.amount, 0) || 1;
@@ -900,6 +902,7 @@ export class ChatbotService {
             referenceNumber,
             url: receiptUrl,
           });
+          paymentsCreated++;
         }
       } else if (state.selected_invoices && state.selected_invoices.length > 0) {
         const invoicesList = Array.isArray(state.selected_invoices)
@@ -936,7 +939,12 @@ export class ChatbotService {
             referenceNumber,
             url: receiptUrl,
           });
+          paymentsCreated++;
         }
+      }
+
+      if (paymentsCreated === 0) {
+        this.logger.warn(`No payments created for ${fromNumber} - no invoices found in state`);
       }
 
       const invoicesList = state.selected_invoices_details
