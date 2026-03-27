@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { GoogleSheetsService } from '../../google-sheets/services/google-sheets.service';
+import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 
 @Injectable()
 export class PaymentCronService {

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { GoogleSheetsService } from '../../google-sheets/services/google-sheets.service';
+import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 import { PaymentRegisteredEvent } from '../events/payment-registered.event';
 
 @Injectable()

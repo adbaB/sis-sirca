@@ -5,7 +5,7 @@ import * as xlsx from 'xlsx';
 
 import config from '../../config/configurations';
 import { ContractsService } from '../../contracts/services/contracts.service';
-import { GoogleDriveService } from '../../google-drive/services/google-drive.service';
+import { GoogleDriveService } from '../../google/services/google-drive.service';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
@@ -28,7 +28,7 @@ export class SyncService {
   async handleHourlySync() {
     this.logger.log('Starting hourly Excel sync...');
 
-    const fileId = this.configService.drive.excelFileId;
+    const fileId = this.configService.google.excelFileId;
     if (!fileId) {
       this.logger.warn('GOOGLE_DRIVE_EXCEL_FILE_ID is not configured. Aborting sync.');
       return;

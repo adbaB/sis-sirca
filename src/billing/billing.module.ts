@@ -7,7 +7,7 @@ import { Contract } from '../contracts/entities/contract.entity';
 import { BillingService } from './services/billing.service';
 import { BillingCronService } from './services/billing-cron.service';
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
-import { GoogleSheetsModule } from '../google-sheets/google-sheets.module';
+import { GoogleModule } from '../google/google.module';
 import { PaymentEventListener } from './listeners/payment-event.listener';
 import { PaymentCronService } from './services/payment-cron.service';
 
@@ -15,7 +15,7 @@ import { PaymentCronService } from './services/payment-cron.service';
   imports: [
     TypeOrmModule.forFeature([Invoice, InvoiceDetail, Payment, Contract]),
     ExchangeRateModule,
-    GoogleSheetsModule,
+    GoogleModule,
   ],
   controllers: [],
   providers: [BillingService, BillingCronService, PaymentEventListener, PaymentCronService],

@@ -15,14 +15,14 @@ export class GoogleSheetsService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.spreadsheetId = this.config.googleSpreadsheetId;
+    this.spreadsheetId = this.config.google.spreadsheetId;
 
     // Autenticación con Service Account
     const auth = new google.auth.GoogleAuth({
       credentials: {
-        client_email: this.config.googleClientEmail,
-        // Es necesario limpiar los saltos de línea escapados en variables de entorno
-        private_key: this.config.googlePrivateKey?.replace(/\\n/g, '\n'),
+        client_email: this.config.google.clientEmail,
+        // La variable ya se limpia de \n en configurations.ts
+        private_key: this.config.google.privateKey,
       },
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });

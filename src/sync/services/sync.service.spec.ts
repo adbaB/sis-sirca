@@ -1,7 +1,7 @@
 import * as xlsx from 'xlsx';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
-import { GoogleDriveService } from '../../google-drive/services/google-drive.service';
+import { GoogleDriveService } from '../../google/services/google-drive.service';
 import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DataCleaned } from '../interface/data-cleaned.interface';
@@ -85,7 +85,7 @@ describe('SyncService', () => {
   const makeService = (fileId: string | null = 'file-id'): SyncService =>
     new SyncService(
       mockGoogleDriveService as unknown as GoogleDriveService,
-      { drive: { excelFileId: fileId } } as unknown as ConstructorParameters<typeof SyncService>[1],
+      { google: { excelFileId: fileId } } as unknown as ConstructorParameters<typeof SyncService>[1],
       mockPlansService as unknown as PlansService,
       mockContractsService as unknown as ContractsService,
       mockPersonsService as unknown as PersonsService,

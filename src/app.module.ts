@@ -12,13 +12,12 @@ import { PersonsModule } from './persons/persons.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { BillingModule } from './billing/billing.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { GoogleDriveModule } from './google-drive/google-drive.module';
 import { SyncModule } from './sync/sync.module';
 import { OcrModule } from './ocr/ocr.module';
 import { ExchangeRateModule } from './exchange-rate/exchange-rate.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PaymentTypesModule } from './payment-types/payment-types.module';
-import { GoogleSheetsModule } from './google-sheets/google-sheets.module';
+import { GoogleModule } from './google/google.module';
 
 @Module({
   imports: [
@@ -34,12 +33,11 @@ import { GoogleSheetsModule } from './google-sheets/google-sheets.module';
     BillingModule,
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
-    GoogleDriveModule,
     SyncModule,
     OcrModule,
     ExchangeRateModule,
     PaymentTypesModule,
-    GoogleSheetsModule,
+    GoogleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -15,11 +15,12 @@ export default registerAs('config', () => {
     file: {
       maxSize: parseInt(process.env.FILE_MAX_SIZE, 10) || 100 * 1024 * 1024,
     },
-    drive: {
+    google: {
       clientEmail: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
       privateKey: process.env.GOOGLE_DRIVE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       excelFileId: process.env.GOOGLE_DRIVE_EXCEL_FILE_ID,
       clientId: process.env.GOOGLE_DRIVE_CLIENT_ID,
+      spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
     },
 
     openrouter: {
@@ -44,10 +45,6 @@ export default registerAs('config', () => {
       s3Bucket: process.env.AWS_S3_BUCKET,
       notificationEmail: process.env.NOTIFICATION_EMAIL,
     },
-
-    googleSpreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
-    googleClientEmail: process.env.GOOGLE_CLIENT_EMAIL,
-    googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY,
 
     env: process.env.NODE_ENV || 'development',
   };
