@@ -45,6 +45,10 @@ export default registerAs('config', () => {
       notificationEmail: process.env.NOTIFICATION_EMAIL,
     },
 
+    googleSpreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
+    googleClientEmail: process.env.GOOGLE_CLIENT_EMAIL,
+    googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY,
+
     env: process.env.NODE_ENV || 'development',
   };
 });

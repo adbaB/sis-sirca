@@ -895,6 +895,7 @@ export class ChatbotService {
           }
 
           await this.billingService.createPayment({
+            idempotencyKey: `meta-flow-${invoice.id}-${referenceNumber}`,
             invoiceId: invoice.id,
             amount: amount,
             amountExtracted: currentAmountExtracted,
@@ -932,6 +933,7 @@ export class ChatbotService {
           }
 
           await this.billingService.createPayment({
+            idempotencyKey: `manual-${invoice.id}-${referenceNumber}`,
             invoiceId: invoice.id,
             amount: amount,
             amountExtracted: currentAmountExtracted,
@@ -957,8 +959,6 @@ export class ChatbotService {
               .filter(Boolean);
 
       const invoices = await this.billingService.findInvoicesByIds(invoicesList);
-     const invoices = await this.billingService.findInvoicesByIds(invoicesList);
-     const contractCodes =
       const contractCodes =
         invoices
           .map((inv) => inv.contract?.code)

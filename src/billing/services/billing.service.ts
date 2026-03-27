@@ -1,14 +1,21 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { DateTime } from 'luxon';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { PaymentRegisteredEvent } from '../events/payment-registered.event';
 
 @Injectable()
 export class BillingService {
@@ -17,6 +24,7 @@ export class BillingService {
     private readonly invoiceRepository: Repository<Invoice>,
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createPayment(createPaymentDto: CreatePaymentDto) {
@@ -61,6 +69,7 @@ export class BillingService {
 
       // Create Payment
       const payment = queryRunner.manager.create(Payment, {
+        idempotencyKey: createPaymentDto.idempotencyKey,
         paymentDate: new Date(),
         status: PaymentStatus.COMPLETED,
         invoice: invoice,
@@ -71,7 +80,7 @@ export class BillingService {
         url: createPaymentDto.url,
       });
 
-      await queryRunner.manager.save(payment);
+      const savedPayment = await queryRunner.manager.save(payment);
 
       // Update Invoice
       const newPaidAmount = Number(invoice.paidAmount) + amountUsd;
@@ -89,9 +98,43 @@ export class BillingService {
 
       await queryRunner.commitTransaction();
 
-      return payment;
+      // Emit event for Google Sheets only after a successful commit
+      this.eventEmitter.emit(
+        'payment.registered',
+        new PaymentRegisteredEvent(
+          savedPayment.referenceNumber,
+          savedPayment.amount,
+          savedPayment.amountBs,
+          savedPayment.url,
+          savedPayment.createdAt || new Date(),
+        ),
+      );
+
+      return savedPayment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
+
+      // Handle Unique Constraint Violations for Idempotency
+      if (error instanceof QueryFailedError && (error as any).code === '23505') {
+        const detail = (error as any).detail || '';
+
+        // Check if the constraint violation is due to the idempotency key
+        if (detail.includes('idempotency_key')) {
+          const existingPayment = await this.dataSource.manager.findOne(Payment, {
+            where: { idempotencyKey: createPaymentDto.idempotencyKey },
+          });
+
+          if (existingPayment) {
+            return existingPayment;
+          }
+        } else if (detail.includes('reference_number')) {
+          // If the conflict is due to the reference number, it's a completely different request trying to reuse it.
+          throw new ConflictException(
+            `Payment with reference number ${createPaymentDto.referenceNumber} already exists`,
+          );
+        }
+      }
+
       throw error;
     } finally {
       await queryRunner.release();

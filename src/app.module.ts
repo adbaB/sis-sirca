@@ -16,7 +16,9 @@ import { GoogleDriveModule } from './google-drive/google-drive.module';
 import { SyncModule } from './sync/sync.module';
 import { OcrModule } from './ocr/ocr.module';
 import { ExchangeRateModule } from './exchange-rate/exchange-rate.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PaymentTypesModule } from './payment-types/payment-types.module';
+import { GoogleSheetsModule } from './google-sheets/google-sheets.module';
 
 @Module({
   imports: [
@@ -31,11 +33,13 @@ import { PaymentTypesModule } from './payment-types/payment-types.module';
     ContractsModule,
     BillingModule,
     ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
     GoogleDriveModule,
     SyncModule,
     OcrModule,
     ExchangeRateModule,
     PaymentTypesModule,
+    GoogleSheetsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
