@@ -6,7 +6,7 @@ import { Payment } from './entities/payment.entity';
 import { Contract } from '../contracts/entities/contract.entity';
 import { BillingService } from './services/billing.service';
 import { BillingCronService } from './services/billing-cron.service';
-import { ExchangeRateModule } from 'src/exchange-rate/exchange-rate.module';
+import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 
 @Module({
   imports: [
