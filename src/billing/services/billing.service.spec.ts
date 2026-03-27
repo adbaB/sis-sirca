@@ -8,6 +8,7 @@ import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { NotFoundException } from '@nestjs/common';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 describe('BillingService', () => {
   let service: BillingService;
@@ -31,8 +32,13 @@ describe('BillingService', () => {
 
   const mockPaymentRepository = {};
   const mockInvoiceRepository = {};
+  let mockEventEmitter: { emit: jest.Mock };
 
   beforeEach(async () => {
+    mockEventEmitter = {
+      emit: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BillingService,
@@ -53,6 +59,10 @@ describe('BillingService', () => {
           useValue: {
             getExchangeRateByDate: jest.fn().mockResolvedValue({ rateUsd: 1 }),
           },
+        },
+        {
+          provide: EventEmitter2,
+          useValue: mockEventEmitter,
         },
       ],
     }).compile();
@@ -83,6 +93,7 @@ describe('BillingService', () => {
 
   const createPaymentDto = (invoiceId: string, amount: number): CreatePaymentDto => {
     return {
+      idempotencyKey: 'idem-key-' + invoiceId,
       invoiceId,
       amount,
       amountExtracted: amount,

@@ -21,14 +21,25 @@ jest.mock('googleapis', () => ({
 describe('GoogleDriveService', () => {
   let service: GoogleDriveService;
 
-  const mockConfig = {
-    drive: {
-      clientEmail: 'test@serviceaccount.com',
-      privateKey: 'private_key',
-    },
+  let mockConfig: {
+    google: {
+      clientEmail: string;
+      privateKey: string;
+      clientId: string;
+      spreadsheetId?: string;
+      excelFileId?: string;
+    };
   };
 
   beforeEach(async () => {
+    mockConfig = {
+      google: {
+        clientEmail: 'test@serviceaccount.com',
+        privateKey: 'private_key',
+        clientId: 'test_client_id',
+      },
+    };
+
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -55,7 +66,7 @@ describe('GoogleDriveService', () => {
     it('should initialize the drive client if credentials exist', () => {
       // It is initialized in constructor
       expect(google.auth.JWT).toHaveBeenCalledWith({
-        client_id: undefined,
+        client_id: 'test_client_id',
         email: 'test@serviceaccount.com',
         key: 'private_key',
         scopes: ['https://www.googleapis.com/auth/drive.readonly'],
@@ -69,7 +80,7 @@ describe('GoogleDriveService', () => {
           GoogleDriveService,
           {
             provide: config.KEY,
-            useValue: { drive: {} },
+            useValue: { google: {} },
           },
         ],
       }).compile();
@@ -102,7 +113,7 @@ describe('GoogleDriveService', () => {
           GoogleDriveService,
           {
             provide: config.KEY,
-            useValue: { drive: {} },
+            useValue: { google: {} },
           },
         ],
       }).compile();

@@ -16,7 +16,7 @@ export class GoogleDriveService {
   }
 
   private initClient() {
-    const { clientEmail, privateKey, clientId } = this.configService.drive;
+    const { clientEmail, privateKey, clientId } = this.configService.google;
 
     if (!clientEmail || !privateKey) {
       this.logger.warn(

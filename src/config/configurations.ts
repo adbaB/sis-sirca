@@ -15,11 +15,12 @@ export default registerAs('config', () => {
     file: {
       maxSize: parseInt(process.env.FILE_MAX_SIZE, 10) || 100 * 1024 * 1024,
     },
-    drive: {
+    google: {
       clientEmail: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
       privateKey: process.env.GOOGLE_DRIVE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       excelFileId: process.env.GOOGLE_DRIVE_EXCEL_FILE_ID,
       clientId: process.env.GOOGLE_DRIVE_CLIENT_ID,
+      spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
     },
 
     openrouter: {
