@@ -30,7 +30,7 @@ export class GoogleSheetsService implements OnModuleInit {
     this.sheets = google.sheets({ version: 'v4', auth });
   }
 
-  async appendRow(range: string, values: any[]) {
+  async appendRow(range: string, values: (string | number)[]) {
     try {
       await this.sheets.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
@@ -42,25 +42,28 @@ export class GoogleSheetsService implements OnModuleInit {
       });
       this.logger.log('Fila agregada exitosamente a Google Sheets.');
     } catch (error) {
-      this.logger.error(
-        `Error al insertar en Google Sheets: ${(error as any).message}`,
-        (error as any).stack,
-      );
+      if (error instanceof Error) {
+        this.logger.error(`Error al insertar en Google Sheets: ${error.message}`, error.stack);
+      } else {
+        this.logger.error('Error al insertar en Google Sheets: Unknown error', String(error));
+      }
     }
   }
 
-  async readRows(range: string): Promise<any[][]> {
+  async readRows(range: string): Promise<string[][]> {
     try {
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range,
       });
-      return response.data.values || [];
+      // The API returns an array of arrays of strings or numbers, but typically they are parsed as strings/any. We assert to a compatible type.
+      return (response.data.values as string[][]) || [];
     } catch (error) {
-      this.logger.error(
-        `Error leyendo de Google Sheets: ${(error as any).message}`,
-        (error as any).stack,
-      );
+      if (error instanceof Error) {
+        this.logger.error(`Error leyendo de Google Sheets: ${error.message}`, error.stack);
+      } else {
+        this.logger.error('Error leyendo de Google Sheets: Unknown error', String(error));
+      }
       return [];
     }
   }

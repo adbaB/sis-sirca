@@ -85,7 +85,9 @@ describe('SyncService', () => {
   const makeService = (fileId: string | null = 'file-id'): SyncService =>
     new SyncService(
       mockGoogleDriveService as unknown as GoogleDriveService,
-      { google: { excelFileId: fileId } } as unknown as ConstructorParameters<typeof SyncService>[1],
+      { google: { excelFileId: fileId } } as unknown as ConstructorParameters<
+        typeof SyncService
+      >[1],
       mockPlansService as unknown as PlansService,
       mockContractsService as unknown as ContractsService,
       mockPersonsService as unknown as PersonsService,

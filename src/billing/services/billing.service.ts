@@ -115,8 +115,11 @@ export class BillingService {
       await queryRunner.rollbackTransaction();
 
       // Handle Unique Constraint Violations for Idempotency
-      if (error instanceof QueryFailedError && (error as any).code === '23505') {
-        const detail = (error as any).detail || '';
+      if (
+        error instanceof QueryFailedError &&
+        (error as unknown as { code: string }).code === '23505'
+      ) {
+        const detail = (error as unknown as { detail?: string }).detail || '';
 
         // Check if the constraint violation is due to the idempotency key
         if (detail.includes('idempotency_key')) {

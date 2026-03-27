@@ -32,7 +32,7 @@ describe('BillingService', () => {
 
   const mockPaymentRepository = {};
   const mockInvoiceRepository = {};
-  let mockEventEmitter: any;
+  let mockEventEmitter: { emit: jest.Mock };
 
   beforeEach(async () => {
     mockEventEmitter = {

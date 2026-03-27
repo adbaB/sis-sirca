@@ -21,7 +21,15 @@ jest.mock('googleapis', () => ({
 describe('GoogleDriveService', () => {
   let service: GoogleDriveService;
 
-  let mockConfig: any;
+  let mockConfig: {
+    google: {
+      clientEmail: string;
+      privateKey: string;
+      clientId: string;
+      spreadsheetId?: string;
+      excelFileId?: string;
+    };
+  };
 
   beforeEach(async () => {
     mockConfig = {
