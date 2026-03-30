@@ -957,8 +957,6 @@ export class ChatbotService {
               .filter(Boolean);
 
       const invoices = await this.billingService.findInvoicesByIds(invoicesList);
-     const invoices = await this.billingService.findInvoicesByIds(invoicesList);
-     const contractCodes =
       const contractCodes =
         invoices
           .map((inv) => inv.contract?.code)
