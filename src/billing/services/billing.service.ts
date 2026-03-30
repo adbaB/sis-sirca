@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { DateTime } from 'luxon';
@@ -14,9 +14,13 @@ import { PaymentRegisteredEvent } from '../events/payment-registered.event';
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     @InjectRepository(Invoice)
     private readonly invoiceRepository: Repository<Invoice>,
+    @InjectRepository(Payment)
+    private readonly paymentRepository: Repository<Payment>,
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
     private readonly eventEmitter: EventEmitter2,
@@ -36,6 +40,7 @@ export class BillingService {
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
+    let savedPayment: Payment;
 
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -65,7 +70,7 @@ export class BillingService {
       // Create Payment
       const payment = queryRunner.manager.create(Payment, {
         paymentDate: new Date(),
-        status: PaymentStatus.COMPLETED,
+        status: PaymentStatus.PROCESSING,
         invoice: invoice,
         referenceNumber: createPaymentDto.referenceNumber,
         amount: amountUsd,
@@ -74,43 +79,84 @@ export class BillingService {
         url: createPaymentDto.url,
       });
 
-      const savedPayment = await queryRunner.manager.save(payment);
-
-      // Update Invoice
-      const newPaidAmount = Number(invoice.paidAmount) + amountUsd;
-      const totalAmount = Number(invoice.totalAmount);
-
-      invoice.paidAmount = newPaidAmount;
-
-      if (newPaidAmount >= totalAmount) {
-        invoice.status = InvoiceStatus.PAID;
-      } else if (newPaidAmount > 0) {
-        invoice.status = InvoiceStatus.PARTIAL;
-      }
-
-      await queryRunner.manager.save(invoice);
+      savedPayment = await queryRunner.manager.save(payment);
 
       await queryRunner.commitTransaction();
-
-      // Emit event for Google Sheets only after a successful commit
-      this.eventEmitter.emit(
-        'payment.registered',
-        new PaymentRegisteredEvent(
-          savedPayment.referenceNumber,
-          savedPayment.amount,
-          savedPayment.amountBs,
-          savedPayment.url,
-          savedPayment.createdAt || new Date(),
-        ),
-      );
-
-      return savedPayment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
+
+    // Recalculate invoice so the user sees the payment credited immediately.
+    // If the payment is later Rejected, the CRON recalculation will reverse it.
+    await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId);
+
+    // Emit event outside the transaction block so that a publish failure
+    // cannot trigger a rollback or cause the request to be reported as failed.
+    // The payment is already persisted at this point.
+    try {
+      this.eventEmitter.emit(
+        'payment.registered',
+        new PaymentRegisteredEvent(
+          savedPayment!.referenceNumber,
+          savedPayment!.amount,
+          savedPayment!.amountBs,
+          savedPayment!.url,
+          savedPayment!.createdAt || new Date(),
+        ),
+      );
+    } catch (emitError) {
+      this.logger.error(
+        `Failed to emit payment.registered event for payment ${
+          savedPayment!.id
+        }. The payment was saved successfully.`,
+        emitError instanceof Error ? emitError.stack : String(emitError),
+      );
+    }
+
+    return savedPayment!;
+  }
+
+  /**
+   * Recalculates the invoice's paidAmount from the source of truth:
+   * SUM of all non-rejected payments (PROCESSING + COMPLETED).
+   * Then derives the invoice status accordingly.
+   */
+  async recalculateInvoicePaidAmount(invoiceId: string): Promise<void> {
+    const invoice = await this.invoiceRepository.findOne({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      this.logger.warn(`Cannot recalculate: Invoice ${invoiceId} not found.`);
+      return;
+    }
+
+    const result = await this.paymentRepository
+      .createQueryBuilder('payment')
+      .select('COALESCE(SUM(payment.amount), 0)', 'total')
+      .where('payment.invoice_id = :invoiceId', { invoiceId })
+      .andWhere('payment.status IN (:...statuses)', {
+        statuses: [PaymentStatus.PROCESSING, PaymentStatus.COMPLETED],
+      })
+      .getRawOne<{ total: string }>();
+
+    const newPaidAmount = Number(result?.total ?? 0);
+    const totalAmount = Number(invoice.totalAmount);
+
+    invoice.paidAmount = newPaidAmount;
+
+    if (newPaidAmount >= totalAmount) {
+      invoice.status = InvoiceStatus.PAID;
+    } else if (newPaidAmount > 0) {
+      invoice.status = InvoiceStatus.PARTIAL;
+    } else {
+      invoice.status = InvoiceStatus.PENDING;
+    }
+
+    await this.invoiceRepository.save(invoice);
   }
 
   async findPendingInvoicesByIdentityCard(

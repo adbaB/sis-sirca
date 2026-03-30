@@ -47,6 +47,7 @@ export class GoogleSheetsService implements OnModuleInit {
       } else {
         this.logger.error('Error al insertar en Google Sheets: Unknown error', String(error));
       }
+      throw error;
     }
   }
 

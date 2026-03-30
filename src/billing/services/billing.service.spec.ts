@@ -30,8 +30,15 @@ describe('BillingService', () => {
     createQueryRunner: jest.fn().mockReturnValue(mockQueryRunner),
   };
 
-  const mockPaymentRepository = {};
-  const mockInvoiceRepository = {};
+  const mockPaymentRepository = {
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockInvoiceRepository = {
+    findOne: jest.fn(),
+    save: jest.fn(),
+  };
+
   let mockEventEmitter: { emit: jest.Mock };
 
   beforeEach(async () => {
@@ -106,21 +113,29 @@ describe('BillingService', () => {
   });
 
   describe('createPayment', () => {
-    it('should register a Payment and update Invoice status to PARTIAL when new paidAmount < totalAmount', async () => {
+    it('should create a Payment with PROCESSING status and recalculate invoice after commit', async () => {
       // Arrange
       const dto = createPaymentDto('inv-1', 50);
-      const mockInvoice = createMockInvoice('inv-1', 100, 0); // Total 100, Paid 0
+      const mockInvoice = createMockInvoice('inv-1', 100, 0);
 
       mockQueryRunner.manager.findOne.mockResolvedValue(mockInvoice);
-      mockQueryRunner.manager.create.mockImplementation((entity, payload) => payload);
+      mockQueryRunner.manager.create.mockImplementation(
+        (_entity: unknown, payload: unknown) => payload,
+      );
+      mockQueryRunner.manager.save.mockImplementation(async (entity: unknown) => entity);
 
-      // Return the updated invoice when saved
-      mockQueryRunner.manager.save.mockImplementation(async (entity) => {
-        if (entity instanceof Invoice) {
-          return entity;
-        }
-        return entity;
-      });
+      // Mock recalculateInvoicePaidAmount dependencies
+      mockInvoiceRepository.findOne.mockResolvedValue(mockInvoice);
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ total: '50' }),
+      };
+      mockPaymentRepository.createQueryBuilder.mockReturnValue(qb);
+
+      // Spy on recalculate
+      const recalcSpy = jest.spyOn(service, 'recalculateInvoicePaidAmount');
 
       // Act
       await service.createPayment(dto);
@@ -129,75 +144,28 @@ describe('BillingService', () => {
       expect(mockQueryRunner.connect).toHaveBeenCalled();
       expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
 
-      // Verify invoice fetch with lock
-      expect(mockQueryRunner.manager.findOne).toHaveBeenCalledWith(Invoice, {
-        where: { id: dto.invoiceId },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      // Verify Payment creation
+      // Verify Payment creation with PROCESSING
       expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
         Payment,
         expect.objectContaining({
-          amount: 50,
-          amountBs: 50,
-          paymentMethod: 'CASH',
-          referenceNumber: 'REF123',
-          status: PaymentStatus.COMPLETED,
+          status: PaymentStatus.PROCESSING,
           invoice: mockInvoice,
         }),
       );
 
-      // Verify Invoice update
+      // Only payment save inside the transaction
+      expect(mockQueryRunner.manager.save).toHaveBeenCalledTimes(1);
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+
+      // Recalculation called after commit — invoice now reflects the PROCESSING payment
+      expect(recalcSpy).toHaveBeenCalledWith('inv-1');
       expect(mockInvoice.paidAmount).toBe(50);
       expect(mockInvoice.status).toBe(InvoiceStatus.PARTIAL);
-      expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(mockInvoice);
 
-      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.rollbackTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
-    });
 
-    it('should register a Payment and update Invoice status to PAID when new paidAmount == totalAmount', async () => {
-      // Arrange
-      const dto = createPaymentDto('inv-1', 100);
-      const mockInvoice = createMockInvoice('inv-1', 100, 0); // Total 100, paid 0
-
-      mockQueryRunner.manager.findOne.mockResolvedValue(mockInvoice);
-      mockQueryRunner.manager.create.mockImplementation((entity, payload) => payload);
-      mockQueryRunner.manager.save.mockImplementation(async (entity) => entity);
-
-      // Act
-      await service.createPayment(dto);
-
-      // Assert
-      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
-
-      // Verify Invoice update
-      expect(mockInvoice.paidAmount).toBe(100);
-      expect(mockInvoice.status).toBe(InvoiceStatus.PAID);
-      expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(mockInvoice);
-
-      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.release).toHaveBeenCalled();
-    });
-
-    it('should register a Payment and update Invoice status to PAID when new paidAmount > totalAmount', async () => {
-      // Arrange
-      const dto = createPaymentDto('inv-1', 150);
-      const mockInvoice = createMockInvoice('inv-1', 100, 0); // Total 100, paid 0
-
-      mockQueryRunner.manager.findOne.mockResolvedValue(mockInvoice);
-      mockQueryRunner.manager.create.mockImplementation((entity, payload) => payload);
-      mockQueryRunner.manager.save.mockImplementation(async (entity) => entity);
-
-      // Act
-      await service.createPayment(dto);
-
-      // Assert
-      expect(mockInvoice.paidAmount).toBe(150);
-      expect(mockInvoice.status).toBe(InvoiceStatus.PAID);
-      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      recalcSpy.mockRestore();
     });
 
     it('should correctly call rollbackTransaction if an error occurs while saving', async () => {
@@ -206,7 +174,9 @@ describe('BillingService', () => {
       const mockInvoice = createMockInvoice('inv-1', 100, 0);
 
       mockQueryRunner.manager.findOne.mockResolvedValue(mockInvoice);
-      mockQueryRunner.manager.create.mockImplementation((entity, payload) => payload);
+      mockQueryRunner.manager.create.mockImplementation(
+        (_entity: unknown, payload: unknown) => payload,
+      );
 
       // Simulate error
       const mockError = new Error('Database Error');
@@ -234,6 +204,68 @@ describe('BillingService', () => {
       expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('recalculateInvoicePaidAmount', () => {
+    const setupQueryBuilder = (total: string) => {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ total }),
+      };
+      mockPaymentRepository.createQueryBuilder.mockReturnValue(qb);
+      return qb;
+    };
+
+    it('should set paidAmount to sum of non-rejected payments and status to PARTIAL', async () => {
+      const invoice = createMockInvoice('inv-1', 100, 0);
+      mockInvoiceRepository.findOne.mockResolvedValue(invoice);
+      setupQueryBuilder('50');
+
+      await service.recalculateInvoicePaidAmount('inv-1');
+
+      expect(invoice.paidAmount).toBe(50);
+      expect(invoice.status).toBe(InvoiceStatus.PARTIAL);
+      expect(mockInvoiceRepository.save).toHaveBeenCalledWith(invoice);
+    });
+
+    it('should set status to PAID when paidAmount >= totalAmount', async () => {
+      const invoice = createMockInvoice('inv-1', 100, 0);
+      mockInvoiceRepository.findOne.mockResolvedValue(invoice);
+      setupQueryBuilder('100');
+
+      await service.recalculateInvoicePaidAmount('inv-1');
+
+      expect(invoice.paidAmount).toBe(100);
+      expect(invoice.status).toBe(InvoiceStatus.PAID);
+      expect(mockInvoiceRepository.save).toHaveBeenCalledWith(invoice);
+    });
+
+    it('should reset status to PENDING when all payments are rejected (paidAmount = 0)', async () => {
+      const invoice = createMockInvoice('inv-1', 100, 50);
+      invoice.status = InvoiceStatus.PARTIAL;
+      mockInvoiceRepository.findOne.mockResolvedValue(invoice);
+      setupQueryBuilder('0');
+
+      await service.recalculateInvoicePaidAmount('inv-1');
+
+      expect(invoice.paidAmount).toBe(0);
+      expect(invoice.status).toBe(InvoiceStatus.PENDING);
+      expect(mockInvoiceRepository.save).toHaveBeenCalledWith(invoice);
+    });
+
+    it('should do nothing and log a warning if the invoice is not found', async () => {
+      mockInvoiceRepository.findOne.mockResolvedValue(null);
+      const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => {});
+
+      await service.recalculateInvoicePaidAmount('nonexistent');
+
+      expect(mockPaymentRepository.createQueryBuilder).not.toHaveBeenCalled();
+      expect(mockInvoiceRepository.save).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('nonexistent'));
+      warnSpy.mockRestore();
     });
   });
 });
