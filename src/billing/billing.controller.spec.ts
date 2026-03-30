@@ -34,7 +34,6 @@ describe('BillingController', () => {
     it('should call BillingService.createPayment with correct parameters', async () => {
       // Arrange
       const createPaymentDto: CreatePaymentDto = {
-        idempotencyKey: 'idem-key',
         invoiceId: 'inv-123',
         amount: 100,
         paymentMethod: 'CASH',

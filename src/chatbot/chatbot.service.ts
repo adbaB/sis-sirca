@@ -895,7 +895,6 @@ export class ChatbotService {
           }
 
           await this.billingService.createPayment({
-            idempotencyKey: `meta-flow-${invoice.id}-${referenceNumber}`,
             invoiceId: invoice.id,
             amount: amount,
             amountExtracted: currentAmountExtracted,
@@ -933,7 +932,6 @@ export class ChatbotService {
           }
 
           await this.billingService.createPayment({
-            idempotencyKey: `manual-${invoice.id}-${referenceNumber}`,
             invoiceId: invoice.id,
             amount: amount,
             amountExtracted: currentAmountExtracted,

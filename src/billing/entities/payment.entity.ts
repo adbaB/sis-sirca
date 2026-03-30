@@ -21,9 +21,6 @@ export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 255, unique: true, name: 'idempotency_key' })
-  idempotencyKey: string;
-
   @ManyToOne('Invoice', (invoice: Invoice) => invoice.payments, { nullable: false })
   @JoinColumn({ name: 'invoice_id' })
   invoice: Invoice;
@@ -43,7 +40,7 @@ export class Payment {
   @Column({ type: 'varchar', length: 50, name: 'payment_method' })
   paymentMethod: string;
 
-  @Column({ type: 'varchar', length: 100, unique: true, name: 'reference_number' })
+  @Column({ type: 'varchar', length: 100, name: 'reference_number' })
   referenceNumber: string;
 
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PROCESSING })

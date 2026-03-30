@@ -1,13 +1,8 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { DateTime } from 'luxon';
-import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
@@ -69,7 +64,6 @@ export class BillingService {
 
       // Create Payment
       const payment = queryRunner.manager.create(Payment, {
-        idempotencyKey: createPaymentDto.idempotencyKey,
         paymentDate: new Date(),
         status: PaymentStatus.COMPLETED,
         invoice: invoice,
@@ -113,31 +107,6 @@ export class BillingService {
       return savedPayment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
-
-      // Handle Unique Constraint Violations for Idempotency
-      if (
-        error instanceof QueryFailedError &&
-        (error as unknown as { code: string }).code === '23505'
-      ) {
-        const detail = (error as unknown as { detail?: string }).detail || '';
-
-        // Check if the constraint violation is due to the idempotency key
-        if (detail.includes('idempotency_key')) {
-          const existingPayment = await this.dataSource.manager.findOne(Payment, {
-            where: { idempotencyKey: createPaymentDto.idempotencyKey },
-          });
-
-          if (existingPayment) {
-            return existingPayment;
-          }
-        } else if (detail.includes('reference_number')) {
-          // If the conflict is due to the reference number, it's a completely different request trying to reuse it.
-          throw new ConflictException(
-            `Payment with reference number ${createPaymentDto.referenceNumber} already exists`,
-          );
-        }
-      }
-
       throw error;
     } finally {
       await queryRunner.release();

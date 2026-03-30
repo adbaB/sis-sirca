@@ -93,7 +93,6 @@ describe('BillingService', () => {
 
   const createPaymentDto = (invoiceId: string, amount: number): CreatePaymentDto => {
     return {
-      idempotencyKey: 'idem-key-' + invoiceId,
       invoiceId,
       amount,
       amountExtracted: amount,

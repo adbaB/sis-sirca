@@ -1,10 +1,6 @@
 import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreatePaymentDto {
-  @IsString()
-  @IsNotEmpty()
-  idempotencyKey: string;
-
   @IsUUID()
   @IsNotEmpty()
   invoiceId: string;
