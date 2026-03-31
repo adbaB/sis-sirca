@@ -1,7 +1,7 @@
 {
   "name": "sis-sirca",
   "version": "0.0.1",
-  "description": "Sistema de Seguros SIRCA",
+  "description": "Sistema de Plan de Salud SIRCA",
   "author": "Alberto Basabe",
   "private": true,
   "license": "UNLICENSED",

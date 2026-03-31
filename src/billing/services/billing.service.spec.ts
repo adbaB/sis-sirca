@@ -23,6 +23,7 @@ describe('BillingService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
+      createQueryBuilder: jest.fn(),
     },
   };
 
@@ -32,6 +33,10 @@ describe('BillingService', () => {
 
   const mockPaymentRepository = {
     createQueryBuilder: jest.fn(),
+    findOne: jest.fn(),
+    manager: {
+      findOne: jest.fn(),
+    },
   };
 
   const mockInvoiceRepository = {
@@ -107,6 +112,17 @@ describe('BillingService', () => {
       referenceNumber: 'REF123',
     };
   };
+  const setupManagerQueryBuilder = (result: Invoice | null) => {
+    const qb = {
+      setQueryRunner: jest.fn().mockReturnThis(),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      setLock: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(result),
+    };
+    (mockQueryRunner.manager.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+    return qb;
+  };
 
   it('should be defined', () => {
     expect(service).toBeDefined();
@@ -118,7 +134,7 @@ describe('BillingService', () => {
       const dto = createPaymentDto('inv-1', 50);
       const mockInvoice = createMockInvoice('inv-1', 100, 0);
 
-      mockQueryRunner.manager.findOne.mockResolvedValue(mockInvoice);
+      setupManagerQueryBuilder(mockInvoice);
       mockQueryRunner.manager.create.mockImplementation(
         (_entity: unknown, payload: unknown) => payload,
       );
@@ -133,6 +149,13 @@ describe('BillingService', () => {
         getRawOne: jest.fn().mockResolvedValue({ total: '50' }),
       };
       mockPaymentRepository.createQueryBuilder.mockReturnValue(qb);
+
+      // Mock the enrichedPayment reload (person+contract relations)
+      mockPaymentRepository.findOne.mockResolvedValue({
+        id: 'payment-id',
+        person: { name: 'Test Person' },
+        invoice: { contract: { code: 'SIR-001' } },
+      });
 
       // Spy on recalculate
       const recalcSpy = jest.spyOn(service, 'recalculateInvoicePaidAmount');
@@ -173,7 +196,7 @@ describe('BillingService', () => {
       const dto = createPaymentDto('inv-1', 100);
       const mockInvoice = createMockInvoice('inv-1', 100, 0);
 
-      mockQueryRunner.manager.findOne.mockResolvedValue(mockInvoice);
+      setupManagerQueryBuilder(mockInvoice);
       mockQueryRunner.manager.create.mockImplementation(
         (_entity: unknown, payload: unknown) => payload,
       );
@@ -195,7 +218,7 @@ describe('BillingService', () => {
       // Arrange
       const dto = createPaymentDto('invalid-id', 100);
 
-      mockQueryRunner.manager.findOne.mockResolvedValue(null);
+      setupManagerQueryBuilder(null);
 
       // Act & Assert
       await expect(service.createPayment(dto)).rejects.toThrow(NotFoundException);

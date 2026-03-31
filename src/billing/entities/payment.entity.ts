@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Invoice } from './invoice.entity';
+import type { Person } from '../../persons/entities/person.entity';
 
 export enum PaymentStatus {
   PROCESSING = 'PROCESSING',
@@ -24,6 +25,10 @@ export class Payment {
   @ManyToOne('Invoice', (invoice: Invoice) => invoice.payments, { nullable: false })
   @JoinColumn({ name: 'invoice_id' })
   invoice: Invoice;
+
+  @ManyToOne('Person', { nullable: true })
+  @JoinColumn({ name: 'person_id' })
+  person?: Person | null;
 
   @Column({ type: 'timestamp', name: 'payment_date' })
   paymentDate: Date;

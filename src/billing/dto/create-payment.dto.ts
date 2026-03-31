@@ -25,4 +25,8 @@ export class CreatePaymentDto {
   @IsString()
   @IsOptional()
   url?: string;
+
+  @IsUUID()
+  @IsOptional()
+  personId?: string;
 }

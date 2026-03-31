@@ -5,5 +5,8 @@ export class PaymentRegisteredEvent {
     public readonly amountVes: number,
     public readonly receiptUrl: string | undefined | null,
     public readonly createdAt: Date,
+    public readonly contractCode: string,
+    public readonly personName: string,
+    public readonly paymentId: string,
   ) {}
 }

@@ -8,6 +8,7 @@ import config from '../config/configurations';
 import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
 import { TypeIdentityCard } from '../persons/entities/person.entity';
+import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 
 interface UserState {
@@ -49,6 +50,7 @@ export class ChatbotService {
     private emailService: EmailService,
     private ocrService: OcrService,
     private billingService: BillingService,
+    private personsService: PersonsService,
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
@@ -314,6 +316,8 @@ export class ChatbotService {
           screen: 'SCREEN_INVOICES',
           data: {
             invoices: mappedInvoices,
+            doc_type: docType,
+            doc_number: docNumber,
           },
         };
       }
@@ -349,6 +353,9 @@ export class ChatbotService {
             'Zelle: platinumclubadmon2@gmail.com\nTitular: Platinum Club Corp\nCuenta Citi Bank: 9154165049\n';
         }
 
+        const docType = payload.doc_type as string | undefined;
+        const docNumber = payload.doc_number as string | undefined;
+
         return {
           screen: 'SCREEN_PAYMENT_DETAILS',
           data: {
@@ -356,6 +363,8 @@ export class ChatbotService {
             total_amount: `${totalAmount.toFixed(2)} ${paymentMethod === 'transferencia' || paymentMethod === 'pago_movil' ? 'Bs' : '$'}`,
             selected_invoices: selectedInvoiceIds,
             payment_method: paymentMethod,
+            doc_type: docType,
+            doc_number: docNumber,
           },
         };
       }
@@ -472,7 +481,7 @@ export class ChatbotService {
 
         await this.sendInteractiveMessage(
           fromNumber,
-          '¡Hola! Soy Helena de SIRCA Plan de seguros. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
+          '¡Hola! Soy Helena de SIRCA Plan de Salud. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
           buttons,
         );
 
@@ -490,6 +499,8 @@ export class ChatbotService {
             selected_invoices: flowData.selected_invoices,
             payment_method: flowData.payment_method,
             total_amount: flowData.total_amount,
+            identity_card: flowData.doc_number || undefined,
+            type_identity_card: flowData.doc_type || undefined,
           };
           this.stateStore.set(fromNumber, state);
           await this.sendMessage(
@@ -715,6 +726,8 @@ export class ChatbotService {
 
             state.step = 'AWAITING_INVOICE_SELECTION_MANUAL';
             state.pending_invoices = pendingInvoices;
+            state.identity_card = docNumber;
+            state.type_identity_card = docType as TypeIdentityCard;
             this.stateStore.set(fromNumber, state);
 
             let invoiceText = 'Hemos encontrado las siguientes facturas pendientes:\n\n';
@@ -876,6 +889,26 @@ export class ChatbotService {
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
+      // Look up person by identity card if available
+      let personId: string | undefined;
+      let personFullName = '';
+      if (state.identity_card && state.type_identity_card) {
+        try {
+          const person = await this.personsService.findByIdentityCard(
+            state.identity_card,
+            state.type_identity_card,
+          );
+          if (person) {
+            personId = person.id;
+            personFullName = person.name;
+          }
+        } catch {
+          this.logger.warn(
+            `Error looking up person for ${state.type_identity_card}-${state.identity_card}`,
+          );
+        }
+      }
+
       let paymentsCreated = 0;
 
       if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
@@ -901,6 +934,7 @@ export class ChatbotService {
             paymentMethod,
             referenceNumber,
             url: receiptUrl,
+            personId,
           });
           paymentsCreated++;
         }
@@ -938,6 +972,7 @@ export class ChatbotService {
             paymentMethod,
             referenceNumber,
             url: receiptUrl,
+            personId,
           });
           paymentsCreated++;
         }
@@ -964,8 +999,9 @@ export class ChatbotService {
           .join(', ') || 'No especificado';
 
       const userInfo: Record<string, unknown> = {
-        name: 'Administración',
+        name: personFullName || 'Administración',
         'Persona/Teléfono': fromNumber,
+        Pagador: personFullName || 'No identificado',
         'Fecha y Hora': new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' }),
         'Contrato(s)': contractCodes,
       };
@@ -989,7 +1025,7 @@ export class ChatbotService {
       this.stateStore.delete(fromNumber);
       await this.sendMessage(
         fromNumber,
-        '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA Seguros! Estás en buenas manos. ✨',
+        '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
       );
     } catch (e) {
       this.logger.error('Error saving payment', e);

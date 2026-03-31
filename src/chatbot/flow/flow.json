@@ -70,6 +70,7 @@
         ]
       }
     },
+
     {
       "id": "SCREEN_INVOICES",
       "title": "Tus Facturas",
@@ -87,7 +88,9 @@
           "__example__": [
             { "id": "inv1", "title": "Factura Ene", "description": "100.00 USD" }
           ]
-        }
+        },
+        "doc_type": { "type": "string" },
+        "doc_number": { "type": "string" }
       },
       "terminal": false,
       "layout": {
@@ -114,7 +117,9 @@
                     "name": "SCREEN_PAYMENT_METHOD"
                   },
                   "payload": {
-                    "selected_invoices": "${form.selected_invoices}"
+                    "selected_invoices": "${form.selected_invoices}",
+                    "doc_type": "${data.doc_type}",
+                    "doc_number": "${data.doc_number}"
                   }
                 }
               }
@@ -131,7 +136,9 @@
           "type": "array",
           "items": { "type": "string" },
           "__example__": ["inv1"]
-        }
+        },
+        "doc_type": { "type": "string" },
+        "doc_number": { "type": "string" }
       },
       "terminal": false,
       "layout": {
@@ -164,7 +171,9 @@
                   "payload": {
                     "action": "fetch_payment_details",
                     "selected_invoices": "${data.selected_invoices}",
-                    "payment_method": "${form.payment_method}"
+                    "payment_method": "${form.payment_method}",
+                    "doc_type": "${data.doc_type}",
+                    "doc_number": "${data.doc_number}"
                   }
                 }
               }
@@ -178,13 +187,15 @@
       "title": "Resumen Final",
       "data": {
         "payment_info": { "type": "string", "__example__": "Datos de transferencia..." },
-        "total_amount": { "type": "string", "__example__": "100.00" },
+        "total_amount": { "type": "string", "__example__": "100.00 bs" },
         "selected_invoices": {
           "type": "array",
           "items": { "type": "string" },
           "__example__": ["Factura 001", "Factura 002"]
         },
-        "payment_method": { "type": "string", "__example__": "Pago Movil" }
+        "payment_method": { "type": "string", "__example__": "Pago Movil" },
+        "doc_number":{ "type": "string", "__example__":"123456"},
+        "doc_type": {"type":"string", "__example__":"V"}
       },
       "terminal": true,
       "layout": {
@@ -218,7 +229,9 @@
               "payload": {
                 "selected_invoices": "${data.selected_invoices}",
                 "payment_method": "${data.payment_method}",
-                "total_amount": "${data.total_amount}"
+                "total_amount": "${data.total_amount}",
+                "doc_number": "${data.doc_number}",
+                "doc_type": "${data.doc_type}"
               }
             }
           }

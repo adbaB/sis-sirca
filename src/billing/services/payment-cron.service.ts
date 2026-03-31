@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
@@ -34,15 +34,20 @@ export class PaymentCronService {
   async checkPaymentStatusTransitions() {
     this.logger.log('Iniciando CRON: Revisión de estados de pagos en Google Sheets...');
 
-    const rows = await this.googleSheetsService.readRows('Pagos!A2:G');
+    // Read up to col J (index 9) to capture the payment ID stored in the last column.
+    const rows = await this.googleSheetsService.readRows('Pagos!A2:J');
 
     if (!rows || rows.length === 0) {
       return;
     }
 
     for (const row of rows) {
-      const referencia = row[2] as string | undefined;
-      const estadoHoja = row[6] as string | undefined;
+      // Column mapping (0-indexed):
+      // 0=Contrato, 1=Nombre, 2=Fecha, 3=Hora, 4=Referencia,
+      // 5=Monto$, 6=MontoBs, 7=URL, 8=Estado, 9=PaymentID
+      const referencia = row[4] as string | undefined;
+      const estadoHoja = row[8] as string | undefined;
+      const paymentId = row[9] as string | undefined;
 
       if (!referencia || !estadoHoja) {
         continue;
@@ -61,14 +66,15 @@ export class PaymentCronService {
         continue;
       }
 
+      // Look up by payment ID; rows without a payment ID (legacy) are skipped
       const payment = await this.paymentRepository.findOne({
-        where: { referenceNumber: referencia },
+        where: { id: paymentId },
         relations: ['invoice'],
       });
 
       if (!payment) {
         this.logger.warn(
-          `[CRON] Estado "${estadoHoja}" detectado pero no existe pago con referencia "${referencia}". Ignorando.`,
+          `[CRON] Estado "${estadoHoja}" detectado pero no existe pago con ${paymentId ? `ID "${paymentId}"` : `referencia "${referencia}"`}. Ignorando.`,
         );
         continue;
       }

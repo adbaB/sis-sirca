@@ -5,6 +5,7 @@ import { EmailService } from '../email/email.service';
 import { ChatbotService } from './chatbot.service';
 import { OcrService } from '../ocr/ocr.service';
 import { BillingService } from '../billing/services/billing.service';
+import { PersonsService } from '../persons/services/persons.service';
 import config from '../config/configurations';
 
 jest.mock('axios');
@@ -33,6 +34,10 @@ describe('ChatbotService', () => {
     findInvoicesByIds: jest.fn(),
   };
 
+  const mockPersonsService = {
+    findByIdentityCard: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -55,6 +60,7 @@ describe('ChatbotService', () => {
         { provide: EmailService, useValue: mockEmailService },
         { provide: OcrService, useValue: mockOcrService },
         { provide: BillingService, useValue: mockBillingService },
+        { provide: PersonsService, useValue: mockPersonsService },
       ],
     }).compile();
 
