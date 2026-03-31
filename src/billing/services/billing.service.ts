@@ -10,7 +10,9 @@ import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { PaymentRegisteredEvent } from '../events/payment-registered.event';
+import { SurplusCreatedEvent } from '../events/surplus-created.event';
 
 @Injectable()
 export class BillingService {
@@ -66,13 +68,20 @@ export class BillingService {
       }
 
       let amountUsd = amount;
+      let surplusAmountUsd: number | null = null;
+      let surplusAmountBs: number | null = null;
+
+      const invoiceUnpaidAmount = Number(invoice.totalAmount) - Number(invoice.paidAmount);
+
       if (createPaymentDto.paymentMethod !== 'zelle' && createPaymentDto.amountExtracted) {
         amountUsd = createPaymentDto.amountExtracted / exchangeRate.rateUsd;
       }
 
+      const paymentDate = new Date();
+
       // Create Payment
       const payment = queryRunner.manager.create(Payment, {
-        paymentDate: new Date(),
+        paymentDate: paymentDate,
         status: PaymentStatus.PROCESSING,
         invoice: invoice,
         person: createPaymentDto.personId ? { id: createPaymentDto.personId } : null,
@@ -85,7 +94,44 @@ export class BillingService {
 
       savedPayment = await queryRunner.manager.save(payment);
 
+      // Check for surplus
+      if (amountUsd > invoiceUnpaidAmount) {
+        const surplusUsd = amountUsd - invoiceUnpaidAmount;
+        if (createPaymentDto.paymentMethod === 'zelle') {
+          surplusAmountUsd = surplusUsd;
+        } else {
+          surplusAmountBs = surplusUsd * exchangeRate.rateUsd;
+        }
+
+        const surplus = queryRunner.manager.create(Surplus, {
+          amountBs: surplusAmountBs,
+          amountUsd: surplusAmountUsd,
+          date: paymentDate,
+          payment: savedPayment,
+          invoice: null,
+          contract: invoice.contract,
+          status: SurplusStatus.PENDING,
+        });
+
+        await queryRunner.manager.save(surplus);
+      }
+
       await queryRunner.commitTransaction();
+
+      // Emit surplus event if any
+      if (surplusAmountUsd !== null || surplusAmountBs !== null) {
+        this.eventEmitter.emit(
+          'surplus.created',
+          new SurplusCreatedEvent(
+            savedPayment.referenceNumber,
+            surplusAmountUsd,
+            surplusAmountBs,
+            savedPayment.url,
+            paymentDate,
+            invoice.contract.code,
+          ),
+        );
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
