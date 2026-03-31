@@ -30,7 +30,7 @@ export class PaymentCronService {
     private readonly billingService: BillingService,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_HOUR)
   async checkPaymentStatusTransitions() {
     this.logger.log('Iniciando CRON: Revisión de estados de pagos en Google Sheets...');
 
@@ -66,7 +66,7 @@ export class PaymentCronService {
         continue;
       }
 
-      // Prefer lookup by payment ID (precise); fall back to referenceNumber for old rows.
+      // Look up by payment ID; rows without a payment ID (legacy) are skipped
       const payment = await this.paymentRepository.findOne({
         where: { id: paymentId },
         relations: ['invoice'],

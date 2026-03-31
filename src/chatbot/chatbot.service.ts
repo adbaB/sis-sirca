@@ -904,7 +904,7 @@ export class ChatbotService {
           }
         } catch {
           this.logger.warn(
-            `Person not found for ${state.type_identity_card}-${state.identity_card}`,
+            `Error looking up person for ${state.type_identity_card}-${state.identity_card}`,
           );
         }
       }
