@@ -43,7 +43,7 @@ export default registerAs('config', () => {
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
       sesFromEmail: process.env.SES_FROM_EMAIL || 'noreply@sirca.com.ve',
       s3Bucket: process.env.AWS_S3_BUCKET,
-      notificationEmail: process.env.NOTIFICATION_EMAIL,
+      notificationEmail: process.env.SES_NOTIFICATION_EMAIL,
     },
 
     env: process.env.NODE_ENV || 'development',

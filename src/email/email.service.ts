@@ -1,6 +1,6 @@
-import { Injectable, InternalServerErrorException, Inject } from '@nestjs/common';
-import { ConfigType } from '@nestjs/config';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import configurations from '../config/configurations';
 import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
 
@@ -47,11 +47,10 @@ export class EmailService {
       <p>Puedes ver tu comprobante de pago en el siguiente enlace:</p>
       <a href="${receiptUrl}">Ver Comprobante</a>
       <br/><br/>
-      <p>Gracias por confiar en SIRCA Seguros.</p>
+      <p>Gracias por confiar en SIRCA.</p>
     `;
 
-    const notificationEmail =
-      this.configService.aws.notificationEmail || 'albertobasabe487@gmail.com';
+    const notificationEmail = this.configService.aws.notificationEmail || 'atencion@sirca.com.ve';
 
     const command = new SendEmailCommand({
       Source: this.configService.aws.sesFromEmail,
@@ -60,7 +59,7 @@ export class EmailService {
       },
       Message: {
         Subject: {
-          Data: 'Confirmación de Pago - SIRCA Seguros',
+          Data: 'Confirmación de Pago - SIRCA',
           Charset: 'UTF-8',
         },
         Body: {

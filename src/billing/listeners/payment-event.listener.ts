@@ -19,7 +19,12 @@ export class PaymentEventListener {
     const fecha = dateObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas' });
     const hora = dateObj.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas' });
 
+    // Column order:
+    // A=Contrato, B=Nombre, C=Fecha, D=Hora, E=Referencia,
+    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID
     const rowValues = [
+      event.contractCode || '',
+      event.personName || '',
       fecha,
       hora,
       event.reference,
@@ -27,8 +32,9 @@ export class PaymentEventListener {
       event.amountVes,
       event.receiptUrl || '',
       'Pendiente',
+      event.paymentId,
     ];
 
-    await this.googleSheetsService.appendRow('Pagos!A:G', rowValues);
+    await this.googleSheetsService.appendRow('Pagos!A:J', rowValues);
   }
 }

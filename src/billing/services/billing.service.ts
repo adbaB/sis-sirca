@@ -47,10 +47,13 @@ export class BillingService {
 
     try {
       // Use pessimistic write lock to prevent race conditions when checking and updating invoice
-      const invoice = await queryRunner.manager.findOne(Invoice, {
-        where: { id: createPaymentDto.invoiceId },
-        lock: { mode: 'pessimistic_write' },
-      });
+      const invoice = await queryRunner.manager
+        .createQueryBuilder(Invoice, 'invoice')
+        .setQueryRunner(queryRunner)
+        .innerJoinAndSelect('invoice.contract', 'contract')
+        .where('invoice.id = :id', { id: createPaymentDto.invoiceId })
+        .setLock('pessimistic_write')
+        .getOne();
 
       if (!invoice) {
         throw new NotFoundException(`Invoice with ID ${createPaymentDto.invoiceId} not found`);
@@ -72,12 +75,13 @@ export class BillingService {
         paymentDate: new Date(),
         status: PaymentStatus.PROCESSING,
         invoice: invoice,
+        person: createPaymentDto.personId ? { id: createPaymentDto.personId } : null,
         referenceNumber: createPaymentDto.referenceNumber,
         amount: amountUsd,
         amountBs: createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted : 0,
         paymentMethod: createPaymentDto.paymentMethod,
         url: createPaymentDto.url,
-      });
+      }) as Payment;
 
       savedPayment = await queryRunner.manager.save(payment);
 
@@ -93,9 +97,15 @@ export class BillingService {
     // If the payment is later Rejected, the CRON recalculation will reverse it.
     await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId);
 
-    // Emit event outside the transaction block so that a publish failure
-    // cannot trigger a rollback or cause the request to be reported as failed.
-    // The payment is already persisted at this point.
+    // Reload the saved payment with relations so person name and contract code are always available,
+    // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
+    const enrichedPayment = await this.paymentRepository.findOne({
+      where: { id: savedPayment!.id },
+      relations: ['person', 'invoice', 'invoice.contract'],
+    });
+    const contractCode = enrichedPayment?.invoice?.contract?.code || '';
+    const personName = enrichedPayment?.person?.name || '';
+
     try {
       this.eventEmitter.emit(
         'payment.registered',
@@ -105,6 +115,9 @@ export class BillingService {
           savedPayment!.amountBs,
           savedPayment!.url,
           savedPayment!.createdAt || new Date(),
+          contractCode,
+          personName,
+          savedPayment!.id,
         ),
       );
     } catch (emitError) {
