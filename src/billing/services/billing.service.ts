@@ -74,7 +74,10 @@ export class BillingService {
 
       let amountUsd = amount;
 
-      const invoiceUnpaidAmount = Number(invoice.totalAmount) - Number(invoice.paidAmount);
+      const invoiceUnpaidAmount = Math.max(
+        0,
+        Number(invoice.totalAmount) - Number(invoice.paidAmount),
+      );
 
       if (createPaymentDto.paymentMethod !== 'zelle' && createPaymentDto.amountExtracted) {
         amountUsd = createPaymentDto.amountExtracted / exchangeRate.rateUsd;
@@ -141,16 +144,15 @@ export class BillingService {
       await queryRunner.release();
     }
 
-    // Reload the saved payment with relations so person name and contract code are always available,
-    // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
-    const enrichedPayment = await this.paymentRepository.findOne({
-      where: { id: savedPayment!.id },
-      relations: ['person', 'invoice', 'invoice.contract'],
-    });
-    const contractCode = enrichedPayment?.invoice?.contract?.code || '';
-    const personName = enrichedPayment?.person?.name || '';
-
     try {
+      // Reload the saved payment with relations so person name and contract code are always available,
+      // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
+      const enrichedPayment = await this.paymentRepository.findOne({
+        where: { id: savedPayment!.id },
+        relations: ['person', 'invoice', 'invoice.contract'],
+      });
+      const contractCode = enrichedPayment?.invoice?.contract?.code || '';
+      const personName = enrichedPayment?.person?.name || '';
       this.eventEmitter.emit(
         'payment.registered',
         new PaymentRegisteredEvent(

@@ -59,7 +59,12 @@ export class SurplusCronService {
         );
         continue;
       }
-
+      if (targetStatus === SurplusStatus.PENDING && surplus.status !== SurplusStatus.PENDING) {
+        this.logger.warn(
+          `[CRON] Ignorando estado "Pendiente" desactualizado para sobrante ${surplusId}. Estado actual: ${surplus.status}.`,
+        );
+        continue;
+      }
       if (surplus.status === targetStatus) {
         continue;
       }
