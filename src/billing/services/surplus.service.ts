@@ -49,7 +49,7 @@ export class SurplusService {
           status: SurplusStatus.PENDING,
           invoice: IsNull(),
         },
-        relations: ['payment', 'payment.person'],
+        relations: ['payment', 'payment.person', 'contract'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -81,8 +81,13 @@ export class SurplusService {
             }
           }
 
+          const rateUsd = Number(exchangeRate.rateUsd);
+          if (!Number.isFinite(rateUsd) || rateUsd <= 0) {
+            throw new Error('Invalid exchange rate for current date to apply Bs surplus');
+          }
+
           paymentAmountBs = Number(surplus.amountBs);
-          paymentAmountUsd = paymentAmountBs / exchangeRate.rateUsd;
+          paymentAmountUsd = paymentAmountBs / rateUsd;
         } else if (surplus.amountUsd && surplus.amountUsd > 0) {
           paymentAmountUsd = Number(surplus.amountUsd);
         }
@@ -154,6 +159,7 @@ export class SurplusService {
       this.logger.error(
         `Error applying surpluses to invoice ${invoiceId}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      throw error;
     } finally {
       await queryRunner.release();
     }
