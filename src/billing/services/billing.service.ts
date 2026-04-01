@@ -70,6 +70,7 @@ export class BillingService {
       let amountUsd = amount;
       let surplusAmountUsd: number | null = null;
       let surplusAmountBs: number | null = null;
+      let savedSurplusId: string | null = null;
 
       const invoiceUnpaidAmount = Number(invoice.totalAmount) - Number(invoice.paidAmount);
 
@@ -113,13 +114,14 @@ export class BillingService {
           status: SurplusStatus.PENDING,
         });
 
-        await queryRunner.manager.save(surplus);
+        const savedSurplus = await queryRunner.manager.save(surplus);
+        savedSurplusId = savedSurplus.id;
       }
 
       await queryRunner.commitTransaction();
 
       // Emit surplus event if any
-      if (surplusAmountUsd !== null || surplusAmountBs !== null) {
+      if ((surplusAmountUsd !== null || surplusAmountBs !== null) && savedSurplusId !== null) {
         this.eventEmitter.emit(
           'surplus.created',
           new SurplusCreatedEvent(
@@ -129,6 +131,7 @@ export class BillingService {
             savedPayment.url,
             paymentDate,
             invoice.contract.code,
+            savedSurplusId,
           ),
         );
       }
