@@ -46,6 +46,7 @@
     "axios": "^1.13.6",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "express": "^5.2.1",
     "googleapis": "^171.4.0",
     "ioredis": "^5.10.1",
     "luxon": "^3.7.2",
@@ -112,7 +113,8 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@nestjs/core"
+      "@nestjs/core",
+      "tesseract.js"
     ]
   }
 }
