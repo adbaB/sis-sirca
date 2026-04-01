@@ -26,9 +26,9 @@ export class SurplusCronService {
   async checkSurplusStatusTransitions() {
     this.logger.log('Iniciando CRON: Revisión de estados de sobrantes en Google Sheets...');
 
-    // Read up to col H (index 7) to capture the reference stored in the last column.
-    // The columns are: A=Fecha, B=Hora, C=Contrato, D=Monto$, E=MontoBs, F=URL, G=Estado, H=Referencia
-    const rows = await this.googleSheetsService.readRows('Sobrantes!A2:H');
+    // Read up to col I (index 8) to capture the reference stored in the last column.
+    // The columns are: A=Fecha, B=Hora, C=Contrato, D=Monto$, E=MontoBs, F=URL, G=Estado, H=Referencia, I=ID
+    const rows = await this.googleSheetsService.readRows('Sobrantes!A2:I');
 
     if (!rows || rows.length === 0) {
       return;
@@ -37,8 +37,9 @@ export class SurplusCronService {
     for (const row of rows) {
       const estadoHoja = row[6] as string | undefined;
       const referencia = row[7] as string | undefined;
+      const surplusId = row[8] as string | undefined;
 
-      if (!referencia || !estadoHoja) {
+      if (!referencia || !estadoHoja || !surplusId) {
         continue;
       }
 
@@ -50,8 +51,7 @@ export class SurplusCronService {
 
       // Note: We use the reference to find the surplus. We assume one surplus per payment reference for simplicity.
       const surplus = await this.surplusRepository.findOne({
-        where: { payment: { referenceNumber: referencia } },
-        relations: ['payment'],
+        where: { id: surplusId },
       });
 
       if (!surplus) {

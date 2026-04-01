@@ -6,5 +6,6 @@ export class SurplusCreatedEvent {
     public readonly receiptUrl: string | undefined | null,
     public readonly date: Date,
     public readonly contractCode: string,
+    public readonly surplusId: string,
   ) {}
 }

@@ -20,7 +20,7 @@ export class SurplusEventListener {
     const hora = dateObj.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas' });
 
     // Column order para sobrantes:
-    // A=Fecha, B=Hora, C=Contrato, D=Monto$, E=MontoBs, F=URL, G=Estado, H=Referencia
+    // A=Fecha, B=Hora, C=Contrato, D=Monto$, E=MontoBs, F=URL, G=Estado, H=Referencia, I=ID
     const rowValues = [
       fecha,
       hora,
@@ -30,8 +30,9 @@ export class SurplusEventListener {
       event.receiptUrl || '',
       'Pendiente',
       event.reference,
+      event.surplusId,
     ];
 
-    await this.googleSheetsService.appendRow('Sobrantes!A:H', rowValues);
+    await this.googleSheetsService.appendRow('Sobrantes!A:I', rowValues);
   }
 }
