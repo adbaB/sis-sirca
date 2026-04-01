@@ -68,4 +68,49 @@ export class GoogleSheetsService implements OnModuleInit {
       return [];
     }
   }
+
+  async updateSurplusStatus(surplusId: string, newStatus: string): Promise<void> {
+    try {
+      // Leer todas las filas para encontrar el surplusId en la columna I (índice 8)
+      const rows = await this.readRows('Sobrantes!A:I');
+
+      const rowIndex = rows.findIndex((row) => row[8] === surplusId);
+
+      if (rowIndex === -1) {
+        this.logger.warn(
+          `No se encontró el surplusId ${surplusId} en Google Sheets para actualizar su estado a ${newStatus}.`,
+        );
+        return;
+      }
+
+      // El rango a actualizar es la columna G (Estado) en la fila encontrada (es 1-indexed, así que rowIndex + 1)
+      const updateRange = `Sobrantes!G${rowIndex + 1}`;
+
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: updateRange,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [[newStatus]],
+        },
+      });
+
+      this.logger.log(
+        `Estado del surplus ${surplusId} actualizado a ${newStatus} en Google Sheets.`,
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error(
+          `Error al actualizar estado del surplus en Google Sheets: ${error.message}`,
+          error.stack,
+        );
+      } else {
+        this.logger.error(
+          'Error al actualizar estado del surplus en Google Sheets: Unknown error',
+          String(error),
+        );
+      }
+      // No lanzamos el error para evitar interrumpir el flujo principal de bd si falla sheets
+    }
+  }
 }

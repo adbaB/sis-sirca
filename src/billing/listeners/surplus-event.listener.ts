@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 import { SurplusCreatedEvent } from '../events/surplus-created.event';
-
+import { SurplusAppliedEvent } from '../events/surplus-applied.event';
 @Injectable()
 export class SurplusEventListener {
   private readonly logger = new Logger(SurplusEventListener.name);
@@ -34,5 +34,11 @@ export class SurplusEventListener {
     ];
 
     await this.googleSheetsService.appendRow('Sobrantes!A:I', rowValues);
+  }
+
+  @OnEvent('surplus.applied', { async: true })
+  async handleSurplusAppliedEvent(event: SurplusAppliedEvent) {
+    this.logger.log(`Procesando evento de aplicación de sobrante para ID: ${event.surplusId}`);
+    await this.googleSheetsService.updateSurplusStatus(event.surplusId, 'Aplicado');
   }
 }

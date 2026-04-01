@@ -4,6 +4,9 @@ import { Repository, DataSource, IsNull } from 'typeorm';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { Invoice } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { SurplusCreatedEvent } from '../events/surplus-created.event';
+import { SurplusAppliedEvent } from '../events/surplus-applied.event';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
 import { DateTime } from 'luxon';
@@ -19,6 +22,7 @@ export class SurplusService {
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
     private readonly billingService: BillingService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -61,6 +65,9 @@ export class SurplusService {
       const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
       let exchangeRate: ExchangeRate | null = null;
       let remainingBalanceUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
+
+      const appliedSurplusIds: string[] = [];
+      const newLeftoverSurpluses: Surplus[] = [];
 
       for (const surplus of surpluses) {
         if (remainingBalanceUsd <= 0.01) {
@@ -116,7 +123,8 @@ export class SurplusService {
               contract: surplus.contract,
               status: SurplusStatus.PENDING,
             });
-            await queryRunner.manager.save(remainingSurplus);
+            const savedRemainingSurplus = await queryRunner.manager.save(remainingSurplus);
+            newLeftoverSurpluses.push(savedRemainingSurplus);
           }
 
           // Create a new Payment record applying this surplus segment to the invoice
@@ -147,6 +155,8 @@ export class SurplusService {
           this.logger.log(
             `Applied surplus ${surplus.id} to invoice ${invoiceId} (applied USD: $${amountToApplyUsd.toFixed(2)})`,
           );
+
+          appliedSurplusIds.push(surplus.id);
         }
       }
 
@@ -154,6 +164,26 @@ export class SurplusService {
       await this.billingService.recalculateInvoicePaidAmount(invoiceId, queryRunner);
 
       await queryRunner.commitTransaction();
+
+      // Emit events after successful commit to keep external workflows (like Google Sheets) in sync
+      for (const id of appliedSurplusIds) {
+        this.eventEmitter.emit('surplus.applied', new SurplusAppliedEvent(id));
+      }
+
+      for (const remaining of newLeftoverSurpluses) {
+        this.eventEmitter.emit(
+          'surplus.created',
+          new SurplusCreatedEvent(
+            remaining.payment.referenceNumber,
+            remaining.amountUsd !== null ? Number(remaining.amountUsd) : null,
+            remaining.amountBs !== null ? Number(remaining.amountBs) : null,
+            remaining.payment.url,
+            remaining.date,
+            remaining.contract.code,
+            remaining.id,
+          ),
+        );
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(
