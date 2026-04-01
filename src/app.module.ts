@@ -18,6 +18,8 @@ import { ExchangeRateModule } from './exchange-rate/exchange-rate.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PaymentTypesModule } from './payment-types/payment-types.module';
 import { GoogleModule } from './google/google.module';
+import { RedisModule } from '@nestjs-modules/ioredis';
+import config from './config/configurations';
 
 @Module({
   imports: [
@@ -38,6 +40,13 @@ import { GoogleModule } from './google/google.module';
     ExchangeRateModule,
     PaymentTypesModule,
     GoogleModule,
+    RedisModule.forRootAsync({
+      inject: [config.KEY],
+      useFactory: (configService: ReturnType<typeof config>) => ({
+        type: 'single',
+        url: `redis://${configService.redis.password ? `:${configService.redis.password}@` : ''}${configService.redis.host}:${configService.redis.port}`,
+      }),
+    }),
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRedisConnectionToken } from '@nestjs-modules/ioredis';
 import axios from 'axios';
 import { AwsService } from '../aws/aws.service';
 import { EmailService } from '../email/email.service';
@@ -38,10 +39,34 @@ describe('ChatbotService', () => {
     findByIdentityCard: jest.fn(),
   };
 
+  let mockRedisStore: Map<string, string>;
+  let mockRedis: {
+    get: jest.Mock;
+    set: jest.Mock;
+    del: jest.Mock;
+  };
+
   beforeEach(async () => {
+    mockRedisStore = new Map<string, string>();
+    mockRedis = {
+      get: jest.fn((key: string) => Promise.resolve(mockRedisStore.get(key) || null)),
+      set: jest.fn((key: string, val: string) => {
+        mockRedisStore.set(key, val);
+        return Promise.resolve('OK');
+      }),
+      del: jest.fn((key: string) => {
+        mockRedisStore.delete(key);
+        return Promise.resolve(1);
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatbotService,
+        {
+          provide: getRedisConnectionToken('default'),
+          useValue: mockRedis,
+        },
         {
           provide: config.KEY,
           useValue: {
