@@ -7,6 +7,7 @@ import { Plan } from '../../plans/entities/plan.entity';
 import { InvoiceDetail } from '../entities/invoice-detail.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { BillingCronService } from './billing-cron.service';
+import { SurplusService } from './surplus.service';
 
 describe('BillingCronService', () => {
   let service: BillingCronService;
@@ -44,6 +45,10 @@ describe('BillingCronService', () => {
         {
           provide: DataSource,
           useValue: mockDataSource,
+        },
+        {
+          provide: SurplusService,
+          useValue: { applyPendingSurplusesToInvoice: jest.fn() },
         },
       ],
     }).compile();

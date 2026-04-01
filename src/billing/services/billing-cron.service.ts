@@ -6,6 +6,7 @@ import { Contract, ContractStatus } from '../../contracts/entities/contract.enti
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { InvoiceDetail } from '../entities/invoice-detail.entity';
 import { PersonStatus } from '../../persons/entities/person.entity';
+import { SurplusService } from './surplus.service';
 
 @Injectable()
 export class BillingCronService {
@@ -15,6 +16,7 @@ export class BillingCronService {
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
     private readonly dataSource: DataSource,
+    private readonly surplusService: SurplusService,
   ) {}
 
   @Cron('0 0 25 * *')
@@ -149,6 +151,16 @@ export class BillingCronService {
 
       await queryRunner.commitTransaction();
       this.logger.log(`Created invoice ${savedInvoice.id} for contract ${contract.id}`);
+
+      // Apply any pending surpluses to the new invoice
+      try {
+        await this.surplusService.applyPendingSurplusesToInvoice(contract.id, savedInvoice.id);
+      } catch (surplusError) {
+        this.logger.error(
+          `Error applying surpluses for contract ${contract.id} to invoice ${savedInvoice.id}`,
+          surplusError,
+        );
+      }
     } catch (error: unknown) {
       if (queryRunner.isTransactionActive) {
         await queryRunner.rollbackTransaction();

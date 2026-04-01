@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { DateTime } from 'luxon';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
@@ -10,7 +10,9 @@ import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { PaymentRegisteredEvent } from '../events/payment-registered.event';
+import { SurplusCreatedEvent } from '../events/surplus-created.event';
 
 @Injectable()
 export class BillingService {
@@ -41,13 +43,18 @@ export class BillingService {
 
     const queryRunner = this.dataSource.createQueryRunner();
     let savedPayment: Payment;
+    let invoice: Invoice | null;
+    let surplusAmountUsd: number | null = null;
+    let surplusAmountBs: number | null = null;
+    let surplus: Surplus | null = null;
+    let paymentDate: Date;
 
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
       // Use pessimistic write lock to prevent race conditions when checking and updating invoice
-      const invoice = await queryRunner.manager
+      invoice = await queryRunner.manager
         .createQueryBuilder(Invoice, 'invoice')
         .setQueryRunner(queryRunner)
         .innerJoinAndSelect('invoice.contract', 'contract')
@@ -66,24 +73,68 @@ export class BillingService {
       }
 
       let amountUsd = amount;
+
+      const invoiceUnpaidAmount = Math.max(
+        0,
+        Number(invoice.totalAmount) - Number(invoice.paidAmount),
+      );
+
       if (createPaymentDto.paymentMethod !== 'zelle' && createPaymentDto.amountExtracted) {
         amountUsd = createPaymentDto.amountExtracted / exchangeRate.rateUsd;
       }
 
-      // Create Payment
+      // If the payment exceeds the invoice balance, cap the credited amount and record the surplus.
+      let paymentAmountUsd = amountUsd;
+      let paymentAmountBs = createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted : 0;
+
+      if (amountUsd > invoiceUnpaidAmount) {
+        const surplusUsd = amountUsd - invoiceUnpaidAmount;
+
+        if (createPaymentDto.paymentMethod === 'zelle') {
+          surplusAmountUsd = surplusUsd;
+        } else {
+          surplusAmountBs = surplusUsd * exchangeRate.rateUsd;
+        }
+
+        // Cap the payment to exactly what the invoice needs.
+        paymentAmountUsd = invoiceUnpaidAmount;
+        paymentAmountBs =
+          createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted - (surplusAmountBs ?? 0) : 0;
+      }
+
+      paymentDate = new Date();
+
+      // Create Payment (amount capped to the invoice unpaid balance when there is a surplus)
       const payment = queryRunner.manager.create(Payment, {
-        paymentDate: new Date(),
+        paymentDate: paymentDate,
         status: PaymentStatus.PROCESSING,
         invoice: invoice,
         person: createPaymentDto.personId ? { id: createPaymentDto.personId } : null,
         referenceNumber: createPaymentDto.referenceNumber,
-        amount: amountUsd,
-        amountBs: createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted : 0,
+        amount: paymentAmountUsd,
+        amountBs: paymentAmountBs,
         paymentMethod: createPaymentDto.paymentMethod,
         url: createPaymentDto.url,
       }) as Payment;
 
       savedPayment = await queryRunner.manager.save(payment);
+
+      // Persist surplus record if applicable
+      if (surplusAmountUsd !== null || surplusAmountBs !== null) {
+        surplus = await queryRunner.manager.save(
+          queryRunner.manager.create(Surplus, {
+            amountBs: surplusAmountBs,
+            amountUsd: surplusAmountUsd,
+            date: paymentDate,
+            payment: savedPayment,
+            invoice: null,
+            contract: invoice.contract,
+            status: SurplusStatus.PENDING,
+          }),
+        );
+      }
+      // Recalculate invoice inside the transaction so a failure here rolls back the payment too.
+      await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId, queryRunner);
 
       await queryRunner.commitTransaction();
     } catch (error) {
@@ -93,20 +144,15 @@ export class BillingService {
       await queryRunner.release();
     }
 
-    // Recalculate invoice so the user sees the payment credited immediately.
-    // If the payment is later Rejected, the CRON recalculation will reverse it.
-    await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId);
-
-    // Reload the saved payment with relations so person name and contract code are always available,
-    // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
-    const enrichedPayment = await this.paymentRepository.findOne({
-      where: { id: savedPayment!.id },
-      relations: ['person', 'invoice', 'invoice.contract'],
-    });
-    const contractCode = enrichedPayment?.invoice?.contract?.code || '';
-    const personName = enrichedPayment?.person?.name || '';
-
     try {
+      // Reload the saved payment with relations so person name and contract code are always available,
+      // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
+      const enrichedPayment = await this.paymentRepository.findOne({
+        where: { id: savedPayment!.id },
+        relations: ['person', 'invoice', 'invoice.contract'],
+      });
+      const contractCode = enrichedPayment?.invoice?.contract?.code || '';
+      const personName = enrichedPayment?.person?.name || '';
       this.eventEmitter.emit(
         'payment.registered',
         new PaymentRegisteredEvent(
@@ -129,6 +175,30 @@ export class BillingService {
       );
     }
 
+    // Emit surplus event outside the transaction so a throw here can never
+    // trigger a rollback of an already-committed transaction.
+    if (surplusAmountUsd !== null || surplusAmountBs !== null) {
+      try {
+        this.eventEmitter.emit(
+          'surplus.created',
+          new SurplusCreatedEvent(
+            savedPayment!.referenceNumber,
+            surplusAmountUsd,
+            surplusAmountBs,
+            savedPayment!.url,
+            paymentDate,
+            invoice.contract.code,
+            surplus!.id,
+          ),
+        );
+      } catch (emitError) {
+        this.logger.error(
+          `Failed to emit surplus.created event for payment ${savedPayment!.id}. The surplus was saved successfully.`,
+          emitError instanceof Error ? emitError.stack : String(emitError),
+        );
+      }
+    }
+
     return savedPayment!;
   }
 
@@ -136,18 +206,26 @@ export class BillingService {
    * Recalculates the invoice's paidAmount from the source of truth:
    * SUM of all non-rejected payments (PROCESSING + COMPLETED).
    * Then derives the invoice status accordingly.
+   *
+   * When called with a QueryRunner the operation executes within that transaction
+   * so a failure rolls back the entire payment + recalculation atomically.
    */
-  async recalculateInvoicePaidAmount(invoiceId: string): Promise<void> {
-    const invoice = await this.invoiceRepository.findOne({
-      where: { id: invoiceId },
-    });
+  async recalculateInvoicePaidAmount(invoiceId: string, queryRunner?: QueryRunner): Promise<void> {
+    const invoiceRepo = queryRunner
+      ? queryRunner.manager.getRepository(Invoice)
+      : this.invoiceRepository;
+    const paymentRepo = queryRunner
+      ? queryRunner.manager.getRepository(Payment)
+      : this.paymentRepository;
+
+    const invoice = await invoiceRepo.findOne({ where: { id: invoiceId } });
 
     if (!invoice) {
       this.logger.warn(`Cannot recalculate: Invoice ${invoiceId} not found.`);
       return;
     }
 
-    const result = await this.paymentRepository
+    const result = await paymentRepo
       .createQueryBuilder('payment')
       .select('COALESCE(SUM(payment.amount), 0)', 'total')
       .where('payment.invoice_id = :invoiceId', { invoiceId })
@@ -169,7 +247,7 @@ export class BillingService {
       invoice.status = InvoiceStatus.PENDING;
     }
 
-    await this.invoiceRepository.save(invoice);
+    await invoiceRepo.save(invoice);
   }
 
   async findPendingInvoicesByIdentityCard(

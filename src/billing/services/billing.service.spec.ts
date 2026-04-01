@@ -24,6 +24,7 @@ describe('BillingService', () => {
       create: jest.fn(),
       save: jest.fn(),
       createQueryBuilder: jest.fn(),
+      getRepository: jest.fn(),
     },
   };
 
@@ -157,8 +158,11 @@ describe('BillingService', () => {
         invoice: { contract: { code: 'SIR-001' } },
       });
 
-      // Spy on recalculate
-      const recalcSpy = jest.spyOn(service, 'recalculateInvoicePaidAmount');
+      // Setup getRepository for the recalculate function during the transaction
+      mockQueryRunner.manager.getRepository.mockImplementation((entity) => {
+        if (entity === Invoice) return mockInvoiceRepository;
+        if (entity === Payment) return mockPaymentRepository;
+      });
 
       // Act
       await service.createPayment(dto);
@@ -180,15 +184,12 @@ describe('BillingService', () => {
       expect(mockQueryRunner.manager.save).toHaveBeenCalledTimes(1);
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
 
-      // Recalculation called after commit — invoice now reflects the PROCESSING payment
-      expect(recalcSpy).toHaveBeenCalledWith('inv-1');
+      // Recalculation called inside transaction — invoice now reflects the PROCESSING payment
       expect(mockInvoice.paidAmount).toBe(50);
       expect(mockInvoice.status).toBe(InvoiceStatus.PARTIAL);
 
       expect(mockQueryRunner.rollbackTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
-
-      recalcSpy.mockRestore();
     });
 
     it('should correctly call rollbackTransaction if an error occurs while saving', async () => {
