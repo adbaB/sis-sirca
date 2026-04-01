@@ -20,7 +20,7 @@ export class SurplusEventListener {
     const hora = dateObj.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas' });
 
     // Column order para sobrantes:
-    // A=Fecha, B=Hora, C=Contrato, D=Monto$, E=MontoBs, F=URL, G=Estado, H=Referencia, I=ID
+    // A=Fecha, B=Hora, C=Contrato, D=Monto$, E=MontoBs, F=URL, G=Estado, H=Referencia, I=SurplusID
     const rowValues = [
       fecha,
       hora,
