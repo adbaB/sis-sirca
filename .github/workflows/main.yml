@@ -1,0 +1,96 @@
+name: Deploy Sistema Sirca
+
+on: 
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Instalar dependencias y compilar
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          
+      - name: Comprimir archivos
+        run: tar -czf deploy.tar.gz dist package.json pnpm-lock.yaml script
+
+      - name: Enviar archivos al servidor por SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "deploy.tar.gz"
+          target: "/tmp"
+
+      - name: Staging, Migraciones, PM2 y Cron
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # 1. Salir si algo falla (Captura errores de migración/instalación)
+            set -e
+
+            # 2. Cargar variables de entorno
+            set -a
+            [ -f /etc/environment ] && source /etc/environment
+            set +a
+            
+            # 3. Cargar PATH para Node/PNPM
+            export PATH="/home/ubuntu/.nvm/versions/node/v24.11.0/bin:$PATH"
+            
+            # 4. Preparar Staging
+            mkdir -p /tmp/sirca_staging
+            tar -xzf /tmp/deploy.tar.gz -C /tmp/sirca_staging
+            
+            # 5. Instalar dependencias de producción y Migraciones
+            cd /tmp/sirca_staging
+            pnpm install --prod --frozen-lockfile
+            pnpm run migrations:run:prod
+          
+            # 6. Mover a Producción
+            rsync -a --delete --exclude='.git' /tmp/sirca_staging/ /home/ubuntu/sirca_sis/
+            
+            # =========================================================
+            # 7. CONFIGURAR CRONTAB (SCRAPER)
+            # =========================================================
+            # Hacer ejecutable el script
+            chmod +x /home/ubuntu/sirca_sis/script/crontab/run-bcv-scraper.sh
+            
+            # Crear el archivo cron temporal con Zona Horaria Venezuela
+            echo "TZ=America/Caracas" > /tmp/cron_job
+            echo "01 00 * * * /bin/bash /home/ubuntu/sirca_sis/script/crontab/run-bcv-scraper.sh >> /home/ubuntu/sirca_sis/script/crontab/cron.log 2>&1" >> /tmp/cron_job
+            
+            # Instalar el crontab
+            crontab /tmp/cron_job
+            rm /tmp/cron_job
+
+            # =========================================================
+            # 8. REINICIAR SERVICIO PM2
+            # =========================================================
+            cd /home/ubuntu/sirca_sis
+            pm2 reload sirca-sis --update-env || pm2 start dist/main.js --name "sirca-sis"
+            
+            # 9. Limpiar temporales
+            rm -rf /tmp/sirca_staging
+            rm /tmp/deploy.tar.gz
