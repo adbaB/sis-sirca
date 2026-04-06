@@ -65,7 +65,7 @@ jobs:
             
             # 5. Instalar dependencias de producción y Migraciones
             cd /tmp/sirca_staging
-            pnpm install --prod --frozen-lockfile
+            pnpm install --prod --frozen-lockfile --ignore-scripts
             pnpm run migrations:run:prod
           
             # 6. Mover a Producción
