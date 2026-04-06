@@ -37,6 +37,12 @@ export default registerAs('config', () => {
       flowPassphrase: process.env.META_FLOW_PASSPHRASE,
     },
 
+    redis: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+      password: process.env.REDIS_PASSWORD,
+    },
+
     aws: {
       region: process.env.AWS_REGION,
       accessKeyId: process.env.AWS_ACCESS_KEY_ID,

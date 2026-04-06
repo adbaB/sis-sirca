@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import Redis from 'ioredis';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { AwsService } from '../aws/aws.service';
@@ -39,11 +41,10 @@ interface UserState {
 @Injectable()
 export class ChatbotService {
   private readonly logger = new Logger(ChatbotService.name);
-  // In-memory state store mapped by phone number.
-  // In production, consider using Redis or a Database.
-  private stateStore = new Map<string, UserState>();
+  private readonly STATE_TTL_SECONDS = 86400; // 24 hours
 
   constructor(
+    @InjectRedis() private readonly redis: Redis,
     @Inject(config.KEY)
     private readonly configService: ConfigType<typeof config>,
     private awsService: AwsService,
@@ -424,14 +425,22 @@ export class ChatbotService {
 
       if (statusObj && statusObj.status === 'failed' && statusObj.errors) {
         const recipientId = statusObj.recipient_id;
-        const recipientState = this.stateStore.get(recipientId);
+        const recipientStateStr = await this.redis.get(`chatbot_state:${recipientId}`);
+        const recipientState: UserState | null = recipientStateStr
+          ? JSON.parse(recipientStateStr)
+          : null;
 
         // Only initiate manual fallback if we specifically failed to send/deliver the Flow message
         if (recipientState?.step === 'AWAITING_FLOW_INTERACTION') {
           this.logger.warn(
             `Flow message delivery failed for ${recipientId}. Initiating manual flow fallback.`,
           );
-          this.stateStore.set(recipientId, { step: 'AWAITING_DOC_INFO_MANUAL' });
+          await this.redis.set(
+            `chatbot_state:${recipientId}`,
+            JSON.stringify({ step: 'AWAITING_DOC_INFO_MANUAL' }),
+            'EX',
+            this.STATE_TTL_SECONDS,
+          );
           await this.sendMessage(
             recipientId,
             'Tuvimos problemas para enviar o abrir el formulario seguro en tu dispositivo. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
@@ -463,7 +472,8 @@ export class ChatbotService {
         incomingText = buttonReplyId;
       }
 
-      let state = this.stateStore.get(fromNumber);
+      const stateStr = await this.redis.get(`chatbot_state:${fromNumber}`);
+      let state: UserState | null = stateStr ? JSON.parse(stateStr) : null;
 
       // If no state or user wants to restart, initialize state.
       if (
@@ -472,7 +482,7 @@ export class ChatbotService {
         incomingText?.toLowerCase() === 'reiniciar'
       ) {
         state = { step: 'AWAITING_NAME' };
-        this.stateStore.delete(fromNumber); // Reset
+        await this.redis.del(`chatbot_state:${fromNumber}`); // Reset
 
         const buttons = [
           { type: 'reply', reply: { id: 'info_planes', title: 'Ver planes 📋' } },
@@ -486,7 +496,12 @@ export class ChatbotService {
         );
 
         // Let's set the state to initialized after greeting to avoid repeated greetings
-        this.stateStore.set(fromNumber, { step: 'AWAITING_NAME' });
+        await this.redis.set(
+          `chatbot_state:${fromNumber}`,
+          JSON.stringify({ step: 'AWAITING_NAME' }),
+          'EX',
+          this.STATE_TTL_SECONDS,
+        );
         return;
       }
 
@@ -502,7 +517,12 @@ export class ChatbotService {
             identity_card: flowData.doc_number || undefined,
             type_identity_card: flowData.doc_type || undefined,
           };
-          this.stateStore.set(fromNumber, state);
+          await this.redis.set(
+            `chatbot_state:${fromNumber}`,
+            JSON.stringify(state),
+            'EX',
+            this.STATE_TTL_SECONDS,
+          );
           await this.sendMessage(
             fromNumber,
             '¡Perfecto! Para completar tu registro, por favor envíame por aquí una captura o foto de tu comprobante de pago. ✨',
@@ -519,7 +539,7 @@ export class ChatbotService {
           fromNumber,
           '¡Claro! Te pongo en contacto con nuestro asesor comercial para que te dé todos los detalles de los planes. ✨\n\nÉl te espera por aquí:\n📱 *WhatsApp:* +58 412-1201012\n\n¡Seguro encontrará el plan ideal para ti! 😊',
         );
-        this.stateStore.delete(fromNumber);
+        await this.redis.del(`chatbot_state:${fromNumber}`);
         return;
       }
 
@@ -532,7 +552,12 @@ export class ChatbotService {
         if (!success) {
           // If flow sending synchronously fails, transition automatically
           state = { step: 'AWAITING_DOC_INFO_MANUAL' };
-          this.stateStore.set(fromNumber, state);
+          await this.redis.set(
+            `chatbot_state:${fromNumber}`,
+            JSON.stringify(state),
+            'EX',
+            this.STATE_TTL_SECONDS,
+          );
           await this.sendMessage(
             fromNumber,
             'Tuvimos problemas para iniciar el formulario seguro. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
@@ -540,7 +565,12 @@ export class ChatbotService {
         } else {
           // Await flow interaction or a webhook failure status
           state = { step: 'AWAITING_FLOW_INTERACTION' };
-          this.stateStore.set(fromNumber, state);
+          await this.redis.set(
+            `chatbot_state:${fromNumber}`,
+            JSON.stringify(state),
+            'EX',
+            this.STATE_TTL_SECONDS,
+          );
         }
         return;
       }
@@ -586,7 +616,12 @@ export class ChatbotService {
                 state.extracted_data = { ...state.extracted_data, ...extractedData };
 
                 state.step = 'AWAITING_CONFIRMATION';
-                this.stateStore.set(fromNumber, state);
+                await this.redis.set(
+                  `chatbot_state:${fromNumber}`,
+                  JSON.stringify(state),
+                  'EX',
+                  this.STATE_TTL_SECONDS,
+                );
 
                 const buttons = [
                   { type: 'reply', reply: { id: 'datos_correctos', title: 'Sí, son correctos' } },
@@ -604,7 +639,12 @@ export class ChatbotService {
               } catch (ocrError) {
                 this.logger.error('OCR Error', ocrError);
                 state.step = 'AWAITING_MANUAL_INPUT';
-                this.stateStore.set(fromNumber, state);
+                await this.redis.set(
+                  `chatbot_state:${fromNumber}`,
+                  JSON.stringify(state),
+                  'EX',
+                  this.STATE_TTL_SECONDS,
+                );
                 await this.sendMessage(
                   fromNumber,
                   '¡Uy! No logré leer todos los datos de tu comprobante automáticamente. 📝\n\n¿Podrías escribirlos tú mismo para avanzar? Usa este formato, por favor:\n\nReferencia, Banco, Monto\n\n*(Ejemplo: 123456, Mercantil, 100)*',
@@ -639,7 +679,12 @@ export class ChatbotService {
             );
           } else if (incomingText === 'datos_incorrectos') {
             state.step = 'AWAITING_MANUAL_INPUT';
-            this.stateStore.set(fromNumber, state);
+            await this.redis.set(
+              `chatbot_state:${fromNumber}`,
+              JSON.stringify(state),
+              'EX',
+              this.STATE_TTL_SECONDS,
+            );
             await this.sendMessage(
               fromNumber,
               'Para que el sistema lo reconozca rápido, por favor escribe los datos separados por comas, así: ✍️\n\nReferencia, Banco, Monto\n\n💡 Ejemplo: 123456, Mercantil, 100',
@@ -674,7 +719,12 @@ export class ChatbotService {
           // transition them to the manual flow immediately.
           if (incomingText) {
             state.step = 'AWAITING_DOC_INFO_MANUAL';
-            this.stateStore.set(fromNumber, state);
+            await this.redis.set(
+              `chatbot_state:${fromNumber}`,
+              JSON.stringify(state),
+              'EX',
+              this.STATE_TTL_SECONDS,
+            );
             await this.sendMessage(
               fromNumber,
               'Parece que tuviste problemas con el formulario. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
@@ -713,7 +763,7 @@ export class ChatbotService {
                 fromNumber,
                 'No se encontraron facturas pendientes para este documento. Escribe "Hola" para reiniciar.',
               );
-              this.stateStore.delete(fromNumber);
+              await this.redis.del(`chatbot_state:${fromNumber}`);
               return;
             }
 
@@ -728,7 +778,12 @@ export class ChatbotService {
             state.pending_invoices = pendingInvoices;
             state.identity_card = docNumber;
             state.type_identity_card = docType as TypeIdentityCard;
-            this.stateStore.set(fromNumber, state);
+            await this.redis.set(
+              `chatbot_state:${fromNumber}`,
+              JSON.stringify(state),
+              'EX',
+              this.STATE_TTL_SECONDS,
+            );
 
             let invoiceText = 'Hemos encontrado las siguientes facturas pendientes:\n\n';
             pendingInvoices.forEach((inv, index) => {
@@ -744,7 +799,7 @@ export class ChatbotService {
               fromNumber,
               'Hubo un error al buscar tus facturas. Inténtalo más tarde.',
             );
-            this.stateStore.delete(fromNumber);
+            await this.redis.del(`chatbot_state:${fromNumber}`);
           }
           break;
         }
@@ -801,7 +856,12 @@ export class ChatbotService {
           state.selected_invoices = selectedInvoices;
           state.selected_invoices_details = selectedInvoicesDetails;
           state.total_amount = totalAmount.toFixed(2);
-          this.stateStore.set(fromNumber, state);
+          await this.redis.set(
+            `chatbot_state:${fromNumber}`,
+            JSON.stringify(state),
+            'EX',
+            this.STATE_TTL_SECONDS,
+          );
 
           const buttons = [
             { type: 'reply', reply: { id: 'pm_transferencia', title: 'Transferencia' } },
@@ -856,7 +916,12 @@ export class ChatbotService {
 
           state.step = 'AWAITING_CAPTURE';
           state.payment_method = paymentMethodStr;
-          this.stateStore.set(fromNumber, state);
+          await this.redis.set(
+            `chatbot_state:${fromNumber}`,
+            JSON.stringify(state),
+            'EX',
+            this.STATE_TTL_SECONDS,
+          );
 
           await this.sendMessage(
             fromNumber,
@@ -866,7 +931,7 @@ export class ChatbotService {
         }
 
         default:
-          this.stateStore.delete(fromNumber);
+          await this.redis.del(`chatbot_state:${fromNumber}`);
           await this.sendMessage(
             fromNumber,
             'Lo siento, no entendí eso. Escribe "Hola" para reiniciar.',
@@ -1022,7 +1087,7 @@ export class ChatbotService {
         receiptUrl || '',
       );
 
-      this.stateStore.delete(fromNumber);
+      await this.redis.del(`chatbot_state:${fromNumber}`);
       await this.sendMessage(
         fromNumber,
         '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
