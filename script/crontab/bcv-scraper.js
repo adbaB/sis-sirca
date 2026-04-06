@@ -2,12 +2,15 @@ const axios = require('axios');
 const https = require('https');
 const { Pool } = require('pg');
 const path = require('path');
-const dotenv = require('dotenv');
-
 // Configura dotenv para buscar el archivo .env en la raíz del proyecto (dos niveles arriba).
 // Si no existe (ej. en producción donde se usan variables de sistema), las variables ya 
 // deberían estar inyectadas por el sistema.
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+} catch (e) {
+  // dotenv no está instalado. Se asumirá que las variables de entorno están inyectadas por el sistema.
+}
 
 async function scrapeBcvRates(retries = 3) {
   for (let i = 0; i < retries; i++) {
