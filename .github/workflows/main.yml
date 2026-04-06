@@ -3,7 +3,7 @@ name: Deploy Sistema Sirca
 on: 
   push:
     branches:
-      - main
+      - master
 
 jobs:
   deploy:
