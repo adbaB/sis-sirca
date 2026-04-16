@@ -8,6 +8,7 @@ import { OcrService } from '../ocr/ocr.service';
 import { BillingService } from '../billing/services/billing.service';
 import { PersonsService } from '../persons/services/persons.service';
 import config from '../config/configurations';
+import { DataSource } from 'typeorm';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -37,6 +38,18 @@ describe('ChatbotService', () => {
 
   const mockPersonsService = {
     findByIdentityCard: jest.fn(),
+  };
+
+  const mockQueryRunner = {
+    connect: jest.fn(),
+    startTransaction: jest.fn(),
+    commitTransaction: jest.fn(),
+    rollbackTransaction: jest.fn(),
+    release: jest.fn(),
+  };
+
+  const mockDataSource = {
+    createQueryRunner: jest.fn().mockReturnValue(mockQueryRunner),
   };
 
   let mockRedisStore: Map<string, string>;
@@ -86,6 +99,7 @@ describe('ChatbotService', () => {
         { provide: OcrService, useValue: mockOcrService },
         { provide: BillingService, useValue: mockBillingService },
         { provide: PersonsService, useValue: mockPersonsService },
+        { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
 
@@ -175,7 +189,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           type: 'interactive',
@@ -228,7 +242,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'info_planes'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('asesor comercial') },
@@ -242,7 +256,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           type: 'interactive',
@@ -255,7 +269,7 @@ describe('ChatbotService', () => {
       );
 
       expect(mockedAxios.post).not.toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           text: { body: expect.stringContaining('pago manual') },
         }),
@@ -272,7 +286,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('tipo y número de documento') },
@@ -308,7 +322,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(failedStatusMessage);
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('tipo y número de documento') },
@@ -340,7 +354,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(failedStatusMessage);
 
       expect(mockedAxios.post).not.toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '456',
         }),
@@ -355,7 +369,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('tipo y número de documento') },
@@ -387,7 +401,7 @@ describe('ChatbotService', () => {
         'V',
       );
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('Contrato CT-1') },
@@ -398,7 +412,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createMetaMessage('123', '1, 2'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           type: 'interactive',
@@ -420,7 +434,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'pm_zelle'));
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/phoneid/messages',
+        'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
           text: { body: expect.stringContaining('Zelle: platinumclubadmon2@gmail.com') },
@@ -456,7 +470,7 @@ describe('ChatbotService', () => {
       await service.handleIncomingMessage(createMetaMediaMessage('123', 'media123', 'image/jpeg'));
 
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v18.0/media123',
+        'https://graph.facebook.com/v25.0/media123',
         expect.any(Object),
       );
       expect(mockedAxios.get).toHaveBeenCalledWith('https://media.url/123', expect.any(Object));

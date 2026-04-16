@@ -12,6 +12,7 @@ import { OcrService } from '../ocr/ocr.service';
 import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
+import { DataSource } from 'typeorm';
 
 interface UserState {
   step:
@@ -52,6 +53,7 @@ export class ChatbotService {
     private ocrService: OcrService,
     private billingService: BillingService,
     private personsService: PersonsService,
+    private dataSource: DataSource,
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
@@ -65,7 +67,7 @@ export class ChatbotService {
 
     try {
       await axios.post(
-        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           to,
@@ -98,7 +100,7 @@ export class ChatbotService {
 
     try {
       await axios.post(
-        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -137,7 +139,7 @@ export class ChatbotService {
 
     try {
       await axios.post(
-        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -587,7 +589,7 @@ export class ChatbotService {
               const accessToken = this.configService.meta.accessToken;
 
               // 1. Get media URL
-              const mediaResponse = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
+              const mediaResponse = await axios.get(`https://graph.facebook.com/v25.0/${mediaId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
               });
               const mediaUrl = mediaResponse.data.url;
@@ -949,6 +951,12 @@ export class ChatbotService {
     referenceNumber: string,
     extractedAmount: number | undefined,
   ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let paymentsCreated = 0;
+
     try {
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
@@ -974,8 +982,6 @@ export class ChatbotService {
         }
       }
 
-      let paymentsCreated = 0;
-
       if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
         const totalExpectedUsd =
           state.selected_invoices_details.reduce((sum, inv) => sum + inv.amount, 0) || 1;
@@ -992,15 +998,18 @@ export class ChatbotService {
             currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
           }
 
-          await this.billingService.createPayment({
-            invoiceId: invoice.id,
-            amount: amount,
-            amountExtracted: currentAmountExtracted,
-            paymentMethod,
-            referenceNumber,
-            url: receiptUrl,
-            personId,
-          });
+          await this.billingService.createPayment(
+            {
+              invoiceId: invoice.id,
+              amount: amount,
+              amountExtracted: currentAmountExtracted,
+              paymentMethod,
+              referenceNumber,
+              url: receiptUrl,
+              personId,
+            },
+            queryRunner,
+          );
           paymentsCreated++;
         }
       } else if (state.selected_invoices && state.selected_invoices.length > 0) {
@@ -1030,15 +1039,18 @@ export class ChatbotService {
             currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
           }
 
-          await this.billingService.createPayment({
-            invoiceId: invoice.id,
-            amount: amount,
-            amountExtracted: currentAmountExtracted,
-            paymentMethod,
-            referenceNumber,
-            url: receiptUrl,
-            personId,
-          });
+          await this.billingService.createPayment(
+            {
+              invoiceId: invoice.id,
+              amount: amount,
+              amountExtracted: currentAmountExtracted,
+              paymentMethod,
+              referenceNumber,
+              url: receiptUrl,
+              personId,
+            },
+            queryRunner,
+          );
           paymentsCreated++;
         }
       }
@@ -1046,6 +1058,8 @@ export class ChatbotService {
       if (paymentsCreated === 0) {
         this.logger.warn(`No payments created for ${fromNumber} - no invoices found in state`);
       }
+
+      await queryRunner.commitTransaction();
 
       const invoicesList = state.selected_invoices_details
         ? state.selected_invoices_details.map((i) => i.id)
@@ -1093,11 +1107,17 @@ export class ChatbotService {
         '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
       );
     } catch (e) {
-      this.logger.error('Error saving payment', e);
+      await queryRunner.rollbackTransaction();
+      this.logger.error(
+        `Error saving payment for ${fromNumber} after ${paymentsCreated} successful invoice payments. Transaction rolled back.`,
+        e,
+      );
       await this.sendMessage(
         fromNumber,
         '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
       );
+    } finally {
+      await queryRunner.release();
     }
   }
 }

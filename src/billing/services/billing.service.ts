@@ -28,7 +28,7 @@ export class BillingService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async createPayment(createPaymentDto: CreatePaymentDto) {
+  async createPayment(createPaymentDto: CreatePaymentDto, externalQueryRunner?: QueryRunner) {
     const amount = Number(createPaymentDto.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Payment amount must be greater than 0');
@@ -41,7 +41,7 @@ export class BillingService {
       }
     }
 
-    const queryRunner = this.dataSource.createQueryRunner();
+    const queryRunner = externalQueryRunner || this.dataSource.createQueryRunner();
     let savedPayment: Payment;
     let invoice: Invoice | null;
     let surplusAmountUsd: number | null = null;
@@ -49,8 +49,10 @@ export class BillingService {
     let surplus: Surplus | null = null;
     let paymentDate: Date;
 
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    if (!externalQueryRunner) {
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+    }
 
     try {
       // Use pessimistic write lock to prevent race conditions when checking and updating invoice
@@ -136,12 +138,18 @@ export class BillingService {
       // Recalculate invoice inside the transaction so a failure here rolls back the payment too.
       await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId, queryRunner);
 
-      await queryRunner.commitTransaction();
+      if (!externalQueryRunner) {
+        await queryRunner.commitTransaction();
+      }
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (!externalQueryRunner) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
-      await queryRunner.release();
+      if (!externalQueryRunner) {
+        await queryRunner.release();
+      }
     }
 
     try {
