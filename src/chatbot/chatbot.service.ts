@@ -13,6 +13,7 @@ import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 import { DataSource } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 interface UserState {
   step:
@@ -54,6 +55,7 @@ export class ChatbotService {
     private billingService: BillingService,
     private personsService: PersonsService,
     private dataSource: DataSource,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
@@ -952,19 +954,22 @@ export class ChatbotService {
     extractedAmount: number | undefined,
   ): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
 
+    let isTransactionActive = false;
     let paymentsCreated = 0;
+    let personId: string | undefined;
+    let personFullName = '';
+    const deferredEvents: Array<{ name: string; payload: unknown }> = [];
 
     try {
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+      isTransactionActive = true;
+
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
-      // Look up person by identity card if available
-      let personId: string | undefined;
-      let personFullName = '';
       if (state.identity_card && state.type_identity_card) {
         try {
           const person = await this.personsService.findByIdentityCard(
@@ -1009,6 +1014,7 @@ export class ChatbotService {
               personId,
             },
             queryRunner,
+            deferredEvents,
           );
           paymentsCreated++;
         }
@@ -1060,6 +1066,32 @@ export class ChatbotService {
       }
 
       await queryRunner.commitTransaction();
+      isTransactionActive = false;
+    } catch (e) {
+      if (isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
+      this.logger.error(
+        `Error saving payment for ${fromNumber} after ${paymentsCreated} successful invoice payments. Transaction rolled back.`,
+        e,
+      );
+      await this.sendMessage(
+        fromNumber,
+        '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo Administrativo para solucionarlo de inmediato. ¡Lamentamos las molestias!',
+      );
+      return;
+    } finally {
+      await queryRunner.release();
+    }
+
+    try {
+      for (const event of deferredEvents) {
+        try {
+          this.eventEmitter.emit(event.name, event.payload);
+        } catch (evtError) {
+          this.logger.error(`Error emitting deferred event ${event.name}`, evtError);
+        }
+      }
 
       const invoicesList = state.selected_invoices_details
         ? state.selected_invoices_details.map((i) => i.id)
@@ -1098,7 +1130,7 @@ export class ChatbotService {
       await this.emailService.sendPaymentConfirmation(
         'noreply@sirca.com.ve',
         userInfo,
-        receiptUrl || '',
+        (state.extracted_data?.receiptUrl as string) || '',
       );
 
       await this.redis.del(`chatbot_state:${fromNumber}`);
@@ -1106,18 +1138,8 @@ export class ChatbotService {
         fromNumber,
         '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
       );
-    } catch (e) {
-      await queryRunner.rollbackTransaction();
-      this.logger.error(
-        `Error saving payment for ${fromNumber} after ${paymentsCreated} successful invoice payments. Transaction rolled back.`,
-        e,
-      );
-      await this.sendMessage(
-        fromNumber,
-        '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
-      );
-    } finally {
-      await queryRunner.release();
+    } catch (notificationError) {
+      this.logger.error('Error sending post-payment notifications', notificationError);
     }
   }
 }

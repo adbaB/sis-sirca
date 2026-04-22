@@ -5,6 +5,7 @@ import * as xlsx from 'xlsx';
 
 import config from '../../config/configurations';
 import { ContractsService } from '../../contracts/services/contracts.service';
+import { PersonRole } from '../../contracts/entities/contract-person.entity';
 import { GoogleDriveService } from '../../google/services/google-drive.service';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
@@ -90,7 +91,9 @@ export class SyncService {
         const contract = String(row['Contrato'] ?? '').trim();
         const plan = String(row['Plan'] ?? '').trim();
 
-        const isTitular = row['Titular'] === true || row['Titular'] === 'true';
+        const rawTitular = row['Titular'];
+        const isTitular = rawTitular === 0 || rawTitular === '0';
+
         const generoRaw = row['Genero'];
         const gender = generoRaw === 'Masculino' || String(generoRaw ?? '').trim() === 'Masculino';
 
@@ -196,9 +199,10 @@ export class SyncService {
         );
 
         if (person) {
-          // Check if person is already linked to this contract with AFILIADO role
+          const expectedRole = item.isTitular ? PersonRole.TITULAR : PersonRole.AFILIADO;
+          // Check if person is already linked to this contract with the expected role
           const isLinkedToContract = person.contractPersons?.some(
-            (cp) => cp.contract?.id === contract.id && cp.role === 'AFILIADO',
+            (cp) => cp.contract?.id === contract.id && cp.role === expectedRole,
           );
 
           const hasChanges =
@@ -216,6 +220,7 @@ export class SyncService {
             planId: plan.id,
             contractId: contract.id,
             gender: item.gender,
+            role: item.isTitular ? PersonRole.TITULAR : PersonRole.AFILIADO,
           });
           updated++;
         } else {
@@ -227,6 +232,7 @@ export class SyncService {
             planId: plan.id,
             contractId: contract.id,
             gender: item.gender,
+            role: item.isTitular ? PersonRole.TITULAR : PersonRole.AFILIADO,
           });
           created++;
         }

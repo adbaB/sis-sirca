@@ -2,6 +2,7 @@ import * as xlsx from 'xlsx';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { GoogleDriveService } from '../../google/services/google-drive.service';
+import { PersonRole } from '../../contracts/entities/contract-person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DataCleaned } from '../interface/data-cleaned.interface';
@@ -38,12 +39,12 @@ const makeContract = (id = 'contract-1', code = 'CON-001') => ({ id, code });
 
 const makePerson = (overrides: Record<string, unknown> = {}) => {
   const overridesCopy = { ...overrides };
-  let defaultContractPersons = [{ role: 'AFILIADO', contract: makeContract() }];
+  let defaultContractPersons = [{ role: PersonRole.TITULAR, contract: makeContract() }];
 
   if (overridesCopy.contract) {
     defaultContractPersons = [
       {
-        role: 'AFILIADO',
+        role: PersonRole.TITULAR,
         contract:
           overridesCopy.contract as import('../../contracts/entities/contract.entity').Contract,
       },
