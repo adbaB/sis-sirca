@@ -1056,6 +1056,7 @@ export class ChatbotService {
               personId,
             },
             queryRunner,
+            deferredEvents,
           );
           paymentsCreated++;
         }
