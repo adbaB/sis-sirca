@@ -28,7 +28,11 @@ export class BillingService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async createPayment(createPaymentDto: CreatePaymentDto) {
+  async createPayment(
+    createPaymentDto: CreatePaymentDto,
+    externalQueryRunner?: QueryRunner,
+    deferredEvents?: Array<{ name: string; payload: unknown }>,
+  ) {
     const amount = Number(createPaymentDto.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Payment amount must be greater than 0');
@@ -41,7 +45,7 @@ export class BillingService {
       }
     }
 
-    const queryRunner = this.dataSource.createQueryRunner();
+    const queryRunner = externalQueryRunner || this.dataSource.createQueryRunner();
     let savedPayment: Payment;
     let invoice: Invoice | null;
     let surplusAmountUsd: number | null = null;
@@ -49,8 +53,10 @@ export class BillingService {
     let surplus: Surplus | null = null;
     let paymentDate: Date;
 
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    if (!externalQueryRunner) {
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+    }
 
     try {
       // Use pessimistic write lock to prevent race conditions when checking and updating invoice
@@ -136,12 +142,18 @@ export class BillingService {
       // Recalculate invoice inside the transaction so a failure here rolls back the payment too.
       await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId, queryRunner);
 
-      await queryRunner.commitTransaction();
+      if (!externalQueryRunner) {
+        await queryRunner.commitTransaction();
+      }
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (!externalQueryRunner) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
-      await queryRunner.release();
+      if (!externalQueryRunner) {
+        await queryRunner.release();
+      }
     }
 
     try {
@@ -153,19 +165,22 @@ export class BillingService {
       });
       const contractCode = enrichedPayment?.invoice?.contract?.code || '';
       const personName = enrichedPayment?.person?.name || '';
-      this.eventEmitter.emit(
-        'payment.registered',
-        new PaymentRegisteredEvent(
-          savedPayment!.referenceNumber,
-          savedPayment!.amount,
-          savedPayment!.amountBs,
-          savedPayment!.url,
-          savedPayment!.createdAt || new Date(),
-          contractCode,
-          personName,
-          savedPayment!.id,
-        ),
+      const eventPayload = new PaymentRegisteredEvent(
+        savedPayment!.referenceNumber,
+        savedPayment!.amount,
+        savedPayment!.amountBs,
+        savedPayment!.url,
+        savedPayment!.createdAt || new Date(),
+        contractCode,
+        personName,
+        savedPayment!.id,
       );
+
+      if (deferredEvents) {
+        deferredEvents.push({ name: 'payment.registered', payload: eventPayload });
+      } else {
+        this.eventEmitter.emit('payment.registered', eventPayload);
+      }
     } catch (emitError) {
       this.logger.error(
         `Failed to emit payment.registered event for payment ${
@@ -179,18 +194,21 @@ export class BillingService {
     // trigger a rollback of an already-committed transaction.
     if (surplusAmountUsd !== null || surplusAmountBs !== null) {
       try {
-        this.eventEmitter.emit(
-          'surplus.created',
-          new SurplusCreatedEvent(
-            savedPayment!.referenceNumber,
-            surplusAmountUsd,
-            surplusAmountBs,
-            savedPayment!.url,
-            paymentDate,
-            invoice.contract.code,
-            surplus!.id,
-          ),
+        const surplusEvent = new SurplusCreatedEvent(
+          savedPayment!.referenceNumber,
+          surplusAmountUsd,
+          surplusAmountBs,
+          savedPayment!.url,
+          paymentDate!,
+          invoice!.contract.code,
+          surplus!.id,
         );
+
+        if (deferredEvents) {
+          deferredEvents.push({ name: 'surplus.created', payload: surplusEvent });
+        } else {
+          this.eventEmitter.emit('surplus.created', surplusEvent);
+        }
       } catch (emitError) {
         this.logger.error(
           `Failed to emit surplus.created event for payment ${savedPayment!.id}. The surplus was saved successfully.`,

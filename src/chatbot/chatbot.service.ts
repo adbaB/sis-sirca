@@ -12,6 +12,8 @@ import { OcrService } from '../ocr/ocr.service';
 import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
+import { DataSource } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 interface UserState {
   step:
@@ -52,6 +54,8 @@ export class ChatbotService {
     private ocrService: OcrService,
     private billingService: BillingService,
     private personsService: PersonsService,
+    private dataSource: DataSource,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
@@ -65,7 +69,7 @@ export class ChatbotService {
 
     try {
       await axios.post(
-        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           to,
@@ -98,7 +102,7 @@ export class ChatbotService {
 
     try {
       await axios.post(
-        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -137,7 +141,7 @@ export class ChatbotService {
 
     try {
       await axios.post(
-        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -587,7 +591,7 @@ export class ChatbotService {
               const accessToken = this.configService.meta.accessToken;
 
               // 1. Get media URL
-              const mediaResponse = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
+              const mediaResponse = await axios.get(`https://graph.facebook.com/v25.0/${mediaId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
               });
               const mediaUrl = mediaResponse.data.url;
@@ -949,14 +953,23 @@ export class ChatbotService {
     referenceNumber: string,
     extractedAmount: number | undefined,
   ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    let isTransactionActive = false;
+    let paymentsCreated = 0;
+    let personId: string | undefined;
+    let personFullName = '';
+    const deferredEvents: Array<{ name: string; payload: unknown }> = [];
+
     try {
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+      isTransactionActive = true;
+
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
-      // Look up person by identity card if available
-      let personId: string | undefined;
-      let personFullName = '';
       if (state.identity_card && state.type_identity_card) {
         try {
           const person = await this.personsService.findByIdentityCard(
@@ -974,8 +987,6 @@ export class ChatbotService {
         }
       }
 
-      let paymentsCreated = 0;
-
       if (state.selected_invoices_details && state.selected_invoices_details.length > 0) {
         const totalExpectedUsd =
           state.selected_invoices_details.reduce((sum, inv) => sum + inv.amount, 0) || 1;
@@ -992,15 +1003,19 @@ export class ChatbotService {
             currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
           }
 
-          await this.billingService.createPayment({
-            invoiceId: invoice.id,
-            amount: amount,
-            amountExtracted: currentAmountExtracted,
-            paymentMethod,
-            referenceNumber,
-            url: receiptUrl,
-            personId,
-          });
+          await this.billingService.createPayment(
+            {
+              invoiceId: invoice.id,
+              amount: amount,
+              amountExtracted: currentAmountExtracted,
+              paymentMethod,
+              referenceNumber,
+              url: receiptUrl,
+              personId,
+            },
+            queryRunner,
+            deferredEvents,
+          );
           paymentsCreated++;
         }
       } else if (state.selected_invoices && state.selected_invoices.length > 0) {
@@ -1030,21 +1045,53 @@ export class ChatbotService {
             currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
           }
 
-          await this.billingService.createPayment({
-            invoiceId: invoice.id,
-            amount: amount,
-            amountExtracted: currentAmountExtracted,
-            paymentMethod,
-            referenceNumber,
-            url: receiptUrl,
-            personId,
-          });
+          await this.billingService.createPayment(
+            {
+              invoiceId: invoice.id,
+              amount: amount,
+              amountExtracted: currentAmountExtracted,
+              paymentMethod,
+              referenceNumber,
+              url: receiptUrl,
+              personId,
+            },
+            queryRunner,
+            deferredEvents,
+          );
           paymentsCreated++;
         }
       }
 
       if (paymentsCreated === 0) {
         this.logger.warn(`No payments created for ${fromNumber} - no invoices found in state`);
+      }
+
+      await queryRunner.commitTransaction();
+      isTransactionActive = false;
+    } catch (e) {
+      if (isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
+      this.logger.error(
+        `Error saving payment for ${fromNumber} after ${paymentsCreated} successful invoice payments. Transaction rolled back.`,
+        e,
+      );
+      await this.sendMessage(
+        fromNumber,
+        '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo Administrativo para solucionarlo de inmediato. ¡Lamentamos las molestias!',
+      );
+      return;
+    } finally {
+      await queryRunner.release();
+    }
+
+    try {
+      for (const event of deferredEvents) {
+        try {
+          this.eventEmitter.emit(event.name, event.payload);
+        } catch (evtError) {
+          this.logger.error(`Error emitting deferred event ${event.name}`, evtError);
+        }
       }
 
       const invoicesList = state.selected_invoices_details
@@ -1084,7 +1131,7 @@ export class ChatbotService {
       await this.emailService.sendPaymentConfirmation(
         'noreply@sirca.com.ve',
         userInfo,
-        receiptUrl || '',
+        (state.extracted_data?.receiptUrl as string) || '',
       );
 
       await this.redis.del(`chatbot_state:${fromNumber}`);
@@ -1092,12 +1139,8 @@ export class ChatbotService {
         fromNumber,
         '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
       );
-    } catch (e) {
-      this.logger.error('Error saving payment', e);
-      await this.sendMessage(
-        fromNumber,
-        '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo de soporte técnico para solucionarlo de inmediato. ¡Lamentamos las molestias!',
-      );
+    } catch (notificationError) {
+      this.logger.error('Error sending post-payment notifications', notificationError);
     }
   }
 }
