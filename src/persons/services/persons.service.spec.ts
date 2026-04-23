@@ -275,7 +275,7 @@ describe('PersonsService', () => {
       jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
       jest.spyOn(plansService, 'findOne').mockResolvedValue(null);
 
-      const updatePersonDto: UpdatePersonDto = { planId: 'invalid-plan' };
+      const updatePersonDto: UpdatePersonDto = { planId: 'invalid-plan', contractId: 'contract-1' };
       await expect(service.update('1', updatePersonDto)).rejects.toThrow(NotFoundException);
     });
   });
