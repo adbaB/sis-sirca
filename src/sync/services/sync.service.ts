@@ -25,7 +25,7 @@ export class SyncService {
     private readonly personsService: PersonsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_HOUR)
   async handleHourlySync() {
     this.logger.log('Starting hourly Excel sync...');
 
