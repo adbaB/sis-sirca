@@ -1,9 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import * as Tesseract from 'tesseract.js';
 import config from '../config/configurations';
 import { OcrService } from './ocr.service';
 
-jest.mock('tesseract.js');
 jest.mock('openai');
 
 describe('OcrService', () => {
@@ -36,11 +34,6 @@ describe('OcrService', () => {
 
   describe('extractReceiptData', () => {
     it('should extract data correctly from image buffer', async () => {
-      // Mock Tesseract.recognize
-      const mockRecognize = jest.spyOn(Tesseract, 'recognize').mockResolvedValue({
-        data: { text: 'Recibo de pago 100 BS referencia 12345' },
-      } as unknown as Tesseract.RecognizeResult);
-
       // Mock OpenAI chat completions create
       const mockChatCompletionsCreate = jest.fn().mockResolvedValue({
         choices: [
@@ -73,11 +66,13 @@ describe('OcrService', () => {
       const buffer = Buffer.from('dummy image buffer');
       const result = await service.extractReceiptData(buffer);
 
-      expect(mockRecognize).toHaveBeenCalledWith(buffer, 'spa');
       expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
 
       const promptCallArg = mockChatCompletionsCreate.mock.calls[0][0];
-      expect(promptCallArg.messages[1].content).toContain('Recibo de pago 100 BS referencia 12345');
+      // Assert that openrouter / openai receives the image directly
+      expect(promptCallArg.messages[1].content[1].image_url.url).toContain(
+        'base64,ZHVtbXkgaW1hZ2UgYnVmZmVy',
+      );
       expect(result).toEqual({
         monto: '100 BS',
         referencia: '12345',

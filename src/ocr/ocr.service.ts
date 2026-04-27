@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import OpenAI from 'openai';
-import * as Tesseract from 'tesseract.js';
 import config from '../config/configurations';
 
 export interface ReceiptData {
@@ -50,18 +49,20 @@ export class OcrService {
     }
 
     try {
-      this.logger.log('Starting OCR extraction with Tesseract...');
-      const {
-        data: { text },
-      } = await Tesseract.recognize(
-        imageBufferOrUrl,
-        'spa', // Spanish language by default for receipts
-      );
+      this.logger.log('Preparing image for OpenRouter Vision model...');
 
-      this.logger.log('OCR text extracted successfully. Sending to OpenRouter (OpenAI)...');
+      let imageUrl = '';
+      if (typeof imageBufferOrUrl === 'string') {
+        imageUrl = imageBufferOrUrl;
+      } else {
+        const base64Image = imageBufferOrUrl.toString('base64');
+        imageUrl = `data:image/jpeg;base64,${base64Image}`;
+      }
+
+      this.logger.log('Sending image directly to OpenRouter (openai/gpt-4o-mini)...');
 
       const prompt = `
-        A continuación se muestra el texto extraído de un recibo de pago mediante OCR.
+        A continuación se adjunta la foto de un comprobante de pago o recibo.
         Tu tarea es extraer los siguientes datos y devolver ÚNICAMENTE un objeto JSON válido, sin formato adicional, markdown ni texto explicativo. Si no encuentras algún dato, usa null.
 
         Datos a extraer:
@@ -74,30 +75,34 @@ export class OcrService {
         - descripcion
         - nombreBanco
         - moneda
-        Texto del recibo:
-        """
-        ${text}
-        """
       `;
 
       const completion = await this.openai.chat.completions.create(
         {
-          model: 'deepseek/deepseek-v3.2', // or any preferred model available in OpenRouter
+          model: 'openai/gpt-4o-mini',
           messages: [
             {
               role: 'system',
               content:
-                'Eres un asistente experto en analizar recibos de pago y extraer datos en formato JSON puro. No uses bloques de código markdown.',
+                'Eres un asistente experto en analizar recibos de pago a partir de imágenes y extraer datos en formato JSON puro. No uses bloques de código markdown.',
             },
             {
               role: 'user',
-              content: prompt,
+              content: [
+                { type: 'text', text: prompt },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: imageUrl,
+                  },
+                },
+              ],
             },
           ],
-          response_format: { type: 'json_object' }, // Supported by many OpenRouter models
+          response_format: { type: 'json_object' }, // Supported by OpenAI models
           temperature: 0,
         },
-        { timeout: 15_000 },
+        { timeout: 30_000 },
       );
 
       let responseContent = completion.choices[0]?.message?.content || '{}';
