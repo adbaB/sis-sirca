@@ -64,40 +64,48 @@ async function main() {
     const scrapedData = await scrapeBcvRates();
     let finalDolar = scrapedData.dolar;
     let finalEuro = scrapedData.euro;
-    let finalFecha = scrapedData.bcvDate;
+
+    // Use Venezuela time (UTC-4) to determine "today" for the DB record.
+    const nowVe = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Caracas' }));
+    // Build a plain date string YYYY-MM-DD in Venezuela local time so Postgres stores
+    // it as the correct calendar day regardless of the server's system timezone.
+    const todayVe = new Date(
+      nowVe.getFullYear(),
+      nowVe.getMonth(),
+      nowVe.getDate(),
+    );
 
     // 2. Get the latest rate from DB
     const res = await pool.query('SELECT * FROM exchange_rate ORDER BY "date" DESC LIMIT 1;');
     const lastRate = res.rows[0];
 
-    const currentDate = new Date();
-
-    // If the date from BCV is greater than the current date (in the future)
-    if (scrapedData.bcvDate > currentDate) {
-      console.log('BCV date is in the future. Checking last recorded rate...');
+    // If the date published by BCV is in the future (e.g. Friday publishes Monday's value),
+    // reuse the previous rates but record them under TODAY's date so that Saturday and Sunday
+    // each get their own row in the DB with the correct (previous) rate.
+    if (scrapedData.bcvDate > nowVe) {
+      console.log('BCV date is in the future (weekend case). Using previous rates with today\'s date...');
       if (lastRate) {
-        console.log('Using the previous rate from database.');
+        console.log(`Reusing rates from last DB record: Dolar ${lastRate.rateUsd}, Euro ${lastRate.rateEur}`);
         finalDolar = parseFloat(lastRate.rateUsd);
         finalEuro = parseFloat(lastRate.rateEur);
-        finalFecha = lastRate.date;
       } else {
-        console.log('No previous rate found in database. Proceeding to save scraped rate anyway.');
+        console.log('No previous rate found in database. Saving scraped rate as-is.');
       }
     } else {
       console.log('BCV date is valid (<= current date). Using scraped rates.');
     }
 
-    // 3. Save the rate into the database
-    // We will use ON CONFLICT to avoid duplicate key violations based on the UNIQUE("date") constraint
+    // 3. Save the rate into the database using TODAY as the date key.
+    // ON CONFLICT ensures idempotency if the cron runs more than once in the same day.
     await pool.query(
       `INSERT INTO exchange_rate ("rateUsd", "rateEur", "date")
        VALUES ($1, $2, $3)
        ON CONFLICT ("date")
        DO UPDATE SET "rateUsd" = EXCLUDED."rateUsd", "rateEur" = EXCLUDED."rateEur", "updated_at" = now()`,
-      [finalDolar, finalEuro, finalFecha]
+      [finalDolar, finalEuro, todayVe]
     );
 
-    console.log(`Successfully saved rates: Dolar ${finalDolar}, Euro ${finalEuro}, Date: ${finalFecha.toISOString()}`);
+    console.log(`Successfully saved rates: Dolar ${finalDolar}, Euro ${finalEuro}, Date: ${todayVe.toISOString()}`);
   } catch (err) {
     console.log(err);
     console.error('An error occurred during database operations:', err.message);
@@ -105,6 +113,7 @@ async function main() {
     await pool.end();
   }
 }
+
 
 if (require.main === module) {
   main();

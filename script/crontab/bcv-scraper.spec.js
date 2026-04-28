@@ -155,7 +155,11 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
   });
 
   describe('main', () => {
+    // mockCurrentDate = 2023-10-15T12:00:00Z => in Venezuela (UTC-4) => 2023-10-15T08:00:00
     const mockCurrentDate = new Date('2023-10-15T12:00:00Z');
+    // The scraper always inserts using "today" in Venezuela time, so all INSERT expectations
+    // must use todayVe derived from mockCurrentDate.
+    const todayVe = new Date(2023, 9, 15); // October 15, 2023 (local midnight)
 
     beforeEach(() => {
       // Mock system time
@@ -189,14 +193,15 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
 
       await main();
 
+      // The scraper always saves with TODAY (Venezuela) as the date key, not the BCV date.
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO exchange_rate ("rateUsd", "rateEur", "date")'),
-        [10.0, 10.0, scrapedDate]
+        [10.0, 10.0, todayVe]
       );
     });
 
     it('should save previous DB rates if newly scraped BCV date is in the future', async () => {
-      // Simulate scraping returning a date in the future
+      // Simulate scraping returning a date in the future (weekend case)
       const scrapedFutureDate = new Date('2023-10-16T00:00:00-04:00');
       const mockHtml = `
         <div id="euro"><strong> 20,00 </strong></div>
@@ -218,15 +223,16 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
 
       await main();
 
-      // Ensure it inserts the OLD rate (from DB) not the newly scraped one (20.00)
+      // Rates come from the last DB record (15), but the DATE key is TODAY in Venezuela,
+      // not the old DB date. This ensures a new row is created for Saturday/Sunday.
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO exchange_rate ("rateUsd", "rateEur", "date")'),
-        [15.0, 15.0, lastRateDate]
+        [15.0, 15.0, todayVe]
       );
     });
 
     it('should save newly scraped rates even if date is future but NO previous DB rate exists', async () => {
-      // Simulate scraping returning a date in the future
+      // Simulate scraping returning a date in the future (weekend case, no previous DB record)
       const scrapedFutureDate = new Date('2023-10-16T00:00:00-04:00');
       const mockHtml = `
         <div id="euro"><strong> 30,00 </strong></div>
@@ -241,10 +247,10 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
 
       await main();
 
-      // Ensure it falls back to inserting the new rate because there is no last rate
+      // No previous DB rate => scraped rates (30) are used, but the DATE is still TODAY in Venezuela.
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO exchange_rate ("rateUsd", "rateEur", "date")'),
-        [30.0, 30.0, scrapedFutureDate]
+        [30.0, 30.0, todayVe]
       );
     });
 
