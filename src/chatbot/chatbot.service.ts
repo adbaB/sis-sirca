@@ -1091,7 +1091,9 @@ export class ChatbotService {
     try {
       for (const event of deferredEvents) {
         try {
-          this.eventEmitter.emit(event.name, event.payload);
+          // Use emitAsync so each async listener (e.g. Google Sheets appendRow) completes before
+          // the next event is fired, preventing race conditions when multiple invoices are paid.
+          await this.eventEmitter.emitAsync(event.name, event.payload);
         } catch (evtError) {
           this.logger.error(`Error emitting deferred event ${event.name}`, evtError);
         }
