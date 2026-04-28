@@ -91,7 +91,7 @@ export class SyncService {
         const contract = String(row['Contrato'] ?? '').trim();
         const plan = String(row['Plan'] ?? '').trim();
 
-        const rawTitular = row['Titular'];
+        const rawTitular = row['¿Es Titular?'];
         const isTitular = rawTitular === 0 || rawTitular === '0';
 
         const generoRaw = row['Genero'];
@@ -205,9 +205,13 @@ export class SyncService {
             (cp) => cp.contract?.id === contract.id && cp.role === expectedRole,
           );
 
+          // Don't trigger an update strictly for a plan mismatch if they are a Titular,
+          // because persons.service.ts correctly ignores plan changes for Titulares anyway.
+          const planMismatch = item.isTitular ? false : person.plan?.id !== plan.id;
+
           const hasChanges =
             person.name !== item.name ||
-            person.plan?.id !== plan.id ||
+            planMismatch ||
             !isLinkedToContract ||
             person.gender !== item.gender;
 

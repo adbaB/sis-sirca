@@ -34,10 +34,6 @@ export class PersonsService {
       }
     }
 
-    if (resolvedRole === PersonRole.TITULAR && planId) {
-      throw new BadRequestException('A TITULAR person cannot have a plan.');
-    }
-
     let contract = null;
     if (contractId) {
       contract = await this.contractsService.findOne(contractId);
@@ -99,13 +95,13 @@ export class PersonsService {
     const person = await this.findOne(id);
     const { planId, contractId, role, ...updateData } = updatePersonDto;
 
+    if (!contractId) {
+      throw new BadRequestException('Contract ID is required.');
+    }
     // Fast-fail: Validate contract existence before touching the database
-    let contract = null;
-    if (contractId) {
-      contract = await this.contractsService.findOne(contractId);
-      if (!contract) {
-        throw new NotFoundException(`Contract with ID "${contractId}" not found`);
-      }
+    const contract = await this.contractsService.findOne(contractId);
+    if (!contract) {
+      throw new NotFoundException(`Contract with ID "${contractId}" not found`);
     }
 
     // Determine the role. If omitted in the DTO, default to their existing role in the target contract,
@@ -126,7 +122,7 @@ export class PersonsService {
 
     let plan = person.plan;
     // Update global plan if specified and we are dealing with an AFILIADO context.
-    if (planId) {
+    if (planId && resolvedRole === PersonRole.AFILIADO) {
       const newPlan = await this.plansService.findOne(planId);
       if (!newPlan) {
         throw new NotFoundException(`Plan with ID "${planId}" not found`);

@@ -159,7 +159,9 @@ export class BillingService {
     try {
       // Reload the saved payment with relations so person name and contract code are always available,
       // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
-      const enrichedPayment = await this.paymentRepository.findOne({
+      // Use queryRunner.manager to ensure visibility within the active, uncommitted transaction.
+      const paymentRepo = queryRunner.manager.getRepository(Payment);
+      const enrichedPayment = await paymentRepo.findOne({
         where: { id: savedPayment!.id },
         relations: [
           'person',
