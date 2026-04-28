@@ -8,5 +8,8 @@ export class PaymentRegisteredEvent {
     public readonly contractCode: string,
     public readonly personName: string,
     public readonly paymentId: string,
+    public readonly totalInvoice: number,
+    public readonly dateReceipt: string | undefined | null,
+    public readonly planNames: string,
   ) {}
 }

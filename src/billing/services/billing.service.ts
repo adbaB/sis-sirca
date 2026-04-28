@@ -163,10 +163,22 @@ export class BillingService {
       const paymentRepo = queryRunner.manager.getRepository(Payment);
       const enrichedPayment = await paymentRepo.findOne({
         where: { id: savedPayment!.id },
-        relations: ['person', 'invoice', 'invoice.contract'],
+        relations: [
+          'person',
+          'invoice',
+          'invoice.contract',
+          'invoice.details',
+          'invoice.details.plan',
+        ],
       });
       const contractCode = enrichedPayment?.invoice?.contract?.code || '';
       const personName = enrichedPayment?.person?.name || '';
+      const datePaymentReceipt = createPaymentDto.datePaymentReceipt || '';
+      const planNames = [
+        ...new Set(
+          (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
+        ),
+      ].join(', ');
       const eventPayload = new PaymentRegisteredEvent(
         savedPayment!.referenceNumber,
         savedPayment!.amount,
@@ -176,6 +188,9 @@ export class BillingService {
         contractCode,
         personName,
         savedPayment!.id,
+        savedPayment.invoice.totalAmount,
+        datePaymentReceipt,
+        planNames,
       );
 
       if (deferredEvents) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { DateTime } from 'luxon';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 import { PaymentRegisteredEvent } from '../events/payment-registered.event';
 
@@ -13,15 +14,15 @@ export class PaymentEventListener {
   async handlePaymentRegisteredEvent(event: PaymentRegisteredEvent) {
     this.logger.log(`Procesando evento de pago para la referencia: ${event.reference}`);
 
-    const dateObj = new Date(event.createdAt);
+    const dateObj = DateTime.fromJSDate(new Date(event.createdAt)).setZone('America/Caracas');
 
-    // Uso de métodos locales para mantener el formato esperado (es-ES)
-    const fecha = dateObj.toLocaleDateString('es-ES', { timeZone: 'America/Caracas' });
-    const hora = dateObj.toLocaleTimeString('es-ES', { timeZone: 'America/Caracas' });
+    // Mantenemos el formato esperado (es-ES) usando luxon para asegurar la precisión de la zona horaria
+    const fecha = dateObj.toFormat('dd/MM/yyyy');
+    const hora = dateObj.toFormat('HH:mm:ss');
 
     // Column order:
     // A=Contrato, B=Nombre, C=Fecha, D=Hora, E=Referencia,
-    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID
+    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID, K=FechaComprobante, L=TotalFactura, M=Planes
     const rowValues = [
       event.contractCode || '',
       event.personName || '',
@@ -33,8 +34,11 @@ export class PaymentEventListener {
       event.receiptUrl || '',
       'Pendiente',
       event.paymentId,
+      event.dateReceipt,
+      event.totalInvoice,
+      event.planNames || '',
     ];
 
-    await this.googleSheetsService.appendRow('Pagos!A:J', rowValues);
+    await this.googleSheetsService.appendRow('Pagos!A:M', rowValues);
   }
 }

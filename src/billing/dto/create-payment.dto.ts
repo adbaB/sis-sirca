@@ -24,6 +24,10 @@ export class CreatePaymentDto {
 
   @IsString()
   @IsOptional()
+  datePaymentReceipt?: string;
+
+  @IsString()
+  @IsOptional()
   url?: string;
 
   @IsUUID()

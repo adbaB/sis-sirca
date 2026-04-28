@@ -968,6 +968,7 @@ export class ChatbotService {
 
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
+      const datePaymentReceipt = state.extracted_data?.fecha as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
       if (state.identity_card && state.type_identity_card) {
@@ -1012,6 +1013,7 @@ export class ChatbotService {
               referenceNumber,
               url: receiptUrl,
               personId,
+              datePaymentReceipt,
             },
             queryRunner,
             deferredEvents,
@@ -1054,6 +1056,7 @@ export class ChatbotService {
               referenceNumber,
               url: receiptUrl,
               personId,
+              datePaymentReceipt,
             },
             queryRunner,
             deferredEvents,
@@ -1088,7 +1091,9 @@ export class ChatbotService {
     try {
       for (const event of deferredEvents) {
         try {
-          this.eventEmitter.emit(event.name, event.payload);
+          // Use emitAsync so each async listener (e.g. Google Sheets appendRow) completes before
+          // the next event is fired, preventing race conditions when multiple invoices are paid.
+          await this.eventEmitter.emitAsync(event.name, event.payload);
         } catch (evtError) {
           this.logger.error(`Error emitting deferred event ${event.name}`, evtError);
         }
