@@ -165,6 +165,7 @@ export class BillingService {
       });
       const contractCode = enrichedPayment?.invoice?.contract?.code || '';
       const personName = enrichedPayment?.person?.name || '';
+      const datePaymentReceipt = createPaymentDto.datePaymentReceipt || '';
       const eventPayload = new PaymentRegisteredEvent(
         savedPayment!.referenceNumber,
         savedPayment!.amount,
@@ -174,6 +175,8 @@ export class BillingService {
         contractCode,
         personName,
         savedPayment!.id,
+        savedPayment.invoice.totalAmount,
+        datePaymentReceipt,
       );
 
       if (deferredEvents) {

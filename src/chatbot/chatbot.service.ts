@@ -968,6 +968,7 @@ export class ChatbotService {
 
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
+      const datePaymentReceipt = state.extracted_data?.fecha as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
       if (state.identity_card && state.type_identity_card) {
@@ -1012,6 +1013,7 @@ export class ChatbotService {
               referenceNumber,
               url: receiptUrl,
               personId,
+              datePaymentReceipt,
             },
             queryRunner,
             deferredEvents,
@@ -1054,6 +1056,7 @@ export class ChatbotService {
               referenceNumber,
               url: receiptUrl,
               personId,
+              datePaymentReceipt,
             },
             queryRunner,
             deferredEvents,
