@@ -161,11 +161,22 @@ export class BillingService {
       // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
       const enrichedPayment = await this.paymentRepository.findOne({
         where: { id: savedPayment!.id },
-        relations: ['person', 'invoice', 'invoice.contract'],
+        relations: [
+          'person',
+          'invoice',
+          'invoice.contract',
+          'invoice.details',
+          'invoice.details.plan',
+        ],
       });
       const contractCode = enrichedPayment?.invoice?.contract?.code || '';
       const personName = enrichedPayment?.person?.name || '';
       const datePaymentReceipt = createPaymentDto.datePaymentReceipt || '';
+      const planNames = [
+        ...new Set(
+          (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
+        ),
+      ].join(', ');
       const eventPayload = new PaymentRegisteredEvent(
         savedPayment!.referenceNumber,
         savedPayment!.amount,
@@ -177,6 +188,7 @@ export class BillingService {
         savedPayment!.id,
         savedPayment.invoice.totalAmount,
         datePaymentReceipt,
+        planNames,
       );
 
       if (deferredEvents) {
