@@ -62,19 +62,26 @@ export class OcrService {
       this.logger.log('Sending image directly to OpenRouter (openai/gpt-4o-mini)...');
 
       const prompt = `
-        A continuación se adjunta la foto de un comprobante de pago o recibo.
-        Tu tarea es extraer los siguientes datos y devolver ÚNICAMENTE un objeto JSON válido, sin formato adicional, markdown ni texto explicativo. Si no encuentras algún dato, usa null.
+        Extrae los datos del comprobante de pago adjunto y devuelve ÚNICAMENTE un objeto JSON válido.
 
-        Datos a extraer:
-        - monto (formato numérico, sin símbolos de moneda, e.g. 100.50)
-        - referencia
-        - beneficiario
-        - bancoDestino
-        - fecha
-        - origen
-        - descripcion
-        - nombreBanco
-        - moneda
+        Reglas críticas de formato:
+        1. MONTO: Convierte el formato venezolano (decimal con coma) a formato numérico estándar (decimal con punto). Elimina puntos de miles. Ejemplo: "1.250,50" -> 1250.50.
+        2. REFERENCIA: Extrae el número de referencia exacto, sin omitir dígitos, sin redondear y sin añadir espacios.
+        3. CAMPOS VACÍOS: Usa null si el dato no es legible o no existe.
+        4. Sin texto adicional, solo el JSON.
+
+        Campos a extraer:
+        {
+          "monto": (number),
+          "referencia": (string),
+          "beneficiario": (string),
+          "bancoDestino": (string),
+          "fecha": (string),
+          "origen": (string),
+          "descripcion": (string),
+          "nombreBanco": (string),
+          "moneda": (string)
+        }
       `;
 
       const completion = await this.openai.chat.completions.create(
