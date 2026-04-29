@@ -4,6 +4,19 @@ import { OcrService } from './ocr.service';
 
 jest.mock('openai');
 
+// Mock sharp so tests don't need a valid image buffer.
+// The resize pipeline returns the original buffer unchanged.
+jest.mock('sharp', () => {
+  const mockInstance = {
+    resize: jest.fn().mockReturnThis(),
+    jpeg: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockImplementation(function (this: { _input: Buffer }) {
+      return Promise.resolve(this._input);
+    }),
+  };
+  return jest.fn((input: Buffer) => ({ ...mockInstance, _input: input }));
+});
+
 describe('OcrService', () => {
   let service: OcrService;
 
