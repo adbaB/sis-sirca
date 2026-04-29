@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import OpenAI from 'openai';
+import sharp from 'sharp';
 import config from '../config/configurations';
 
 export interface ReceiptData {
@@ -55,7 +56,14 @@ export class OcrService {
       if (typeof imageBufferOrUrl === 'string') {
         imageUrl = imageBufferOrUrl;
       } else {
-        const base64Image = imageBufferOrUrl.toString('base64');
+        // Resize to max 1024px on the longest side before encoding.
+        // This keeps the image readable for camera photos while capping the
+        // number of vision tiles to ≤4, reducing cost from ~37k to ~765 tokens.
+        const resizedBuffer = await sharp(imageBufferOrUrl)
+          .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        const base64Image = resizedBuffer.toString('base64');
         imageUrl = `data:image/jpeg;base64,${base64Image}`;
       }
 
@@ -101,6 +109,10 @@ export class OcrService {
                   type: 'image_url',
                   image_url: {
                     url: imageUrl,
+                    // "high" detail reads the image in 512×512 tiles.
+                    // Pre-resizing to max 1024px caps this at 4 tiles (~765 tokens total)
+                    // instead of 37k+ tokens from a full-resolution camera photo.
+                    detail: 'high',
                   },
                 },
               ],
