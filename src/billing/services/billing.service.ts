@@ -188,7 +188,7 @@ export class BillingService {
         contractCode,
         personName,
         savedPayment!.id,
-        savedPayment.invoice.totalAmount,
+        enrichedPayment?.invoice?.totalAmount ?? invoice!.totalAmount,
         datePaymentReceipt,
         planNames,
       );
@@ -217,7 +217,7 @@ export class BillingService {
           surplusAmountBs,
           savedPayment!.url,
           paymentDate!,
-          invoice!.contract.code,
+          invoice!.contract?.code ?? '',
           surplus!.id,
         );
 
