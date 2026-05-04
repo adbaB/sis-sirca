@@ -4,11 +4,14 @@ import {
   DeleteDateColumn,
   Entity,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import type { ContractPerson } from './contract-person.entity';
 import type { Invoice } from '../../billing/entities/invoice.entity';
+import type { Advisor } from '../../advisors/entities/advisor.entity';
 
 export enum ContractStatus {
   ACTIVE = 'ACTIVE',
@@ -40,6 +43,10 @@ export class Contract {
 
   @OneToMany('Invoice', (invoice: Invoice) => invoice.contract)
   invoices?: Invoice[] | null;
+
+  @ManyToOne('Advisor', (advisor: Advisor) => advisor.contracts, { nullable: true })
+  @JoinColumn({ name: 'advisor_id' })
+  advisor?: Advisor | null;
 
   @Column({ type: 'enum', enum: ContractStatus, default: ContractStatus.ACTIVE })
   status: ContractStatus;

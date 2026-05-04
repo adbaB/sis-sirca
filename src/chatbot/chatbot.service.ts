@@ -971,6 +971,16 @@ export class ChatbotService {
       const datePaymentReceipt = state.extracted_data?.fecha as string | undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
+      // Build OCR metadata to persist alongside the payment (exclude receiptUrl which has its own column)
+      let ocrMetadata: Record<string, unknown> | undefined;
+      if (state.extracted_data) {
+        const ocrFields = { ...state.extracted_data };
+        delete ocrFields.receiptUrl;
+        if (Object.keys(ocrFields).length > 0) {
+          ocrMetadata = ocrFields;
+        }
+      }
+
       if (state.identity_card && state.type_identity_card) {
         try {
           const person = await this.personsService.findByIdentityCard(
@@ -1014,6 +1024,7 @@ export class ChatbotService {
               url: receiptUrl,
               personId,
               datePaymentReceipt,
+              metadata: ocrMetadata,
             },
             queryRunner,
             deferredEvents,
@@ -1057,6 +1068,7 @@ export class ChatbotService {
               url: receiptUrl,
               personId,
               datePaymentReceipt,
+              metadata: ocrMetadata,
             },
             queryRunner,
             deferredEvents,

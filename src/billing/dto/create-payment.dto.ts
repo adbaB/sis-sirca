@@ -33,4 +33,7 @@ export class CreatePaymentDto {
   @IsUUID()
   @IsOptional()
   personId?: string;
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
 }

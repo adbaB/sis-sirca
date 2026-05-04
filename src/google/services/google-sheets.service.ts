@@ -30,25 +30,41 @@ export class GoogleSheetsService implements OnModuleInit {
     this.sheets = google.sheets({ version: 'v4', auth });
   }
 
-  async appendRow(range: string, values: (string | number)[]) {
-    try {
-      await this.sheets.spreadsheets.values.append({
-        spreadsheetId: this.spreadsheetId,
-        range,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: {
-          values: [values],
-        },
-      });
-      this.logger.log('Fila agregada exitosamente a Google Sheets.');
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(`Error al insertar en Google Sheets: ${error.message}`, error.stack);
-      } else {
-        this.logger.error('Error al insertar en Google Sheets: Unknown error', String(error));
+  // Sequential queue to prevent concurrent appends from overwriting the same row.
+  // Google Sheets resolves the "next empty row" at request time; if multiple
+  // requests arrive simultaneously they all target the same row.
+  private appendQueue: Promise<void> = Promise.resolve();
+
+  async appendRow(range: string, values: (string | number)[]): Promise<void> {
+    // Wrap the actual API call in a closure
+    const execute = async (): Promise<void> => {
+      try {
+        this.logger.log(`Encolando fila en Google Sheets (range: ${range})...`);
+        await this.sheets.spreadsheets.values.append({
+          spreadsheetId: this.spreadsheetId,
+          range,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [values],
+          },
+        });
+        this.logger.log('Fila agregada exitosamente a Google Sheets.');
+      } catch (error) {
+        if (error instanceof Error) {
+          this.logger.error(`Error al insertar en Google Sheets: ${error.message}`, error.stack);
+        } else {
+          this.logger.error('Error al insertar en Google Sheets: Unknown error', String(error));
+        }
+        throw error;
       }
-      throw error;
-    }
+    };
+
+    // Chain onto the queue: wait for previous task (ignore its failure) then run ours.
+    const previous = this.appendQueue;
+    const current = previous.catch(() => {}).then(() => execute());
+    this.appendQueue = current.catch(() => {}); // Keep the chain alive even if one task fails
+
+    return current;
   }
 
   async readRows(range: string): Promise<string[][]> {

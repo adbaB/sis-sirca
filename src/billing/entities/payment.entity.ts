@@ -51,6 +51,12 @@ export class Payment {
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PROCESSING })
   status: PaymentStatus;
 
+  @Column({ type: 'timestamp', name: 'send_at', nullable: true })
+  sendAt?: Date | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
+
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
 
