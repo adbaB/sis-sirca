@@ -22,7 +22,7 @@ export class PersonsService {
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
-    const { planId, contractId, role, ...personData } = createPersonDto;
+    const { planId, contractId, role, isBillingOwner, ...personData } = createPersonDto;
     const resolvedRole = role || PersonRole.AFILIADO;
 
     // Titulars don't have a plan
@@ -55,6 +55,7 @@ export class PersonsService {
         contract,
         person: savedPerson,
         role: resolvedRole,
+        isBillingOwner: isBillingOwner,
       });
       await this.contractPersonRepository.save(contractPerson);
 
@@ -92,36 +93,35 @@ export class PersonsService {
   }
 
   async update(id: string, updatePersonDto: UpdatePersonDto): Promise<Person> {
-    const person = await this.findOne(id);
-    const { planId, contractId, role, ...updateData } = updatePersonDto;
+    // ── 1. Destructuring & fast-fail ─────────────────────────────────────────
+    const { planId, contractId, role, isBillingOwner, ...updateData } = updatePersonDto;
 
     if (!contractId) {
       throw new BadRequestException('Contract ID is required.');
     }
-    // Fast-fail: Validate contract existence before touching the database
+
+    // ── 2. Cargar persona y contrato ─────────────────────────────────────────
+    const person = await this.findOne(id);
+
     const contract = await this.contractsService.findOne(contractId);
     if (!contract) {
       throw new NotFoundException(`Contract with ID "${contractId}" not found`);
     }
 
-    // Determine the role. If omitted in the DTO, default to their existing role in the target contract,
-    // or fallback to AFILIADO if this is a brand new junction.
-    let resolvedRole = role;
-    let existingJunction = null;
+    // ── 3. Resolver junction existente y rol ─────────────────────────────────
 
-    if (contractId) {
-      existingJunction = await this.contractPersonRepository.findOne({
-        where: { contract: { id: contractId }, person: { id: person.id } },
-      });
-      if (!resolvedRole) {
-        resolvedRole = existingJunction ? existingJunction.role : PersonRole.AFILIADO;
-      }
-    } else {
-      resolvedRole = role || PersonRole.AFILIADO;
-    }
+    const existingJunction = await this.contractPersonRepository.findOne({
+      where: { contract: { id: contractId }, person: { id: person.id } },
+    });
 
+    // Si no viene role en el DTO, heredar el rol actual de la junction,
+    // o usar AFILIADO como valor por defecto si es una unión nueva.
+    const resolvedRole = role ?? existingJunction?.role ?? PersonRole.AFILIADO;
+
+    // ── 4. Resolver plan ─────────────────────────────────────────────────────
+    // Los TITULARs no tienen plan propio; nunca forzamos plan = null porque
+    // la persona puede ser AFILIADO en otro contrato que sí depende de ese plan.
     let plan = person.plan;
-    // Update global plan if specified and we are dealing with an AFILIADO context.
     if (planId && resolvedRole === PersonRole.AFILIADO) {
       const newPlan = await this.plansService.findOne(planId);
       if (!newPlan) {
@@ -130,63 +130,56 @@ export class PersonsService {
       plan = newPlan;
     }
 
-    // Never force `plan = null` just because they are being added as a TITULAR to *this* contract,
-    // as they might still be an AFILIADO in another contract that depends on that global plan.
-
+    // ── 5. Guardar persona ───────────────────────────────────────────────────
     const updatedPerson = Object.assign(person, { ...updateData, plan });
     const savedPerson = await this.personsRepository.save(updatedPerson);
 
+    // ── 6. Gestionar junction (crear / actualizar) ───────────────────────────
     const contractsToRecalculate = new Set<string>();
 
-    if (contractId !== undefined) {
-      if (contractId === null) {
-        // Remove from all contracts if explicitly null
-        if (person.contractPersons && person.contractPersons.length > 0) {
-          for (const cp of person.contractPersons) {
-            await this.contractPersonRepository.remove(cp);
-            contractsToRecalculate.add(cp.contract.id);
-          }
-        }
-      } else if (contract) {
-        if (resolvedRole === PersonRole.AFILIADO) {
-          // Validation: an AFILIADO can only be in one contract. If they are in others, remove them.
-          const existingAfiliadoJunctions = await this.contractPersonRepository.find({
-            where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
-            relations: ['contract'],
-          });
+    if (resolvedRole === PersonRole.AFILIADO) {
+      // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
+      const afiliadoJunctions = await this.contractPersonRepository.find({
+        where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
+        relations: ['contract'],
+      });
 
-          for (const cp of existingAfiliadoJunctions) {
-            if (cp.contract.id !== contractId) {
-              await this.contractPersonRepository.remove(cp);
-              contractsToRecalculate.add(cp.contract.id);
-            }
-          }
+      for (const cp of afiliadoJunctions) {
+        if (cp.contract.id !== contractId) {
+          await this.contractPersonRepository.remove(cp);
+          contractsToRecalculate.add(cp.contract.id);
         }
-
-        if (existingJunction) {
-          // Update the existing role if a new one was provided
-          if (role) {
-            existingJunction.role = role;
-            await this.contractPersonRepository.save(existingJunction);
-          }
-        } else {
-          const contractPerson = this.contractPersonRepository.create({
-            contract,
-            person: savedPerson,
-            role: resolvedRole,
-          });
-          await this.contractPersonRepository.save(contractPerson);
-        }
-
-        contractsToRecalculate.add(contractId);
       }
     }
 
-    // Attempting to recalculate affected contracts (e.g. if their plan changed)
-    if (person.contractPersons && person.contractPersons.length > 0) {
-      for (const cp of person.contractPersons) {
-        contractsToRecalculate.add(cp.contract.id);
+    if (existingJunction) {
+      // Actualizar role e isBillingOwner solo si alguno cambió.
+      const junctionNeedsUpdate =
+        (role !== undefined && existingJunction.role !== role) ||
+        (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner);
+
+      if (junctionNeedsUpdate) {
+        if (role !== undefined) existingJunction.role = role;
+        if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
+        await this.contractPersonRepository.save(existingJunction);
       }
+    } else {
+      // Crear nueva junction con role e isBillingOwner.
+      const contractPerson = this.contractPersonRepository.create({
+        contract,
+        person: savedPerson,
+        role: resolvedRole,
+        isBillingOwner: isBillingOwner ?? false,
+      });
+      await this.contractPersonRepository.save(contractPerson);
+    }
+
+    contractsToRecalculate.add(contractId);
+
+    // ── 7. Recalcular contratos afectados ────────────────────────────────────
+    // Incluir los contratos previos de la persona (por si cambió el plan global).
+    for (const cp of person.contractPersons ?? []) {
+      contractsToRecalculate.add(cp.contract.id);
     }
 
     for (const idToRecalculate of contractsToRecalculate) {

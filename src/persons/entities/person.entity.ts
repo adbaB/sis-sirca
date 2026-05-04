@@ -34,7 +34,7 @@ export class Person {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'enum', enum: TypeIdentityCard, nullable: false })
+  @Column({ type: 'enum', enum: TypeIdentityCard, nullable: false, name: 'type_identity_card' })
   typeIdentityCard: TypeIdentityCard;
 
   @Column({ type: 'varchar', length: 50, name: 'identity_card', nullable: false })

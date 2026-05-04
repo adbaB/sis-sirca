@@ -1,4 +1,4 @@
-import { TypeIdentityCard } from '../../persons/entities/person.entity';
+import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 
 export interface DataCleaned {
   name: string;
@@ -9,6 +9,8 @@ export interface DataCleaned {
   isTitular: boolean;
   plan: string;
   gender: boolean;
+  isBillingOwner: boolean;
+  status: PersonStatus;
   // Row number (1-indexed) for log traceability, without exposing PII.
   rowNumber: number;
 }
