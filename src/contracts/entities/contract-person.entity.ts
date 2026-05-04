@@ -34,6 +34,9 @@ export class ContractPerson {
   @Column({ type: 'enum', enum: PersonRole, default: PersonRole.AFILIADO })
   role: PersonRole;
 
+  @Column({ type: 'boolean', default: false, name: 'is_billing_owner' })
+  isBillingOwner: boolean;
+
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
 

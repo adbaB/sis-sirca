@@ -7,7 +7,7 @@ import config from '../../config/configurations';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PersonRole } from '../../contracts/entities/contract-person.entity';
 import { GoogleDriveService } from '../../google/services/google-drive.service';
-import { TypeIdentityCard } from '../../persons/entities/person.entity';
+import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DataCleaned } from '../interface/data-cleaned.interface';
@@ -97,6 +97,13 @@ export class SyncService {
         const generoRaw = row['Genero'];
         const gender = generoRaw === 'Masculino' || String(generoRaw ?? '').trim() === 'Masculino';
 
+        const rawIsBillingOwner = row['¿Es Titular de la Factura?'];
+        const isBillingOwner = rawIsBillingOwner === 1 || rawIsBillingOwner === '1';
+
+        const rawStatus = row['Estado'];
+        const status =
+          rawStatus === 1 || rawStatus === '1' ? PersonStatus.ACTIVE : PersonStatus.INACTIVE;
+
         let typeIdentityCardStr = 'V';
         let identityCardNum = cedulaOrRif;
 
@@ -121,6 +128,8 @@ export class SyncService {
           isTitular,
           plan,
           gender,
+          isBillingOwner,
+          status,
           rowNumber,
         };
       })
@@ -200,20 +209,28 @@ export class SyncService {
 
         if (person) {
           const expectedRole = item.isTitular ? PersonRole.TITULAR : PersonRole.AFILIADO;
-          // Check if person is already linked to this contract with the expected role
-          const isLinkedToContract = person.contractPersons?.some(
-            (cp) => cp.contract?.id === contract.id && cp.role === expectedRole,
+          // Find the ContractPerson record for this specific contract
+          const existingContractPerson = person.contractPersons?.find(
+            (cp) => cp.contract?.id === contract.id,
           );
+          // Check if person is already linked to this contract with the expected role
+          const isLinkedToContract =
+            !!existingContractPerson && existingContractPerson.role === expectedRole;
 
           // Don't trigger an update strictly for a plan mismatch if they are a Titular,
           // because persons.service.ts correctly ignores plan changes for Titulares anyway.
           const planMismatch = item.isTitular ? false : person.plan?.id !== plan.id;
 
+          const billingOwnerChanged =
+            existingContractPerson?.isBillingOwner !== item.isBillingOwner;
+
           const hasChanges =
             person.name !== item.name ||
             planMismatch ||
             !isLinkedToContract ||
-            person.gender !== item.gender;
+            person.gender !== item.gender ||
+            person.status !== item.status ||
+            billingOwnerChanged;
 
           if (!hasChanges) {
             continue;
@@ -225,6 +242,8 @@ export class SyncService {
             contractId: contract.id,
             gender: item.gender,
             role: item.isTitular ? PersonRole.TITULAR : PersonRole.AFILIADO,
+            isBillingOwner: item.isBillingOwner,
+            status: item.status,
           });
           updated++;
         } else {
@@ -237,6 +256,8 @@ export class SyncService {
             contractId: contract.id,
             gender: item.gender,
             role: item.isTitular ? PersonRole.TITULAR : PersonRole.AFILIADO,
+            isBillingOwner: item.isBillingOwner,
+            status: item.status,
           });
           created++;
         }

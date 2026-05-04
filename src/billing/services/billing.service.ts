@@ -160,20 +160,33 @@ export class BillingService {
       // Reload the saved payment with relations so person name and contract code are always available,
       // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
       // Use queryRunner.manager to ensure visibility within the active, uncommitted transaction.
-      const paymentRepo = queryRunner.manager.getRepository(Payment);
-      const enrichedPayment = await paymentRepo.findOne({
-        where: { id: savedPayment!.id },
-        relations: [
-          'person',
-          'invoice',
-          'invoice.contract',
-          'invoice.details',
-          'invoice.details.plan',
-        ],
-      });
-      const contractCode = enrichedPayment?.invoice?.contract?.code || '';
+      let enrichedPayment: Payment | null = null;
+      try {
+        const paymentRepo = queryRunner.manager.getRepository(Payment);
+        enrichedPayment = await paymentRepo.findOne({
+          where: { id: savedPayment!.id },
+          relations: [
+            'person',
+            'invoice',
+            'invoice.contract',
+            'invoice.details',
+            'invoice.details.plan',
+          ],
+        });
+      } catch (reloadError) {
+        this.logger.warn(
+          `Could not reload payment ${savedPayment!.id} with relations, falling back to saved data. ${
+            reloadError instanceof Error ? reloadError.message : String(reloadError)
+          }`,
+        );
+      }
+
+      // Use enrichedPayment when available, fall back to the in-memory invoice/savedPayment.
+      const contractCode =
+        enrichedPayment?.invoice?.contract?.code || invoice?.contract?.code || '';
       const personName = enrichedPayment?.person?.name || '';
       const datePaymentReceipt = createPaymentDto.datePaymentReceipt || '';
+      const totalInvoice = enrichedPayment?.invoice?.totalAmount ?? invoice?.totalAmount ?? 0;
       const planNames = [
         ...new Set(
           (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
@@ -188,7 +201,7 @@ export class BillingService {
         contractCode,
         personName,
         savedPayment!.id,
-        savedPayment.invoice.totalAmount,
+        totalInvoice,
         datePaymentReceipt,
         planNames,
       );

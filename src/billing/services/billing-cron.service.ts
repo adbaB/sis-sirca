@@ -19,7 +19,7 @@ export class BillingCronService {
     private readonly surplusService: SurplusService,
   ) {}
 
-  @Cron('0 0 25 * *')
+  @Cron('1 0 1 * *')
   async generateMonthlyInvoices() {
     this.logger.log('Starting monthly invoice generation...');
 

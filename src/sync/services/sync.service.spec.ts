@@ -39,7 +39,18 @@ const makeContract = (id = 'contract-1', code = 'CON-001') => ({ id, code });
 
 const makePerson = (overrides: Record<string, unknown> = {}) => {
   const overridesCopy = { ...overrides };
-  let defaultContractPersons = [{ role: PersonRole.TITULAR, contract: makeContract() }];
+
+  type MockContractPerson = {
+    role: PersonRole;
+    contract:
+      | import('../../contracts/entities/contract.entity').Contract
+      | { id: string; code: string };
+    isBillingOwner: boolean;
+  };
+
+  let defaultContractPersons: MockContractPerson[] = [
+    { role: PersonRole.TITULAR, contract: makeContract(), isBillingOwner: false },
+  ];
 
   if (overridesCopy.contract) {
     defaultContractPersons = [
@@ -47,6 +58,7 @@ const makePerson = (overrides: Record<string, unknown> = {}) => {
         role: PersonRole.TITULAR,
         contract:
           overridesCopy.contract as import('../../contracts/entities/contract.entity').Contract,
+        isBillingOwner: false,
       },
     ];
     delete overridesCopy.contract;
@@ -58,6 +70,7 @@ const makePerson = (overrides: Record<string, unknown> = {}) => {
     typeIdentityCard: TypeIdentityCard.V,
     identityCard: '26149461',
     gender: true,
+    status: 'ACTIVE',
     plan: makePlan(),
     contractPersons: defaultContractPersons,
     ...overridesCopy,
@@ -342,7 +355,7 @@ describe('SyncService', () => {
     const save = (data: DataCleaned[]) =>
       (service as unknown as SyncServicePrivate).saveDataToDatabase(data);
 
-    const baseItem = {
+    const baseItem: DataCleaned = {
       name: 'Juan Perez',
       typeIdentityCard: TypeIdentityCard.V,
       identityCard: '26149461',
@@ -351,6 +364,8 @@ describe('SyncService', () => {
       isTitular: true,
       plan: 'Plan Basico',
       gender: true,
+      isBillingOwner: false,
+      status: 'ACTIVE' as import('../../persons/entities/person.entity').PersonStatus,
       rowNumber: 2,
     };
 
