@@ -121,6 +121,7 @@ export class BillingService {
         amountBs: paymentAmountBs,
         paymentMethod: createPaymentDto.paymentMethod,
         url: createPaymentDto.url,
+        metadata: createPaymentDto.metadata ?? null,
       }) as Payment;
 
       savedPayment = await queryRunner.manager.save(payment);

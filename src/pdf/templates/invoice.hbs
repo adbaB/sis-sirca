@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Factura / Recibo de Pago</title>
+  <style>
+    :root {
+      --primary-color: #0f4c81; /* Sirca blue maybe? */
+      --text-color: #333333;
+      --border-color: #e2e8f0;
+    }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+    }
+    .page-container {
+      width: 100%;
+      max-width: 800px;
+      margin: 0 auto;
+      /* Fuerza un salto de página después de cada recibo */
+      page-break-after: always;
+    }
+    /* Evita un salto de página extra en blanco al final del documento */
+    .page-container:last-child {
+      page-break-after: auto;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--primary-color);
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    .header h1 {
+      color: var(--primary-color);
+      margin: 0;
+      font-size: 28px;
+    }
+    .header-logo {
+      max-height: 80px;
+      margin-bottom: 10px;
+    }
+    .header p {
+      margin: 5px 0 0 0;
+      color: #666;
+    }
+    .info-section {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 30px;
+    }
+    .info-box {
+      width: 48%;
+      background-color: #f8fafc;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+    .info-box h3 {
+      margin-top: 0;
+      color: var(--primary-color);
+      font-size: 16px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 5px;
+    }
+    .info-box p {
+      margin: 8px 0;
+      font-size: 14px;
+    }
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    .details-table th, .details-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .details-table th {
+      background-color: var(--primary-color);
+      color: white;
+      font-weight: 500;
+    }
+    .total-section {
+      text-align: right;
+      font-size: 18px;
+    }
+    .total-amount {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--primary-color);
+    }
+    .receipt-section {
+      margin-top: 40px;
+      text-align: center;
+      page-break-inside: avoid; /* Evita que la imagen se corte a la mitad en páginas distintas */
+    }
+    .receipt-section h3 {
+      color: var(--primary-color);
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 5px;
+      margin-bottom: 15px;
+    }
+    .receipt-image {
+      max-width: 100%;
+      max-height: 400px; /* Limita el alto para que quepa en la página */
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 5px;
+    }
+    .footer {
+      margin-top: 50px;
+      text-align: center;
+      font-size: 12px;
+      color: #888;
+      border-top: 1px solid var(--border-color);
+      padding-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  {{#each invoices}}
+  <div class="page-container">
+    <div class="header">
+      <div>
+        {{#if ../logoBase64}}
+        <img src="{{../logoBase64}}" alt="Logo SIRCA" class="header-logo">
+        {{else}}
+        <h1>SIRCA Plan de Salud</h1>
+        {{/if}}
+        <p>RIF: J-501776385</p>
+      </div>
+      <div style="text-align: right;">
+        <h2>RECIBO DE PAGO</h2>
+        <p>Referencia: <strong>{{ referenceNumber }}</strong></p>
+        <p>Fecha: {{ paymentDate }}</p>
+      </div>
+    </div>
+
+    <div class="info-section">
+      <div class="info-box">
+        <h3>Datos del Contrato</h3>
+        <p><strong>Contrato:</strong> {{ contractCode }}</p>
+        <p><strong>Titular:</strong> {{ personName }}</p>
+        <p><strong>Documento:</strong> {{ identityCard }}</p>
+      </div>
+      <div class="info-box">
+        <h3>Datos de Pago</h3>
+        <p><strong>Método de pago:</strong> {{ paymentMethod }}</p>
+        <p><strong>Monto facturado:</strong> ${{ totalInvoice }}</p>
+        <p><strong>Planes involucrados:</strong> {{ planNames }}</p>
+      </div>
+    </div>
+
+    <table class="details-table">
+      <thead>
+        <tr>
+          <th>Descripción</th>
+          <th style="text-align: right;">Monto</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Abono a contrato {{ contractCode }} ({{ paymentMethod }})</td>
+          <td style="text-align: right;">${{ amountUsd }}</td>
+        </tr>
+        {{#if amountBs}}
+        <tr>
+          <td>Monto equivalente en Bolívares</td>
+          <td style="text-align: right;">Bs. {{ amountBs }}</td>
+        </tr>
+        {{/if}}
+      </tbody>
+    </table>
+
+    <div class="total-section">
+      <p>Total Pagado (USD): <span class="total-amount">${{ amountUsd }}</span></p>
+    </div>
+
+    {{#if receiptUrl}}
+    <div class="receipt-section">
+      <h3>Comprobante Adjunto</h3>
+      <!-- Soporta URLs remotas de S3. Puppeteer esperará a que cargue gracias al 'networkidle0' -->
+      <img src="{{receiptUrl}}" alt="Comprobante S3" class="receipt-image">
+    </div>
+    {{/if}}
+
+    <div class="footer">
+      <p>Este documento es un comprobante digital de pago válido.</p>
+      <p>Salud Integral El Rosario C.A. - Gracias por confiar en nosotros.</p>
+    </div>
+  </div>
+  {{/each}}
+</body>
+</html>

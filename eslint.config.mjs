@@ -53,6 +53,7 @@ export default [
       'script',
       '.github',
       '.eslintrc.json',
+      '*.hbs',
     ],
   },
   { languageOptions: { globals: globals.browser } },
