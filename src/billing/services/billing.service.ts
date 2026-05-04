@@ -230,7 +230,7 @@ export class BillingService {
           surplusAmountBs,
           savedPayment!.url,
           paymentDate!,
-          invoice!.contract.code,
+          invoice!.contract?.code ?? '',
           surplus!.id,
         );
 
