@@ -15,15 +15,31 @@ export class PdfService {
    */
   async generatePdf(templateName: string, data: Record<string, unknown>): Promise<Buffer> {
     try {
-      // 1. Read the template file
-      const templatePath = path.join(
+      // 1. Read the template file.
+      //    In production (node dist/) the file lives in dist/pdf/templates/.
+      //    In dev (ts-node / nest start --watch) it lives in src/pdf/templates/.
+      const distTemplatePath = path.join(
+        process.cwd(),
+        'dist',
+        'pdf',
+        'templates',
+        `${templateName}.hbs`,
+      );
+      const srcTemplatePath = path.join(
         process.cwd(),
         'src',
         'pdf',
         'templates',
         `${templateName}.hbs`,
       );
-      const templateHtml = await fs.readFile(templatePath, 'utf8');
+
+      let templateHtml: string;
+      try {
+        templateHtml = await fs.readFile(distTemplatePath, 'utf8');
+      } catch {
+        // dist not available — running in dev mode
+        templateHtml = await fs.readFile(srcTemplatePath, 'utf8');
+      }
 
       // 2. Compile HTML with Handlebars and inject data
       const template = handlebars.compile(templateHtml);
