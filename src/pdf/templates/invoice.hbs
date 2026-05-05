@@ -5,7 +5,7 @@
   <title>Factura / Recibo de Pago</title>
   <style>
     :root {
-      --primary-color: #0f4c81; /* Sirca blue maybe? */
+      --primary-color: #1d9e11;
       --text-color: #333333;
       --border-color: #e2e8f0;
     }
@@ -14,117 +14,143 @@
       color: var(--text-color);
       margin: 0;
       padding: 0;
+      font-size: 13px;
     }
     .page-container {
       width: 100%;
       max-width: 800px;
       margin: 0 auto;
-      /* Fuerza un salto de página después de cada recibo */
+      padding: 16px;
+      box-sizing: border-box;
       page-break-after: always;
     }
-    /* Evita un salto de página extra en blanco al final del documento */
     .page-container:last-child {
       page-break-after: auto;
     }
+
+    /* ── Header ───────────────────────────────────────────── */
     .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 2px solid var(--primary-color);
-      padding-bottom: 20px;
-      margin-bottom: 30px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
     }
     .header h1 {
       color: var(--primary-color);
       margin: 0;
-      font-size: 28px;
+      font-size: 22px;
     }
     .header-logo {
-      max-height: 80px;
-      margin-bottom: 10px;
+      max-height: 50px;
+      margin-bottom: 4px;
     }
-    .header p {
-      margin: 5px 0 0 0;
-      color: #666;
-    }
+    .header p { margin: 3px 0 0 0; color: #666; font-size: 12px; }
+
+    /* ── Info section ─────────────────────────────────────── */
     .info-section {
       display: flex;
       justify-content: space-between;
-      margin-bottom: 30px;
+      margin-bottom: 14px;
+      gap: 12px;
     }
     .info-box {
       width: 48%;
       background-color: #f8fafc;
-      padding: 15px;
-      border-radius: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
       border: 1px solid var(--border-color);
+      box-sizing: border-box;
     }
     .info-box h3 {
-      margin-top: 0;
+      margin: 0 0 6px 0;
       color: var(--primary-color);
-      font-size: 16px;
+      font-size: 13px;
       border-bottom: 1px solid var(--border-color);
-      padding-bottom: 5px;
+      padding-bottom: 4px;
     }
-    .info-box p {
-      margin: 8px 0;
-      font-size: 14px;
+    .info-box p { margin: 4px 0; font-size: 12px; }
+
+    /* ── Two-column body: table + receipt ─────────────────── */
+    .body-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
     }
+    .body-left {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .body-right {
+      flex: 0 0 220px;
+      max-width: 220px;
+    }
+
+    /* ── Details table ────────────────────────────────────── */
     .details-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 30px;
+      margin-bottom: 12px;
     }
     .details-table th, .details-table td {
-      padding: 12px;
+      padding: 8px 10px;
       text-align: left;
       border-bottom: 1px solid var(--border-color);
+      font-size: 12px;
     }
     .details-table th {
       background-color: var(--primary-color);
       color: white;
-      font-weight: 500;
+      font-weight: 600;
     }
     .total-section {
       text-align: right;
-      font-size: 18px;
+      font-size: 15px;
     }
     .total-amount {
-      font-size: 24px;
+      font-size: 20px;
       font-weight: bold;
       color: var(--primary-color);
     }
+
+    /* ── Receipt image (right column) ─────────────────────── */
     .receipt-section {
-      margin-top: 40px;
       text-align: center;
-      page-break-inside: avoid; /* Evita que la imagen se corte a la mitad en páginas distintas */
     }
     .receipt-section h3 {
       color: var(--primary-color);
+      font-size: 13px;
       border-bottom: 1px solid var(--border-color);
-      padding-bottom: 5px;
-      margin-bottom: 15px;
+      padding-bottom: 4px;
+      margin: 0 0 8px 0;
     }
     .receipt-image {
-      max-width: 100%;
-      max-height: 400px; /* Limita el alto para que quepa en la página */
+      width: 100%;
+      max-height: 300px;
+      object-fit: contain;
       border: 1px solid var(--border-color);
       border-radius: 4px;
-      padding: 5px;
+      padding: 4px;
+      box-sizing: border-box;
     }
+
+    /* ── Footer ───────────────────────────────────────────── */
     .footer {
-      margin-top: 50px;
+      margin-top: 16px;
       text-align: center;
-      font-size: 12px;
+      font-size: 11px;
       color: #888;
       border-top: 1px solid var(--border-color);
-      padding-top: 20px;
+      padding-top: 10px;
     }
   </style>
 </head>
 <body>
   {{#each invoices}}
   <div class="page-container">
+    <!-- Header -->
     <div class="header">
       <div>
         {{#if ../logoBase64}}
@@ -132,65 +158,81 @@
         {{else}}
         <h1>SIRCA Plan de Salud</h1>
         {{/if}}
-        <p>RIF: J-501776385</p>
+      </div>
+      <div style="text-align: center;">
+        <h3>COMPROBANTE DE PAGO</h3>
       </div>
       <div style="text-align: right;">
-        <h2>RECIBO DE PAGO</h2>
-        <p>Referencia: <strong>{{ referenceNumber }}</strong></p>
-        <p>Fecha: {{ paymentDate }}</p>
+        <p>Día: <strong>{{ today }}</strong></p>
+        <p>Contrato: <strong>{{ contractCode }}</strong></p>
       </div>
     </div>
 
+    <!-- Info boxes -->
     <div class="info-section">
       <div class="info-box">
-        <h3>Datos del Contrato</h3>
-        <p><strong>Contrato:</strong> {{ contractCode }}</p>
+        <h3>Información del Pago</h3>
+        <p><strong>Mes de Pago:</strong> {{ billingMonth }}</p>
         <p><strong>Titular:</strong> {{ personName }}</p>
         <p><strong>Documento:</strong> {{ identityCard }}</p>
       </div>
       <div class="info-box">
-        <h3>Datos de Pago</h3>
-        <p><strong>Método de pago:</strong> {{ paymentMethod }}</p>
-        <p><strong>Monto facturado:</strong> ${{ totalInvoice }}</p>
-        <p><strong>Planes involucrados:</strong> {{ planNames }}</p>
+        <h3>Miembros</h3>
+        {{#each members}}
+        <p><strong>{{ this.name }}</strong> - {{ this.identityCard }} - {{ this.plan }} - {{ this.amountUsd }}</p>
+        {{/each}}
       </div>
     </div>
 
-    <table class="details-table">
-      <thead>
-        <tr>
-          <th>Descripción</th>
-          <th style="text-align: right;">Monto</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Abono a contrato {{ contractCode }} ({{ paymentMethod }})</td>
-          <td style="text-align: right;">${{ amountUsd }}</td>
-        </tr>
-        {{#if amountBs}}
-        <tr>
-          <td>Monto equivalente en Bolívares</td>
-          <td style="text-align: right;">Bs. {{ amountBs }}</td>
-        </tr>
-        {{/if}}
-      </tbody>
-    </table>
+    <!-- Two-column: table left, receipt right -->
+    <div class="body-row">
+      <div class="body-left">
+        <table class="details-table">
+          <thead>
+            <tr>
+              <th>Descripción</th>
+              <th style="text-align: right;">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Abono a contrato {{ contractCode }} ({{ paymentMethod }})</td>
+              <td style="text-align: right;">${{ amountUsd }}</td>
+            </tr>
+            {{#if amountBs}}
+            <tr>
+              <td>Monto equivalente en Bolívares</td>
+              <td style="text-align: right;">Bs. {{ amountBs }}</td>
+            </tr>
+            <tr>
+              <td>Tasa BCV ({{ date }})</td>
+              <td style="text-align: right;">Bs. {{ exchangeRateUsdToBs }}</td>
+            </tr>
+            {{/if}}
+            <tr>
+              <td>Asesor</td>
+              <td style="text-align: right;">{{ advisor }}</td>
+            </tr>
+          </tbody>
+        </table>
 
-    <div class="total-section">
-      <p>Total Pagado (USD): <span class="total-amount">${{ amountUsd }}</span></p>
-    </div>
+        <div class="total-section">
+          <p>Total Pagado (USD): <span class="total-amount">${{ amountUsd }}</span></p>
+        </div>
+      </div>
 
-    {{#if receiptUrl}}
-    <div class="receipt-section">
-      <h3>Comprobante Adjunto</h3>
-      <!-- Soporta URLs remotas de S3. Puppeteer esperará a que cargue gracias al 'networkidle0' -->
-      <img src="{{receiptUrl}}" alt="Comprobante S3" class="receipt-image">
+      {{#if receiptUrl}}
+      <div class="body-right">
+        <div class="receipt-section">
+          <h3>Comprobante Adjunto</h3>
+          <img src="{{receiptUrl}}" alt="Comprobante" class="receipt-image">
+        </div>
+      </div>
+      {{/if}}
     </div>
-    {{/if}}
 
     <div class="footer">
-      <p>Este documento es un comprobante digital de pago válido.</p>
+      <p>Este documento es un comprobante digital de pago</p>
       <p>Salud Integral El Rosario C.A. - Gracias por confiar en nosotros.</p>
     </div>
   </div>

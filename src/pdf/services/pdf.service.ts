@@ -37,12 +37,13 @@ export class PdfService {
 
       const page = await browser.newPage();
 
-      // 4. Load the final HTML
-      await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
+      // 4. Load the final HTML — all external resources must be pre-embedded as
+      //    data URIs before calling this method to avoid network timeouts.
+      await page.setContent(finalHtml, { waitUntil: 'load' });
 
       // 5. Generate PDF
       const pdfBuffer = await page.pdf({
-        format: 'A4',
+        format: 'Letter',
         printBackground: true,
         margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
       });

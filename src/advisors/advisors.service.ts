@@ -29,6 +29,13 @@ export class AdvisorsService {
     return advisor;
   }
 
+  async findByName(name: string): Promise<Advisor | null> {
+    if (!name) return null;
+    return this.advisorRepository.findOne({
+      where: { name: ILike(name.trim()) },
+    });
+  }
+
   async searchByName(name: string) {
     if (!name) {
       return [];

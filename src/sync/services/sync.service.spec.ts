@@ -19,12 +19,13 @@ interface SyncServicePrivate {
 // -----------------------------------------------------------------------
 const mockGoogleDriveService = { downloadExcelFile: jest.fn() };
 const mockPlansService = { findByName: jest.fn() };
-const mockContractsService = { findByCode: jest.fn(), create: jest.fn() };
+const mockContractsService = { findByCode: jest.fn(), create: jest.fn(), setAdvisor: jest.fn() };
 const mockPersonsService = {
   findByIdentityCard: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
 };
+const mockAdvisorsService = { findByName: jest.fn() };
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -105,6 +106,7 @@ describe('SyncService', () => {
       mockPlansService as unknown as PlansService,
       mockContractsService as unknown as ContractsService,
       mockPersonsService as unknown as PersonsService,
+      mockAdvisorsService as unknown as import('../../advisors/advisors.service').AdvisorsService,
     );
 
   beforeEach(() => {
@@ -366,6 +368,7 @@ describe('SyncService', () => {
       gender: true,
       isBillingOwner: false,
       status: 'ACTIVE' as import('../../persons/entities/person.entity').PersonStatus,
+      advisor: '',
       rowNumber: 2,
     };
 

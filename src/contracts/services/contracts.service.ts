@@ -15,7 +15,11 @@ export class ContractsService {
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
-    const contract = this.contractsRepository.create(createContractDto);
+    const { advisorId, ...rest } = createContractDto;
+    const contract = this.contractsRepository.create({
+      ...rest,
+      ...(advisorId ? { advisor: { id: advisorId } } : {}),
+    });
     return this.contractsRepository.save(contract);
   }
 
@@ -51,6 +55,17 @@ export class ContractsService {
   async remove(id: string): Promise<void> {
     const contract = await this.findOne(id);
     await this.contractsRepository.softRemove(contract);
+  }
+
+  /**
+   * Assigns (or replaces) the advisor of an existing contract.
+   * Pass null as advisorId to detach the current advisor.
+   */
+  async setAdvisor(contractId: string, advisorId: string | null): Promise<void> {
+    await this.contractsRepository.save({
+      id: contractId,
+      advisor: advisorId ? { id: advisorId } : null,
+    });
   }
 
   /**

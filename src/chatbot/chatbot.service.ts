@@ -958,7 +958,6 @@ export class ChatbotService {
     let isTransactionActive = false;
     let paymentsCreated = 0;
     let personId: string | undefined;
-    let personFullName = '';
     const deferredEvents: Array<{ name: string; payload: unknown }> = [];
 
     try {
@@ -989,7 +988,6 @@ export class ChatbotService {
           );
           if (person) {
             personId = person.id;
-            personFullName = person.name;
           }
         } catch {
           this.logger.warn(
@@ -1110,46 +1108,6 @@ export class ChatbotService {
           this.logger.error(`Error emitting deferred event ${event.name}`, evtError);
         }
       }
-
-      const invoicesList = state.selected_invoices_details
-        ? state.selected_invoices_details.map((i) => i.id)
-        : Array.isArray(state.selected_invoices)
-          ? state.selected_invoices
-          : String(state.selected_invoices || '')
-              .split(',')
-              .map((id) => id.trim())
-              .filter(Boolean);
-
-      const invoices = await this.billingService.findInvoicesByIds(invoicesList);
-      const contractCodes =
-        invoices
-          .map((inv) => inv.contract?.code)
-          .filter(Boolean)
-          .join(', ') || 'No especificado';
-
-      const userInfo: Record<string, unknown> = {
-        name: personFullName || 'Administración',
-        'Persona/Teléfono': fromNumber,
-        Pagador: personFullName || 'No identificado',
-        'Fecha y Hora': new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' }),
-        'Contrato(s)': contractCodes,
-      };
-
-      if (state.extracted_data) {
-        const ocrData = { ...state.extracted_data };
-        delete ocrData.receiptUrl;
-        if (Object.keys(ocrData).length > 0) {
-          userInfo['Datos Extraídos (OCR)'] = Object.entries(ocrData)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(' | ');
-        }
-      }
-
-      await this.emailService.sendPaymentConfirmation(
-        'noreply@sirca.com.ve',
-        userInfo,
-        (state.extracted_data?.receiptUrl as string) || '',
-      );
 
       await this.redis.del(`chatbot_state:${fromNumber}`);
       await this.sendMessage(

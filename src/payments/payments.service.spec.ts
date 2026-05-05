@@ -8,7 +8,6 @@ import { PaymentsService } from './payments.service';
 describe('PaymentsService', () => {
   let service: PaymentsService;
   let awsService: AwsService;
-  let emailService: EmailService;
 
   const mockAwsService = {
     uploadFile: jest.fn(),
@@ -35,7 +34,6 @@ describe('PaymentsService', () => {
 
     service = module.get<PaymentsService>(PaymentsService);
     awsService = module.get<AwsService>(AwsService);
-    emailService = module.get<EmailService>(EmailService);
   });
 
   it('should be defined', () => {
@@ -54,9 +52,8 @@ describe('PaymentsService', () => {
       const result = await service.processPaymentReceipt(dto, file);
 
       expect(awsService.uploadFile).toHaveBeenCalledWith(file);
-      expect(emailService.sendPaymentConfirmation).toHaveBeenCalledWith(dto.email, dto, receiptUrl);
       expect(result).toEqual({
-        message: 'Payment information collected and email sent successfully.',
+        message: 'Payment information collected successfully.',
         receiptUrl,
       });
     });

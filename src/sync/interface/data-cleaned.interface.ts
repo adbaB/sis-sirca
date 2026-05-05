@@ -11,6 +11,7 @@ export interface DataCleaned {
   gender: boolean;
   isBillingOwner: boolean;
   status: PersonStatus;
+  advisor: string;
   // Row number (1-indexed) for log traceability, without exposing PII.
   rowNumber: number;
 }
