@@ -47,8 +47,15 @@ export class PdfService {
 
       // 3. Launch Puppeteer
       const browser = await puppeteer.launch({
-        headless: true, // true uses the new headless mode in recent versions
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage', // prevents crashes on low /dev/shm Linux servers
+          '--disable-gpu', // not needed in headless mode
+          '--no-first-run',
+          '--no-zygote',
+        ],
       });
 
       const page = await browser.newPage();
