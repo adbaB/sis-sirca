@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import * as xlsx from 'xlsx';
 
 import config from '../../config/configurations';
+import { AdvisorsService } from '../../advisors/advisors.service';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PersonRole } from '../../contracts/entities/contract-person.entity';
 import { GoogleDriveService } from '../../google/services/google-drive.service';
@@ -23,6 +24,7 @@ export class SyncService {
     private readonly plansService: PlansService,
     private readonly contractsService: ContractsService,
     private readonly personsService: PersonsService,
+    private readonly advisorsService: AdvisorsService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -104,6 +106,8 @@ export class SyncService {
         const status =
           rawStatus === 1 || rawStatus === '1' ? PersonStatus.ACTIVE : PersonStatus.INACTIVE;
 
+        const advisor = String(row['Asesor'] ?? '').trim();
+
         let typeIdentityCardStr = 'V';
         let identityCardNum = cedulaOrRif;
 
@@ -130,6 +134,7 @@ export class SyncService {
           gender,
           isBillingOwner,
           status,
+          advisor,
           rowNumber,
         };
       })
@@ -190,6 +195,14 @@ export class SyncService {
           continue;
         }
 
+        // Resolve advisor by name (null if not found or name is empty)
+        const advisor = item.advisor ? await this.advisorsService.findByName(item.advisor) : null;
+        if (item.advisor && !advisor) {
+          this.logger.warn(
+            `[ADVISOR] ${rowContext}: advisor "${item.advisor}" not found in database. Contract will be saved without advisor.`,
+          );
+        }
+
         let contract = await this.contractsService.findByCode(item.contract);
         if (!contract) {
           this.logger.log(
@@ -198,7 +211,16 @@ export class SyncService {
           contract = await this.contractsService.create({
             code: item.contract,
             affiliationDate: item.affiliationDate,
+            advisorId: advisor?.id ?? undefined,
           });
+        } else {
+          // Update advisor on existing contract if it changed
+          const currentAdvisorId =
+            (contract.advisor as { id: string } | null | undefined)?.id ?? null;
+          const newAdvisorId = advisor?.id ?? null;
+          if (currentAdvisorId !== newAdvisorId) {
+            await this.contractsService.setAdvisor(contract.id, newAdvisorId);
+          }
         }
 
         // Verify person — update if exists, create if not
