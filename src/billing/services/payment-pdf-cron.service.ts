@@ -116,11 +116,14 @@ export class PaymentPdfCronService {
     const amountBs = Number(payment.amountBs);
     const amountUsd = Number(payment.amount);
     const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
-
+    const formatted = new Intl.NumberFormat('es-ES', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
     return {
-      amountUsd: amountUsd.toFixed(2),
-      amountBs: amountBs > 0 ? amountBs.toFixed(2) : null,
-      exchangeRateUsdToBs: exchangeRate,
+      amountUsd: formatted.format(amountUsd),
+      amountBs: amountBs > 0 ? formatted.format(amountBs) : null,
+      exchangeRateUsdToBs: formatted.format(Number(exchangeRate)),
     };
   }
 
