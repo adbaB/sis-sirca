@@ -11,6 +11,9 @@ import { AwsService } from '../../aws/aws.service';
 import { EmailService } from '../../email/email.service';
 import { PdfService } from '../../pdf/services/pdf.service';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { Contract } from '../../contracts/entities/contract.entity';
+import { InvoiceDetail } from '../entities/invoice-detail.entity';
+import { ContractPerson } from '../../contracts/entities/contract-person.entity';
 
 @Injectable()
 export class PaymentPdfCronService {
@@ -83,6 +86,80 @@ export class PaymentPdfCronService {
     await this.markPaymentsAsSent(validPayments);
   }
 
+  private extractTitularInfo(contract: Contract): { personName: string; identityCard: string } {
+    const titularCp = contract.contractPersons?.find(
+      (cp: ContractPerson) => cp.isBillingOwner === true,
+    );
+    const titular = titularCp?.person;
+    return {
+      personName: titular?.name ?? 'Sin titular',
+      identityCard: titular ? `${titular.typeIdentityCard}-${titular.identityCard}` : 'N/A',
+    };
+  }
+
+  private extractMembersInfo(details: InvoiceDetail[]): Record<string, string>[] {
+    return (details ?? []).map((detail) => ({
+      name: detail.person?.name ?? 'N/A',
+      identityCard: detail.person
+        ? `${detail.person.typeIdentityCard}-${detail.person.identityCard}`
+        : 'N/A',
+      plan: detail.plan?.name ?? 'N/A',
+      amountUsd: `$${Number(detail.chargedAmount).toFixed(2)}`,
+    }));
+  }
+
+  private calculateFinancialInfo(payment: Payment): {
+    amountUsd: string;
+    amountBs: string | null;
+    exchangeRateUsdToBs: string | null;
+  } {
+    const amountBs = Number(payment.amountBs);
+    const amountUsd = Number(payment.amount);
+    const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
+
+    return {
+      amountUsd: amountUsd.toFixed(2),
+      amountBs: amountBs > 0 ? amountBs.toFixed(2) : null,
+      exchangeRateUsdToBs: exchangeRate,
+    };
+  }
+
+  private async buildSingleInvoiceData(
+    payment: Payment,
+    today: string,
+  ): Promise<Record<string, unknown> | null> {
+    const invoice = payment.invoice;
+    const contract = invoice?.contract;
+
+    if (!invoice || !contract) {
+      this.logger.warn(
+        `[payment-pdf] Pago ${payment.id}: sin factura o contrato asociado. Saltando.`,
+      );
+      return null;
+    }
+
+    const { personName, identityCard } = this.extractTitularInfo(contract);
+    const members = this.extractMembersInfo(invoice.details as InvoiceDetail[]);
+    const financialInfo = this.calculateFinancialInfo(payment);
+
+    const advisor = contract.advisor?.name ?? 'Sin asesor';
+    const receiptDataUri = payment.url ? await this.fetchImageAsBase64(payment.url) : null;
+
+    return {
+      contractCode: contract.code,
+      billingMonth: invoice.billingMonth,
+      personName,
+      identityCard,
+      members,
+      today,
+      paymentMethod: payment.paymentMethod,
+      ...financialInfo,
+      date: today,
+      advisor,
+      receiptUrl: receiptDataUri,
+    };
+  }
+
   private async buildInvoicesData(
     payments: Payment[],
     today: string,
@@ -91,54 +168,11 @@ export class PaymentPdfCronService {
     const validPayments: Payment[] = [];
 
     for (const payment of payments) {
-      const invoice = payment.invoice;
-      const contract = invoice?.contract;
-
-      if (!invoice || !contract) {
-        this.logger.warn(
-          `[payment-pdf] Pago ${payment.id}: sin factura o contrato asociado. Saltando.`,
-        );
-        continue;
+      const invoiceData = await this.buildSingleInvoiceData(payment, today);
+      if (invoiceData) {
+        invoices.push(invoiceData);
+        validPayments.push(payment);
       }
-
-      const titularCp = contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
-      const titular = titularCp?.person ?? null;
-      const personName = titular?.name ?? 'Sin titular';
-      const identityCard = titular ? `${titular.typeIdentityCard}-${titular.identityCard}` : 'N/A';
-
-      const members = (invoice.details ?? []).map((detail) => ({
-        name: detail.person?.name ?? 'N/A',
-        identityCard: detail.person
-          ? `${detail.person.typeIdentityCard}-${detail.person.identityCard}`
-          : 'N/A',
-        plan: detail.plan?.name ?? 'N/A',
-        amountUsd: `$${Number(detail.chargedAmount).toFixed(2)}`,
-      }));
-
-      const advisor = contract.advisor?.name ?? 'Sin asesor';
-      const receiptDataUri = payment.url ? await this.fetchImageAsBase64(payment.url) : null;
-
-      const amountBs = Number(payment.amountBs);
-      const amountUsd = Number(payment.amount);
-      const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
-
-      invoices.push({
-        contractCode: contract.code,
-        billingMonth: invoice.billingMonth,
-        personName,
-        identityCard,
-        members,
-        today,
-        paymentMethod: payment.paymentMethod,
-        amountUsd: amountUsd.toFixed(2),
-        amountBs: amountBs > 0 ? amountBs.toFixed(2) : null,
-        exchangeRateUsdToBs: exchangeRate,
-        date: today,
-        advisor,
-        receiptUrl: receiptDataUri,
-      });
-
-      validPayments.push(payment);
     }
 
     return { invoices, validPayments };
@@ -150,6 +184,25 @@ export class PaymentPdfCronService {
       result.push(array.slice(i, i + size));
     }
     return result;
+  }
+
+  private logError(context: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    this.logger.error(`${context}: ${message}`, stack);
+  }
+
+  private getFilename(today: string, totalChunks: number, currentIndex: number): string {
+    return totalChunks > 1
+      ? `comprobantes-${today.replace(/\//g, '-')}-parte${currentIndex + 1}.pdf`
+      : `comprobantes-${today.replace(/\//g, '-')}.pdf`;
+  }
+
+  private getEmailBodyText(validPaymentsCount: number, pdfUrlsLength: number): string {
+    if (pdfUrlsLength > 1) {
+      return `Se han procesado ${validPaymentsCount} pago(s). Debido a la cantidad, los comprobantes se han dividido en ${pdfUrlsLength} archivos PDF. Descárgalos a continuación:`;
+    }
+    return `Se han procesado ${validPaymentsCount} pago(s). Descarga el PDF con todos los comprobantes:`;
   }
 
   private async generateAndUploadPdfs(
@@ -166,17 +219,11 @@ export class PaymentPdfCronService {
       try {
         pdfBuffer = await this.pdfService.generatePdf('invoice', { invoices: chunk, logoBase64 });
       } catch (pdfError) {
-        this.logger.error(
-          `[payment-pdf] Error generando el PDF (Parte ${i + 1}): ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`,
-          pdfError instanceof Error ? pdfError.stack : undefined,
-        );
+        this.logError(`[payment-pdf] Error generando el PDF (Parte ${i + 1})`, pdfError);
         return null;
       }
 
-      const filename =
-        invoiceChunks.length > 1
-          ? `comprobantes-${today.replace(/\//g, '-')}-parte${i + 1}.pdf`
-          : `comprobantes-${today.replace(/\//g, '-')}.pdf`;
+      const filename = this.getFilename(today, invoiceChunks.length, i);
 
       try {
         const pdfUrl = await this.awsService.uploadFile(
@@ -186,12 +233,7 @@ export class PaymentPdfCronService {
         this.logger.log(`[payment-pdf] PDF subido a S3: ${pdfUrl}`);
         pdfUrls.push(pdfUrl);
       } catch (uploadError) {
-        this.logger.error(
-          `[payment-pdf] Error subiendo PDF a S3 (Parte ${i + 1}): ${
-            uploadError instanceof Error ? uploadError.message : String(uploadError)
-          }`,
-          uploadError instanceof Error ? uploadError.stack : undefined,
-        );
+        this.logError(`[payment-pdf] Error subiendo PDF a S3 (Parte ${i + 1})`, uploadError);
         return null;
       }
     }
@@ -205,10 +247,7 @@ export class PaymentPdfCronService {
   ): Promise<boolean> {
     const notificationEmail = this.configService.aws.notificationEmail || 'atencion@sirca.com.ve';
     const subject = `Comprobantes de Pago SIRCA (${today}) — ${validPaymentsCount} pago(s)`;
-    const bodyText =
-      pdfUrls.length > 1
-        ? `Se han procesado ${validPaymentsCount} pago(s). Debido a la cantidad, los comprobantes se han dividido en ${pdfUrls.length} archivos PDF. Descárgalos a continuación:`
-        : `Se han procesado ${validPaymentsCount} pago(s). Descarga el PDF con todos los comprobantes:`;
+    const bodyText = this.getEmailBodyText(validPaymentsCount, pdfUrls.length);
 
     const body = [
       'Estimado equipo SIRCA,',
@@ -224,12 +263,7 @@ export class PaymentPdfCronService {
       await this.emailService.sendPdfLinks(notificationEmail, subject, pdfUrls, body);
       return true;
     } catch (mailError) {
-      this.logger.error(
-        `[payment-pdf] Error enviando el correo: ${
-          mailError instanceof Error ? mailError.message : String(mailError)
-        }`,
-        mailError instanceof Error ? mailError.stack : undefined,
-      );
+      this.logError('[payment-pdf] Error enviando el correo', mailError);
       return false;
     }
   }
