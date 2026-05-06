@@ -58,7 +58,7 @@ export class PaymentPdfCronService {
       return;
     }
 
-    this.logger.log(`CRON [payment-pdf]: Procesando ${payments.length} pago(s) en un único PDF...`);
+    this.logger.log(`CRON [payment-pdf]: Procesando ${payments.length} pago(s)...`);
 
     const today = new Date().toLocaleDateString('es-VE', {
       day: '2-digit',
@@ -67,7 +67,26 @@ export class PaymentPdfCronService {
       timeZone: 'America/Caracas',
     });
 
-    // ── Build the invoices array: one entry per payment (= one page in the PDF) ──
+    const { invoices, validPayments } = await this.buildInvoicesData(payments, today);
+
+    if (invoices.length === 0) {
+      this.logger.warn('[payment-pdf] Ningún pago válido para generar PDF. Abortando.');
+      return;
+    }
+
+    const pdfUrls = await this.generateAndUploadPdfs(invoices, today);
+    if (!pdfUrls) return;
+
+    const emailSent = await this.sendNotificationEmail(validPayments.length, pdfUrls, today);
+    if (!emailSent) return;
+
+    await this.markPaymentsAsSent(validPayments);
+  }
+
+  private async buildInvoicesData(
+    payments: Payment[],
+    today: string,
+  ): Promise<{ invoices: Record<string, unknown>[]; validPayments: Payment[] }> {
     const invoices: Record<string, unknown>[] = [];
     const validPayments: Payment[] = [];
 
@@ -82,13 +101,11 @@ export class PaymentPdfCronService {
         continue;
       }
 
-      // Titular info
       const titularCp = contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
       const titular = titularCp?.person ?? null;
       const personName = titular?.name ?? 'Sin titular';
       const identityCard = titular ? `${titular.typeIdentityCard}-${titular.identityCard}` : 'N/A';
 
-      // Member list from invoice details
       const members = (invoice.details ?? []).map((detail) => ({
         name: detail.person?.name ?? 'N/A',
         identityCard: detail.person
@@ -99,10 +116,11 @@ export class PaymentPdfCronService {
       }));
 
       const advisor = contract.advisor?.name ?? 'Sin asesor';
-
-      // Pre-fetch the receipt image from S3 and embed it as a data URI so that
-      // Puppeteer does not need to make any outbound HTTP requests (avoids timeout).
       const receiptDataUri = payment.url ? await this.fetchImageAsBase64(payment.url) : null;
+
+      const amountBs = Number(payment.amountBs);
+      const amountUsd = Number(payment.amount);
+      const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
 
       invoices.push({
         contractCode: contract.code,
@@ -112,12 +130,9 @@ export class PaymentPdfCronService {
         members,
         today,
         paymentMethod: payment.paymentMethod,
-        amountUsd: Number(payment.amount).toFixed(2),
-        amountBs: Number(payment.amountBs) > 0 ? Number(payment.amountBs).toFixed(2) : null,
-        exchangeRateUsdToBs:
-          Number(payment.amountBs) > 0 && Number(payment.amount) > 0
-            ? (Number(payment.amountBs) / Number(payment.amount)).toFixed(4)
-            : null,
+        amountUsd: amountUsd.toFixed(2),
+        amountBs: amountBs > 0 ? amountBs.toFixed(2) : null,
+        exchangeRateUsdToBs: exchangeRate,
         date: today,
         advisor,
         receiptUrl: receiptDataUri,
@@ -126,21 +141,22 @@ export class PaymentPdfCronService {
       validPayments.push(payment);
     }
 
-    if (invoices.length === 0) {
-      this.logger.warn('[payment-pdf] Ningún pago válido para generar PDF. Abortando.');
-      return;
+    return { invoices, validPayments };
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+      result.push(array.slice(i, i + size));
     }
+    return result;
+  }
 
-    // ── Generate PDFs in chunks of 100 ───────────────────────────────────────
-    const chunkArray = <T>(array: T[], size: number): T[][] => {
-      const result = [];
-      for (let i = 0; i < array.length; i += size) {
-        result.push(array.slice(i, i + size));
-      }
-      return result;
-    };
-
-    const invoiceChunks = chunkArray(invoices, 100);
+  private async generateAndUploadPdfs(
+    invoices: Record<string, unknown>[],
+    today: string,
+  ): Promise<string[] | null> {
+    const invoiceChunks = this.chunkArray(invoices, 100);
     const pdfUrls: string[] = [];
     const logoBase64 = await this.loadLogoBase64();
 
@@ -148,17 +164,13 @@ export class PaymentPdfCronService {
       const chunk = invoiceChunks[i];
       let pdfBuffer: Buffer;
       try {
-        pdfBuffer = await this.pdfService.generatePdf('invoice', {
-          invoices: chunk,
-          logoBase64,
-        });
+        pdfBuffer = await this.pdfService.generatePdf('invoice', { invoices: chunk, logoBase64 });
       } catch (pdfError) {
         this.logger.error(
           `[payment-pdf] Error generando el PDF (Parte ${i + 1}): ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`,
           pdfError instanceof Error ? pdfError.stack : undefined,
         );
-        // Do not mark sendAt — the cron will retry on the next run
-        return;
+        return null;
       }
 
       const filename =
@@ -180,17 +192,23 @@ export class PaymentPdfCronService {
           }`,
           uploadError instanceof Error ? uploadError.stack : undefined,
         );
-        return;
+        return null;
       }
     }
+    return pdfUrls;
+  }
 
-    // ── Send email with download links ───────────────────────────────────────
+  private async sendNotificationEmail(
+    validPaymentsCount: number,
+    pdfUrls: string[],
+    today: string,
+  ): Promise<boolean> {
     const notificationEmail = this.configService.aws.notificationEmail || 'atencion@sirca.com.ve';
-    const subject = `Comprobantes de Pago SIRCA (${today}) — ${validPayments.length} pago(s)`;
+    const subject = `Comprobantes de Pago SIRCA (${today}) — ${validPaymentsCount} pago(s)`;
     const bodyText =
-      invoiceChunks.length > 1
-        ? `Se han procesado ${validPayments.length} pago(s). Debido a la cantidad, los comprobantes se han dividido en ${invoiceChunks.length} archivos PDF. Descárgalos a continuación:`
-        : `Se han procesado ${validPayments.length} pago(s). Descarga el PDF con todos los comprobantes:`;
+      pdfUrls.length > 1
+        ? `Se han procesado ${validPaymentsCount} pago(s). Debido a la cantidad, los comprobantes se han dividido en ${pdfUrls.length} archivos PDF. Descárgalos a continuación:`
+        : `Se han procesado ${validPaymentsCount} pago(s). Descarga el PDF con todos los comprobantes:`;
 
     const body = [
       'Estimado equipo SIRCA,',
@@ -204,6 +222,7 @@ export class PaymentPdfCronService {
 
     try {
       await this.emailService.sendPdfLinks(notificationEmail, subject, pdfUrls, body);
+      return true;
     } catch (mailError) {
       this.logger.error(
         `[payment-pdf] Error enviando el correo: ${
@@ -211,19 +230,18 @@ export class PaymentPdfCronService {
         }`,
         mailError instanceof Error ? mailError.stack : undefined,
       );
-      // Do not mark sendAt — the cron will retry on the next run
-      return;
+      return false;
     }
+  }
 
-    // ── Mark sendAt on all valid payments ────────────────────────────────────
+  private async markPaymentsAsSent(payments: Payment[]): Promise<void> {
     const now = new Date();
-    for (const payment of validPayments) {
+    for (const payment of payments) {
       payment.sendAt = now;
     }
-    await this.paymentRepository.save(validPayments);
-
+    await this.paymentRepository.save(payments);
     this.logger.log(
-      `[payment-pdf] PDF enviado (${validPayments.length} pago(s)). sendAt actualizado en todos.`,
+      `[payment-pdf] PDF enviado (${payments.length} pago(s)). sendAt actualizado en todos.`,
     );
   }
 
