@@ -131,56 +131,79 @@ export class PaymentPdfCronService {
       return;
     }
 
-    // ── Generate one PDF with all pages ──────────────────────────────────────
-    let pdfBuffer: Buffer;
-    try {
-      const logoBase64 = await this.loadLogoBase64();
-      pdfBuffer = await this.pdfService.generatePdf('invoice', {
-        invoices,
-        logoBase64,
-      });
-    } catch (pdfError) {
-      this.logger.error(
-        `[payment-pdf] Error generando el PDF: ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`,
-        pdfError instanceof Error ? pdfError.stack : undefined,
-      );
-      // Do not mark sendAt — the cron will retry on the next run
-      return;
+    // ── Generate PDFs in chunks of 100 ───────────────────────────────────────
+    const chunkArray = <T>(array: T[], size: number): T[][] => {
+      const result = [];
+      for (let i = 0; i < array.length; i += size) {
+        result.push(array.slice(i, i + size));
+      }
+      return result;
+    };
+
+    const invoiceChunks = chunkArray(invoices, 100);
+    const pdfUrls: string[] = [];
+    const logoBase64 = await this.loadLogoBase64();
+
+    for (let i = 0; i < invoiceChunks.length; i++) {
+      const chunk = invoiceChunks[i];
+      let pdfBuffer: Buffer;
+      try {
+        pdfBuffer = await this.pdfService.generatePdf('invoice', {
+          invoices: chunk,
+          logoBase64,
+        });
+      } catch (pdfError) {
+        this.logger.error(
+          `[payment-pdf] Error generando el PDF (Parte ${i + 1}): ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`,
+          pdfError instanceof Error ? pdfError.stack : undefined,
+        );
+        // Do not mark sendAt — the cron will retry on the next run
+        return;
+      }
+
+      const filename =
+        invoiceChunks.length > 1
+          ? `comprobantes-${today.replace(/\//g, '-')}-parte${i + 1}.pdf`
+          : `comprobantes-${today.replace(/\//g, '-')}.pdf`;
+
+      try {
+        const pdfUrl = await this.awsService.uploadFile(
+          { buffer: pdfBuffer, originalname: filename, mimetype: 'application/pdf' },
+          'pdfs',
+        );
+        this.logger.log(`[payment-pdf] PDF subido a S3: ${pdfUrl}`);
+        pdfUrls.push(pdfUrl);
+      } catch (uploadError) {
+        this.logger.error(
+          `[payment-pdf] Error subiendo PDF a S3 (Parte ${i + 1}): ${
+            uploadError instanceof Error ? uploadError.message : String(uploadError)
+          }`,
+          uploadError instanceof Error ? uploadError.stack : undefined,
+        );
+        return;
+      }
     }
 
-    // ── Upload PDF to S3 and send email with download link ───────────────────
+    // ── Send email with download links ───────────────────────────────────────
     const notificationEmail = this.configService.aws.notificationEmail || 'atencion@sirca.com.ve';
-    const filename = `comprobantes-${today.replace(/\//g, '-')}.pdf`;
     const subject = `Comprobantes de Pago SIRCA (${today}) — ${validPayments.length} pago(s)`;
+    const bodyText =
+      invoiceChunks.length > 1
+        ? `Se han procesado ${validPayments.length} pago(s). Debido a la cantidad, los comprobantes se han dividido en ${invoiceChunks.length} archivos PDF. Descárgalos a continuación:`
+        : `Se han procesado ${validPayments.length} pago(s). Descarga el PDF con todos los comprobantes:`;
+
     const body = [
       'Estimado equipo SIRCA,',
       '',
-      `Se han procesado ${validPayments.length} pago(s). Descarga el PDF con todos los comprobantes:`,
+      bodyText,
       `Fecha de emisión: ${today}`,
       '',
       'Gracias por confiar en SIRCA Plan de Salud.',
       'Salud Integral El Rosario C.A.',
     ].join('\n');
 
-    let pdfUrl: string;
     try {
-      pdfUrl = await this.awsService.uploadFile(
-        { buffer: pdfBuffer, originalname: filename, mimetype: 'application/pdf' },
-        'pdfs',
-      );
-      this.logger.log(`[payment-pdf] PDF subido a S3: ${pdfUrl}`);
-    } catch (uploadError) {
-      this.logger.error(
-        `[payment-pdf] Error subiendo PDF a S3: ${
-          uploadError instanceof Error ? uploadError.message : String(uploadError)
-        }`,
-        uploadError instanceof Error ? uploadError.stack : undefined,
-      );
-      return;
-    }
-
-    try {
-      await this.emailService.sendPdfLink(notificationEmail, subject, pdfUrl, body);
+      await this.emailService.sendPdfLinks(notificationEmail, subject, pdfUrls, body);
     } catch (mailError) {
       this.logger.error(
         `[payment-pdf] Error enviando el correo: ${
