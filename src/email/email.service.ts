@@ -138,16 +138,24 @@ export class EmailService {
   }
 
   /**
-   * Sends a lightweight HTML email containing a link to a PDF hosted on S3.
+   * Sends a lightweight HTML email containing links to PDFs hosted on S3.
    * Use this instead of sendPaymentPdf when the PDF exceeds SES's 10 MB limit.
    */
-  async sendPdfLink(to: string, subject: string, pdfUrl: string, body: string): Promise<void> {
+  async sendPdfLinks(to: string, subject: string, pdfUrls: string[], body: string): Promise<void> {
+    const linksHtml = pdfUrls
+      .map(
+        (url, i) => `
+      <p><a href="${url}" style="background:#0f4c81;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:bold;">
+        📄 Descargar Comprobantes PDF ${pdfUrls.length > 1 ? `(Parte ${i + 1})` : ''}
+      </a></p>
+      <p style="color:#888;font-size:12px;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br>${url}</p>
+    `,
+      )
+      .join('');
+
     const htmlBody = `
       <p>${body.replace(/\n/g, '<br>')}</p>
-      <p><a href="${pdfUrl}" style="background:#0f4c81;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:bold;">
-        📄 Descargar Comprobantes PDF
-      </a></p>
-      <p style="color:#888;font-size:12px;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br>${pdfUrl}</p>
+      ${linksHtml}
     `;
 
     const command = new SendEmailCommand({
@@ -161,12 +169,12 @@ export class EmailService {
 
     try {
       await this.sesClient.send(command);
-      this.logger.log(`PDF link email sent to ${to}`);
+      this.logger.log(`PDF links email sent to ${to}`);
     } catch (error) {
       if (error instanceof Error) {
-        throw new InternalServerErrorException(`Failed to send PDF link email: ${error.message}`);
+        throw new InternalServerErrorException(`Failed to send PDF links email: ${error.message}`);
       }
-      throw new InternalServerErrorException('Failed to send PDF link email with unknown error');
+      throw new InternalServerErrorException('Failed to send PDF links email with unknown error');
     }
   }
 }

@@ -11,6 +11,9 @@ import { AwsService } from '../../aws/aws.service';
 import { EmailService } from '../../email/email.service';
 import { PdfService } from '../../pdf/services/pdf.service';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { Contract } from '../../contracts/entities/contract.entity';
+import { InvoiceDetail } from '../entities/invoice-detail.entity';
+import { ContractPerson } from '../../contracts/entities/contract-person.entity';
 
 @Injectable()
 export class PaymentPdfCronService {
@@ -58,7 +61,7 @@ export class PaymentPdfCronService {
       return;
     }
 
-    this.logger.log(`CRON [payment-pdf]: Procesando ${payments.length} pago(s) en un único PDF...`);
+    this.logger.log(`CRON [payment-pdf]: Procesando ${payments.length} pago(s)...`);
 
     const today = new Date().toLocaleDateString('es-VE', {
       day: '2-digit',
@@ -67,140 +70,212 @@ export class PaymentPdfCronService {
       timeZone: 'America/Caracas',
     });
 
-    // ── Build the invoices array: one entry per payment (= one page in the PDF) ──
-    const invoices: Record<string, unknown>[] = [];
-    const validPayments: Payment[] = [];
-
-    for (const payment of payments) {
-      const invoice = payment.invoice;
-      const contract = invoice?.contract;
-
-      if (!invoice || !contract) {
-        this.logger.warn(
-          `[payment-pdf] Pago ${payment.id}: sin factura o contrato asociado. Saltando.`,
-        );
-        continue;
-      }
-
-      // Titular info
-      const titularCp = contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
-      const titular = titularCp?.person ?? null;
-      const personName = titular?.name ?? 'Sin titular';
-      const identityCard = titular ? `${titular.typeIdentityCard}-${titular.identityCard}` : 'N/A';
-
-      // Member list from invoice details
-      const members = (invoice.details ?? []).map((detail) => ({
-        name: detail.person?.name ?? 'N/A',
-        identityCard: detail.person
-          ? `${detail.person.typeIdentityCard}-${detail.person.identityCard}`
-          : 'N/A',
-        plan: detail.plan?.name ?? 'N/A',
-        amountUsd: `$${Number(detail.chargedAmount).toFixed(2)}`,
-      }));
-
-      const advisor = contract.advisor?.name ?? 'Sin asesor';
-
-      // Pre-fetch the receipt image from S3 and embed it as a data URI so that
-      // Puppeteer does not need to make any outbound HTTP requests (avoids timeout).
-      const receiptDataUri = payment.url ? await this.fetchImageAsBase64(payment.url) : null;
-
-      invoices.push({
-        contractCode: contract.code,
-        billingMonth: invoice.billingMonth,
-        personName,
-        identityCard,
-        members,
-        today,
-        paymentMethod: payment.paymentMethod,
-        amountUsd: Number(payment.amount).toFixed(2),
-        amountBs: Number(payment.amountBs) > 0 ? Number(payment.amountBs).toFixed(2) : null,
-        exchangeRateUsdToBs:
-          Number(payment.amountBs) > 0 && Number(payment.amount) > 0
-            ? (Number(payment.amountBs) / Number(payment.amount)).toFixed(4)
-            : null,
-        date: today,
-        advisor,
-        receiptUrl: receiptDataUri,
-      });
-
-      validPayments.push(payment);
-    }
+    const { invoices, validPayments } = await this.buildInvoicesData(payments, today);
 
     if (invoices.length === 0) {
       this.logger.warn('[payment-pdf] Ningún pago válido para generar PDF. Abortando.');
       return;
     }
 
-    // ── Generate one PDF with all pages ──────────────────────────────────────
-    let pdfBuffer: Buffer;
-    try {
-      const logoBase64 = await this.loadLogoBase64();
-      pdfBuffer = await this.pdfService.generatePdf('invoice', {
-        invoices,
-        logoBase64,
-      });
-    } catch (pdfError) {
-      this.logger.error(
-        `[payment-pdf] Error generando el PDF: ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`,
-        pdfError instanceof Error ? pdfError.stack : undefined,
+    const pdfUrls = await this.generateAndUploadPdfs(invoices, today);
+    if (!pdfUrls) return;
+
+    const emailSent = await this.sendNotificationEmail(validPayments.length, pdfUrls, today);
+    if (!emailSent) return;
+
+    await this.markPaymentsAsSent(validPayments);
+  }
+
+  private extractTitularInfo(contract: Contract): { personName: string; identityCard: string } {
+    const titularCp = contract.contractPersons?.find(
+      (cp: ContractPerson) => cp.isBillingOwner === true,
+    );
+    const titular = titularCp?.person;
+    return {
+      personName: titular?.name ?? 'Sin titular',
+      identityCard: titular ? `${titular.typeIdentityCard}-${titular.identityCard}` : 'N/A',
+    };
+  }
+
+  private extractMembersInfo(details: InvoiceDetail[]): Record<string, string>[] {
+    return (details ?? []).map((detail) => ({
+      name: detail.person?.name ?? 'N/A',
+      identityCard: detail.person
+        ? `${detail.person.typeIdentityCard}-${detail.person.identityCard}`
+        : 'N/A',
+      plan: detail.plan?.name ?? 'N/A',
+      amountUsd: `$${Number(detail.chargedAmount).toFixed(2)}`,
+    }));
+  }
+
+  private calculateFinancialInfo(payment: Payment): {
+    amountUsd: string;
+    amountBs: string | null;
+    exchangeRateUsdToBs: string | null;
+  } {
+    const amountBs = Number(payment.amountBs);
+    const amountUsd = Number(payment.amount);
+    const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
+
+    return {
+      amountUsd: amountUsd.toFixed(2),
+      amountBs: amountBs > 0 ? amountBs.toFixed(2) : null,
+      exchangeRateUsdToBs: exchangeRate,
+    };
+  }
+
+  private async buildSingleInvoiceData(
+    payment: Payment,
+    today: string,
+  ): Promise<Record<string, unknown> | null> {
+    const invoice = payment.invoice;
+    const contract = invoice?.contract;
+
+    if (!invoice || !contract) {
+      this.logger.warn(
+        `[payment-pdf] Pago ${payment.id}: sin factura o contrato asociado. Saltando.`,
       );
-      // Do not mark sendAt — the cron will retry on the next run
-      return;
+      return null;
     }
 
-    // ── Upload PDF to S3 and send email with download link ───────────────────
+    const { personName, identityCard } = this.extractTitularInfo(contract);
+    const members = this.extractMembersInfo(invoice.details as InvoiceDetail[]);
+    const financialInfo = this.calculateFinancialInfo(payment);
+
+    const advisor = contract.advisor?.name ?? 'Sin asesor';
+    const receiptDataUri = payment.url ? await this.fetchImageAsBase64(payment.url) : null;
+
+    return {
+      contractCode: contract.code,
+      billingMonth: invoice.billingMonth,
+      personName,
+      identityCard,
+      members,
+      today,
+      paymentMethod: payment.paymentMethod,
+      ...financialInfo,
+      date: today,
+      advisor,
+      receiptUrl: receiptDataUri,
+    };
+  }
+
+  private async buildInvoicesData(
+    payments: Payment[],
+    today: string,
+  ): Promise<{ invoices: Record<string, unknown>[]; validPayments: Payment[] }> {
+    const invoices: Record<string, unknown>[] = [];
+    const validPayments: Payment[] = [];
+
+    for (const payment of payments) {
+      const invoiceData = await this.buildSingleInvoiceData(payment, today);
+      if (invoiceData) {
+        invoices.push(invoiceData);
+        validPayments.push(payment);
+      }
+    }
+
+    return { invoices, validPayments };
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+      result.push(array.slice(i, i + size));
+    }
+    return result;
+  }
+
+  private logError(context: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    this.logger.error(`${context}: ${message}`, stack);
+  }
+
+  private getFilename(today: string, totalChunks: number, currentIndex: number): string {
+    return totalChunks > 1
+      ? `comprobantes-${today.replace(/\//g, '-')}-parte${currentIndex + 1}.pdf`
+      : `comprobantes-${today.replace(/\//g, '-')}.pdf`;
+  }
+
+  private getEmailBodyText(validPaymentsCount: number, pdfUrlsLength: number): string {
+    if (pdfUrlsLength > 1) {
+      return `Se han procesado ${validPaymentsCount} pago(s). Debido a la cantidad, los comprobantes se han dividido en ${pdfUrlsLength} archivos PDF. Descárgalos a continuación:`;
+    }
+    return `Se han procesado ${validPaymentsCount} pago(s). Descarga el PDF con todos los comprobantes:`;
+  }
+
+  private async generateAndUploadPdfs(
+    invoices: Record<string, unknown>[],
+    today: string,
+  ): Promise<string[] | null> {
+    const invoiceChunks = this.chunkArray(invoices, 100);
+    const pdfUrls: string[] = [];
+    const logoBase64 = await this.loadLogoBase64();
+
+    for (let i = 0; i < invoiceChunks.length; i++) {
+      const chunk = invoiceChunks[i];
+      let pdfBuffer: Buffer;
+      try {
+        pdfBuffer = await this.pdfService.generatePdf('invoice', { invoices: chunk, logoBase64 });
+      } catch (pdfError) {
+        this.logError(`[payment-pdf] Error generando el PDF (Parte ${i + 1})`, pdfError);
+        return null;
+      }
+
+      const filename = this.getFilename(today, invoiceChunks.length, i);
+
+      try {
+        const pdfUrl = await this.awsService.uploadFile(
+          { buffer: pdfBuffer, originalname: filename, mimetype: 'application/pdf' },
+          'pdfs',
+        );
+        this.logger.log(`[payment-pdf] PDF subido a S3: ${pdfUrl}`);
+        pdfUrls.push(pdfUrl);
+      } catch (uploadError) {
+        this.logError(`[payment-pdf] Error subiendo PDF a S3 (Parte ${i + 1})`, uploadError);
+        return null;
+      }
+    }
+    return pdfUrls;
+  }
+
+  private async sendNotificationEmail(
+    validPaymentsCount: number,
+    pdfUrls: string[],
+    today: string,
+  ): Promise<boolean> {
     const notificationEmail = this.configService.aws.notificationEmail || 'atencion@sirca.com.ve';
-    const filename = `comprobantes-${today.replace(/\//g, '-')}.pdf`;
-    const subject = `Comprobantes de Pago SIRCA (${today}) — ${validPayments.length} pago(s)`;
+    const subject = `Comprobantes de Pago SIRCA (${today}) — ${validPaymentsCount} pago(s)`;
+    const bodyText = this.getEmailBodyText(validPaymentsCount, pdfUrls.length);
+
     const body = [
       'Estimado equipo SIRCA,',
       '',
-      `Se han procesado ${validPayments.length} pago(s). Descarga el PDF con todos los comprobantes:`,
+      bodyText,
       `Fecha de emisión: ${today}`,
       '',
       'Gracias por confiar en SIRCA Plan de Salud.',
       'Salud Integral El Rosario C.A.',
     ].join('\n');
 
-    let pdfUrl: string;
     try {
-      pdfUrl = await this.awsService.uploadFile(
-        { buffer: pdfBuffer, originalname: filename, mimetype: 'application/pdf' },
-        'pdfs',
-      );
-      this.logger.log(`[payment-pdf] PDF subido a S3: ${pdfUrl}`);
-    } catch (uploadError) {
-      this.logger.error(
-        `[payment-pdf] Error subiendo PDF a S3: ${
-          uploadError instanceof Error ? uploadError.message : String(uploadError)
-        }`,
-        uploadError instanceof Error ? uploadError.stack : undefined,
-      );
-      return;
-    }
-
-    try {
-      await this.emailService.sendPdfLink(notificationEmail, subject, pdfUrl, body);
+      await this.emailService.sendPdfLinks(notificationEmail, subject, pdfUrls, body);
+      return true;
     } catch (mailError) {
-      this.logger.error(
-        `[payment-pdf] Error enviando el correo: ${
-          mailError instanceof Error ? mailError.message : String(mailError)
-        }`,
-        mailError instanceof Error ? mailError.stack : undefined,
-      );
-      // Do not mark sendAt — the cron will retry on the next run
-      return;
+      this.logError('[payment-pdf] Error enviando el correo', mailError);
+      return false;
     }
+  }
 
-    // ── Mark sendAt on all valid payments ────────────────────────────────────
+  private async markPaymentsAsSent(payments: Payment[]): Promise<void> {
     const now = new Date();
-    for (const payment of validPayments) {
+    for (const payment of payments) {
       payment.sendAt = now;
     }
-    await this.paymentRepository.save(validPayments);
-
+    await this.paymentRepository.save(payments);
     this.logger.log(
-      `[payment-pdf] PDF enviado (${validPayments.length} pago(s)). sendAt actualizado en todos.`,
+      `[payment-pdf] PDF enviado (${payments.length} pago(s)). sendAt actualizado en todos.`,
     );
   }
 
