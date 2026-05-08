@@ -70,26 +70,27 @@ export class OcrService {
       this.logger.log('Sending image directly to OpenRouter (openai/gpt-4o-mini)...');
 
       const prompt = `
-        Extrae los datos del comprobante de pago adjunto y devuelve ÚNICAMENTE un objeto JSON válido.
+         Extrae los datos del comprobante de pago adjunto y devuelve ÚNICAMENTE un objeto JSON válido.
 
-        Reglas críticas de formato:
-        1. MONTO: Convierte el formato venezolano (decimal con coma) a formato numérico estándar (decimal con punto). Elimina puntos de miles. Ejemplo: "1.250,50" -> 1250.50.
-        2. REFERENCIA: Extrae el número de referencia exacto, sin omitir dígitos, sin redondear y sin añadir espacios.
-        3. CAMPOS VACÍOS: Usa null si el dato no es legible o no existe.
-        4. Sin texto adicional, solo el JSON.
+            Reglas críticas de formato:
+            1. MONTO: Convierte el formato venezolano (decimal con coma) a formato numérico estándar (decimal con punto). Elimina puntos de miles. Ejemplo: "1.250,50" -> 1250.50.
+            2. REFERENCIA: Transcripción LITERAL y EXACTA. Extrae el número dígito por dígito. PROHIBIDO invertir números, adivinar, redondear o añadir espacios. La precisión absoluta es obligatoria.
+            3. CAMPOS VACÍOS: Usa null si el dato no es legible o no existe.
+            4. SALIDA: Sin texto adicional, sin formato markdown de bloques de código json, SOLO el JSON puro.
 
-        Campos a extraer:
-        {
-          "monto": (number),
-          "referencia": (string),
-          "beneficiario": (string),
-          "bancoDestino": (string),
-          "fecha": (string),
-          "origen": (string),
-          "descripcion": (string),
-          "nombreBanco": (string),
-          "moneda": (string)
-        }
+            Campos a extraer:
+            {
+            "_referencia_verificacion": (string) Escribe aquí la referencia separando cada dígito con un guión, ej: "1-2-3-4-5-6",
+            "monto": (number),
+            "referencia": (string) La referencia final unida y corregida en base al campo anterior,
+            "beneficiario": (string),
+            "bancoDestino": (string),
+            "fecha": (string),
+            "origen": (string),
+            "descripcion": (string),
+            "nombreBanco": (string),
+            "moneda": (string)
+            }
       `;
 
       const completion = await this.openai.chat.completions.create(
