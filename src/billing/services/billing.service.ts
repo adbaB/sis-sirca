@@ -6,6 +6,7 @@ import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
+import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
@@ -13,6 +14,22 @@ import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { PaymentRegisteredEvent } from '../events/payment-registered.event';
 import { SurplusCreatedEvent } from '../events/surplus-created.event';
+
+interface PaymentSplit {
+  paymentAmountUsd: number;
+  paymentAmountBs: number;
+  surplusAmountUsd: number | null;
+  surplusAmountBs: number | null;
+}
+
+interface TransactionResult {
+  savedPayment: Payment;
+  invoice: Invoice;
+  surplusId: string | null;
+  surplusAmountUsd: number | null;
+  surplusAmountBs: number | null;
+  paymentDate: Date;
+}
 
 @Injectable()
 export class BillingService {
@@ -28,124 +45,116 @@ export class BillingService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
   async createPayment(
     createPaymentDto: CreatePaymentDto,
     externalQueryRunner?: QueryRunner,
     deferredEvents?: Array<{ name: string; payload: unknown }>,
   ) {
     const amount = Number(createPaymentDto.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new BadRequestException('Payment amount must be greater than 0');
-    }
-
     const amountExtracted = Number(createPaymentDto.amountExtracted);
-    if (createPaymentDto.paymentMethod !== 'zelle') {
-      if (!Number.isFinite(amountExtracted) || amountExtracted <= 0) {
-        throw new BadRequestException('Payment amount Bs must be greater than 0');
-      }
-    }
+    this.validateAmounts(createPaymentDto, amount, amountExtracted);
 
     const queryRunner = externalQueryRunner || this.dataSource.createQueryRunner();
-    let savedPayment: Payment;
-    let invoice: Invoice | null;
-    let surplusAmountUsd: number | null = null;
-    let surplusAmountBs: number | null = null;
-    let surplus: Surplus | null = null;
-    let paymentDate: Date;
+    const { savedPayment, invoice, surplusId, surplusAmountUsd, surplusAmountBs, paymentDate } =
+      await this.executePaymentTransaction(
+        createPaymentDto,
+        amount,
+        amountExtracted,
+        queryRunner,
+        externalQueryRunner,
+      );
 
+    const enrichedPayment = await this.reloadPaymentWithRelations(queryRunner, savedPayment.id);
+    await this.emitPaymentRegisteredEvent(
+      createPaymentDto,
+      savedPayment,
+      enrichedPayment,
+      invoice,
+      deferredEvents,
+    );
+    await this.emitSurplusCreatedEvent(
+      savedPayment,
+      invoice,
+      surplusId,
+      surplusAmountUsd,
+      surplusAmountBs,
+      paymentDate,
+      deferredEvents,
+    );
+
+    return savedPayment;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers — createPayment
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Executes the database transaction: fetches the invoice, computes amounts,
+   * persists the payment and optional surplus, recalculates invoice status,
+   * and commits. All mutable state is scoped inside this method and returned
+   * as a typed result — eliminating the need for shared mutable variables.
+   */
+  private async executePaymentTransaction(
+    dto: CreatePaymentDto,
+    amount: number,
+    amountExtracted: number,
+    queryRunner: QueryRunner,
+    externalQueryRunner: QueryRunner | undefined,
+  ): Promise<TransactionResult> {
     if (!externalQueryRunner) {
       await queryRunner.connect();
       await queryRunner.startTransaction();
     }
 
     try {
-      // Use pessimistic write lock to prevent race conditions when checking and updating invoice
-      invoice = await queryRunner.manager
-        .createQueryBuilder(Invoice, 'invoice')
-        .setQueryRunner(queryRunner)
-        .innerJoinAndSelect('invoice.contract', 'contract')
-        .where('invoice.id = :id', { id: createPaymentDto.invoiceId })
-        .setLock('pessimistic_write')
-        .getOne();
+      const invoice = await this.fetchInvoiceWithLock(queryRunner, dto.invoiceId);
+      const exchangeRate = await this.getExchangeRateOrThrow();
 
-      if (!invoice) {
-        throw new NotFoundException(`Invoice with ID ${createPaymentDto.invoiceId} not found`);
-      }
-      const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
-      const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
-
-      if (!exchangeRate) {
-        throw new BadRequestException('Exchange rate not found for date');
-      }
-
-      let amountUsd = amount;
-
+      const amountUsd = this.resolveAmountUsd(dto, amount, exchangeRate.rateUsd);
       const invoiceUnpaidAmount = Math.max(
         0,
         Number(invoice.totalAmount) - Number(invoice.paidAmount),
       );
 
-      if (createPaymentDto.paymentMethod !== 'zelle' && createPaymentDto.amountExtracted) {
-        amountUsd = createPaymentDto.amountExtracted / exchangeRate.rateUsd;
-      }
+      const split = this.computePaymentSplit(
+        amountUsd,
+        invoiceUnpaidAmount,
+        amountExtracted,
+        dto.paymentMethod,
+        exchangeRate.rateUsd,
+      );
 
-      // If the payment exceeds the invoice balance, cap the credited amount and record the surplus.
-      let paymentAmountUsd = amountUsd;
-      let paymentAmountBs = createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted : 0;
+      const paymentDate = new Date();
+      const savedPayment = await this.persistPayment(queryRunner, dto, invoice, split, paymentDate);
+      const surplusId = await this.persistSurplus(
+        queryRunner,
+        invoice,
+        savedPayment,
+        paymentDate,
+        split.surplusAmountUsd,
+        split.surplusAmountBs,
+      );
 
-      if (amountUsd > invoiceUnpaidAmount) {
-        const surplusUsd = amountUsd - invoiceUnpaidAmount;
-
-        if (createPaymentDto.paymentMethod === 'zelle') {
-          surplusAmountUsd = surplusUsd;
-        } else {
-          surplusAmountBs = surplusUsd * exchangeRate.rateUsd;
-        }
-
-        // Cap the payment to exactly what the invoice needs.
-        paymentAmountUsd = invoiceUnpaidAmount;
-        paymentAmountBs =
-          createPaymentDto.paymentMethod !== 'zelle' ? amountExtracted - (surplusAmountBs ?? 0) : 0;
-      }
-
-      paymentDate = new Date();
-
-      // Create Payment (amount capped to the invoice unpaid balance when there is a surplus)
-      const payment = queryRunner.manager.create(Payment, {
-        paymentDate: paymentDate,
-        status: PaymentStatus.PROCESSING,
-        invoice: invoice,
-        person: createPaymentDto.personId ? { id: createPaymentDto.personId } : null,
-        referenceNumber: createPaymentDto.referenceNumber,
-        amount: paymentAmountUsd,
-        amountBs: paymentAmountBs,
-        paymentMethod: createPaymentDto.paymentMethod,
-        url: createPaymentDto.url,
-        metadata: createPaymentDto.metadata ?? null,
-      }) as Payment;
-
-      savedPayment = await queryRunner.manager.save(payment);
-
-      // Persist surplus record if applicable
-      if (surplusAmountUsd !== null || surplusAmountBs !== null) {
-        surplus = await queryRunner.manager.save(
-          queryRunner.manager.create(Surplus, {
-            amountBs: surplusAmountBs,
-            amountUsd: surplusAmountUsd,
-            date: paymentDate,
-            payment: savedPayment,
-            invoice: null,
-            contract: invoice.contract,
-            status: SurplusStatus.PENDING,
-          }),
-        );
-      }
-      // Recalculate invoice inside the transaction so a failure here rolls back the payment too.
-      await this.recalculateInvoicePaidAmount(createPaymentDto.invoiceId, queryRunner);
+      // Recalculate invoice inside the transaction so a failure rolls back the payment too.
+      await this.recalculateInvoicePaidAmount(dto.invoiceId, queryRunner);
 
       if (!externalQueryRunner) {
         await queryRunner.commitTransaction();
       }
+
+      return {
+        savedPayment,
+        invoice,
+        surplusId,
+        surplusAmountUsd: split.surplusAmountUsd,
+        surplusAmountBs: split.surplusAmountBs,
+        paymentDate,
+      };
     } catch (error) {
       if (!externalQueryRunner) {
         await queryRunner.rollbackTransaction();
@@ -156,104 +165,292 @@ export class BillingService {
         await queryRunner.release();
       }
     }
+  }
 
-    try {
-      // Reload the saved payment with relations so person name and contract code are always available,
-      // regardless of how the payment was initiated (WhatsApp Flow or manual fallback).
-      // Use queryRunner.manager to ensure visibility within the active, uncommitted transaction.
-      let enrichedPayment: Payment | null = null;
-      try {
-        const paymentRepo = queryRunner.manager.getRepository(Payment);
-        enrichedPayment = await paymentRepo.findOne({
-          where: { id: savedPayment!.id },
-          relations: [
-            'person',
-            'invoice',
-            'invoice.contract',
-            'invoice.contract.advisor',
-            'invoice.details',
-            'invoice.details.plan',
-          ],
-        });
-      } catch (reloadError) {
-        this.logger.warn(
-          `Could not reload payment ${savedPayment!.id} with relations, falling back to saved data. ${
-            reloadError instanceof Error ? reloadError.message : String(reloadError)
-          }`,
-        );
+  /** Validates that the incoming amounts are positive finite numbers. */
+  private validateAmounts(dto: CreatePaymentDto, amount: number, amountExtracted: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Payment amount must be greater than 0');
+    }
+    if (dto.paymentMethod !== 'zelle') {
+      if (!Number.isFinite(amountExtracted) || amountExtracted <= 0) {
+        throw new BadRequestException('Payment amount Bs must be greater than 0');
       }
+    }
+  }
 
-      // Use enrichedPayment when available, fall back to the in-memory invoice/savedPayment.
-      const contractCode =
-        enrichedPayment?.invoice?.contract?.code || invoice?.contract?.code || '';
-      const personName = enrichedPayment?.person?.name || '';
-      const datePaymentReceipt = createPaymentDto.datePaymentReceipt || '';
-      const totalInvoice = enrichedPayment?.invoice?.totalAmount ?? invoice?.totalAmount ?? 0;
-      const planNames = [
-        ...new Set(
-          (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
-        ),
-      ].join(', ');
-      const advisorName = enrichedPayment?.invoice?.contract?.advisor?.name || '';
+  /**
+   * Fetches the invoice using a pessimistic write lock to prevent race
+   * conditions, and throws a NotFoundException when absent.
+   */
+  private async fetchInvoiceWithLock(
+    queryRunner: QueryRunner,
+    invoiceId: string,
+  ): Promise<Invoice> {
+    const invoice = await queryRunner.manager
+      .createQueryBuilder(Invoice, 'invoice')
+      .setQueryRunner(queryRunner)
+      .innerJoinAndSelect('invoice.contract', 'contract')
+      .where('invoice.id = :id', { id: invoiceId })
+      .setLock('pessimistic_write')
+      .getOne();
 
-      const eventPayload = new PaymentRegisteredEvent(
-        savedPayment!.referenceNumber,
-        savedPayment!.amount,
-        savedPayment!.amountBs,
-        savedPayment!.url,
-        savedPayment!.createdAt || new Date(),
-        contractCode,
-        personName,
-        savedPayment!.id,
-        totalInvoice,
-        datePaymentReceipt,
-        planNames,
-        advisorName,
-      );
+    if (!invoice) {
+      throw new NotFoundException(`Invoice with ID ${invoiceId} not found`);
+    }
+    return invoice;
+  }
 
-      if (deferredEvents) {
-        deferredEvents.push({ name: 'payment.registered', payload: eventPayload });
+  /** Fetches today's exchange rate for Venezuela or throws if unavailable. */
+  private async getExchangeRateOrThrow(): Promise<ExchangeRate> {
+    const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
+    const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
+    if (!exchangeRate) {
+      throw new BadRequestException('Exchange rate not found for date');
+    }
+    return exchangeRate;
+  }
+
+  /**
+   * Converts the raw amount to USD.
+   * For non-Zelle methods the extracted Bs amount is divided by the rate.
+   */
+  private resolveAmountUsd(dto: CreatePaymentDto, amount: number, rateUsd: number): number {
+    if (dto.paymentMethod !== 'zelle' && dto.amountExtracted) {
+      return dto.amountExtracted / rateUsd;
+    }
+    return amount;
+  }
+
+  /**
+   * Determines how much of the payment applies to the invoice vs. becomes
+   * surplus, and returns the capped payment amounts.
+   */
+  private computePaymentSplit(
+    amountUsd: number,
+    invoiceUnpaidAmount: number,
+    amountExtracted: number,
+    paymentMethod: string,
+    rateUsd: number,
+  ): PaymentSplit {
+    let paymentAmountUsd = amountUsd;
+    let paymentAmountBs = paymentMethod !== 'zelle' ? amountExtracted : 0;
+    let surplusAmountUsd: number | null = null;
+    let surplusAmountBs: number | null = null;
+
+    if (amountUsd > invoiceUnpaidAmount) {
+      const surplusUsd = amountUsd - invoiceUnpaidAmount;
+
+      if (paymentMethod === 'zelle') {
+        surplusAmountUsd = surplusUsd;
       } else {
-        this.eventEmitter.emit('payment.registered', eventPayload);
+        surplusAmountBs = surplusUsd * rateUsd;
       }
+
+      // Cap the payment to exactly what the invoice needs.
+      paymentAmountUsd = invoiceUnpaidAmount;
+      paymentAmountBs = paymentMethod !== 'zelle' ? amountExtracted - (surplusAmountBs ?? 0) : 0;
+    }
+
+    return { paymentAmountUsd, paymentAmountBs, surplusAmountUsd, surplusAmountBs };
+  }
+
+  /** Creates and persists a Payment entity within the active transaction. */
+  private async persistPayment(
+    queryRunner: QueryRunner,
+    dto: CreatePaymentDto,
+    invoice: Invoice,
+    split: PaymentSplit,
+    paymentDate: Date,
+  ): Promise<Payment> {
+    const payment = queryRunner.manager.create(Payment, {
+      paymentDate,
+      status: PaymentStatus.PROCESSING,
+      invoice,
+      person: dto.personId ? { id: dto.personId } : null,
+      referenceNumber: dto.referenceNumber,
+      amount: split.paymentAmountUsd,
+      amountBs: split.paymentAmountBs,
+      paymentMethod: dto.paymentMethod,
+      url: dto.url,
+      metadata: dto.metadata ?? null,
+    }) as Payment;
+
+    return queryRunner.manager.save(payment);
+  }
+
+  /**
+   * Persists a Surplus record when the payment exceeds the invoice balance.
+   * Returns the saved surplus ID, or null when no surplus exists.
+   */
+  private async persistSurplus(
+    queryRunner: QueryRunner,
+    invoice: Invoice,
+    savedPayment: Payment,
+    paymentDate: Date,
+    surplusAmountUsd: number | null,
+    surplusAmountBs: number | null,
+  ): Promise<string | null> {
+    if (surplusAmountUsd === null && surplusAmountBs === null) {
+      return null;
+    }
+    const saved = await queryRunner.manager.save(
+      queryRunner.manager.create(Surplus, {
+        amountBs: surplusAmountBs,
+        amountUsd: surplusAmountUsd,
+        date: paymentDate,
+        payment: savedPayment,
+        invoice: null,
+        contract: invoice.contract,
+        status: SurplusStatus.PENDING,
+      }),
+    );
+    return saved.id;
+  }
+
+  /**
+   * Reloads the saved payment with all necessary relations.
+   * Swallows errors and returns null so event emission can fall back gracefully.
+   */
+  private async reloadPaymentWithRelations(
+    queryRunner: QueryRunner,
+    paymentId: string,
+  ): Promise<Payment | null> {
+    try {
+      const paymentRepo = queryRunner.manager.getRepository(Payment);
+      return await paymentRepo.findOne({
+        where: { id: paymentId },
+        relations: [
+          'person',
+          'invoice',
+          'invoice.contract',
+          'invoice.contract.advisor',
+          'invoice.details',
+          'invoice.details.plan',
+        ],
+      });
+    } catch (reloadError) {
+      this.logger.warn(
+        `Could not reload payment ${paymentId} with relations, falling back to saved data. ${
+          reloadError instanceof Error ? reloadError.message : String(reloadError)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /** Derives all display fields from enriched/fallback data and builds the event. */
+  private buildPaymentRegisteredEvent(
+    dto: CreatePaymentDto,
+    savedPayment: Payment,
+    enrichedPayment: Payment | null,
+    invoice: Invoice,
+  ): PaymentRegisteredEvent {
+    const contractCode = enrichedPayment?.invoice?.contract?.code || invoice?.contract?.code || '';
+    const personName = enrichedPayment?.person?.name || '';
+    const datePaymentReceipt = dto.datePaymentReceipt || '';
+    const totalInvoice = enrichedPayment?.invoice?.totalAmount ?? invoice?.totalAmount ?? 0;
+    const planNames = [
+      ...new Set(
+        (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
+      ),
+    ].join(', ');
+    const advisorName = enrichedPayment?.invoice?.contract?.advisor?.name || '';
+
+    return new PaymentRegisteredEvent(
+      savedPayment.referenceNumber,
+      savedPayment.amount,
+      savedPayment.amountBs,
+      savedPayment.url,
+      savedPayment.createdAt || new Date(),
+      contractCode,
+      personName,
+      savedPayment.id,
+      totalInvoice,
+      datePaymentReceipt,
+      planNames,
+      advisorName,
+    );
+  }
+
+  /**
+   * Emits an event immediately or pushes it to the deferred queue.
+   * Centralises the repeated `if (deferredEvents) … else emit(…)` pattern.
+   */
+  private emitOrDefer(
+    eventName: string,
+    payload: unknown,
+    deferredEvents?: Array<{ name: string; payload: unknown }>,
+  ): void {
+    if (deferredEvents) {
+      deferredEvents.push({ name: eventName, payload });
+    } else {
+      this.eventEmitter.emit(eventName, payload);
+    }
+  }
+
+  /** Builds and emits/defers the `payment.registered` event. Errors are logged, never rethrown. */
+  private async emitPaymentRegisteredEvent(
+    dto: CreatePaymentDto,
+    savedPayment: Payment,
+    enrichedPayment: Payment | null,
+    invoice: Invoice,
+    deferredEvents?: Array<{ name: string; payload: unknown }>,
+  ): Promise<void> {
+    try {
+      const eventPayload = this.buildPaymentRegisteredEvent(
+        dto,
+        savedPayment,
+        enrichedPayment,
+        invoice,
+      );
+      this.emitOrDefer('payment.registered', eventPayload, deferredEvents);
     } catch (emitError) {
       this.logger.error(
-        `Failed to emit payment.registered event for payment ${
-          savedPayment!.id
-        }. The payment was saved successfully.`,
+        `Failed to emit payment.registered event for payment ${savedPayment.id}. The payment was saved successfully.`,
         emitError instanceof Error ? emitError.stack : String(emitError),
       );
     }
-
-    // Emit surplus event outside the transaction so a throw here can never
-    // trigger a rollback of an already-committed transaction.
-    if (surplusAmountUsd !== null || surplusAmountBs !== null) {
-      try {
-        const surplusEvent = new SurplusCreatedEvent(
-          savedPayment!.referenceNumber,
-          surplusAmountUsd,
-          surplusAmountBs,
-          savedPayment!.url,
-          paymentDate!,
-          invoice!.contract?.code ?? '',
-          surplus!.id,
-        );
-
-        if (deferredEvents) {
-          deferredEvents.push({ name: 'surplus.created', payload: surplusEvent });
-        } else {
-          this.eventEmitter.emit('surplus.created', surplusEvent);
-        }
-      } catch (emitError) {
-        this.logger.error(
-          `Failed to emit surplus.created event for payment ${savedPayment!.id}. The surplus was saved successfully.`,
-          emitError instanceof Error ? emitError.stack : String(emitError),
-        );
-      }
-    }
-
-    return savedPayment!;
   }
+
+  /**
+   * Builds and emits/defers the `surplus.created` event when a surplus exists.
+   * Errors are logged, never rethrown.
+   */
+  private async emitSurplusCreatedEvent(
+    savedPayment: Payment,
+    invoice: Invoice,
+    surplusId: string | null,
+    surplusAmountUsd: number | null,
+    surplusAmountBs: number | null,
+    paymentDate: Date,
+    deferredEvents?: Array<{ name: string; payload: unknown }>,
+  ): Promise<void> {
+    if ((surplusAmountUsd === null && surplusAmountBs === null) || surplusId === null) {
+      return;
+    }
+    try {
+      const surplusEvent = new SurplusCreatedEvent(
+        savedPayment.referenceNumber,
+        surplusAmountUsd,
+        surplusAmountBs,
+        savedPayment.url,
+        paymentDate,
+        invoice.contract?.code ?? '',
+        surplusId,
+      );
+      this.emitOrDefer('surplus.created', surplusEvent, deferredEvents);
+    } catch (emitError) {
+      this.logger.error(
+        `Failed to emit surplus.created event for payment ${savedPayment.id}. The surplus was saved successfully.`,
+        emitError instanceof Error ? emitError.stack : String(emitError),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Other public methods
+  // ---------------------------------------------------------------------------
 
   /**
    * Recalculates the invoice's paidAmount from the source of truth:
@@ -307,7 +504,7 @@ export class BillingService {
     identityCard: string,
     typeIdentityCard: TypeIdentityCard,
   ): Promise<Invoice[]> {
-    return this.invoiceRepository
+    return await this.invoiceRepository
       .createQueryBuilder('invoice')
       .innerJoinAndSelect('invoice.contract', 'contract')
       .innerJoin('contract.contractPersons', 'contractPerson')
@@ -322,7 +519,7 @@ export class BillingService {
 
   async findInvoicesByIds(ids: string[]): Promise<Invoice[]> {
     if (!ids || ids.length === 0) return [];
-    return this.invoiceRepository
+    return await this.invoiceRepository
       .createQueryBuilder('invoice')
       .innerJoinAndSelect('invoice.contract', 'contract')
       .where('invoice.id IN (:...ids)', { ids })
