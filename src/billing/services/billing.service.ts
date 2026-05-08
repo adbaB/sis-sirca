@@ -170,6 +170,7 @@ export class BillingService {
             'person',
             'invoice',
             'invoice.contract',
+            'invoice.contract.advisor',
             'invoice.details',
             'invoice.details.plan',
           ],
@@ -193,6 +194,8 @@ export class BillingService {
           (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
         ),
       ].join(', ');
+      const advisorName = enrichedPayment?.invoice?.contract?.advisor?.name || '';
+
       const eventPayload = new PaymentRegisteredEvent(
         savedPayment!.referenceNumber,
         savedPayment!.amount,
@@ -205,6 +208,7 @@ export class BillingService {
         totalInvoice,
         datePaymentReceipt,
         planNames,
+        advisorName,
       );
 
       if (deferredEvents) {

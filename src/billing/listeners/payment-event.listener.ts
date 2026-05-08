@@ -22,7 +22,7 @@ export class PaymentEventListener {
 
     // Column order:
     // A=Contrato, B=Nombre, C=Fecha, D=Hora, E=Referencia,
-    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID, K=FechaComprobante, L=TotalFactura, M=Planes
+    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID, K=FechaComprobante, L=TotalFactura, M=Planes, N=Asesor
     const rowValues = [
       event.contractCode || '',
       event.personName || '',
@@ -37,8 +37,9 @@ export class PaymentEventListener {
       event.dateReceipt,
       event.totalInvoice,
       event.planNames || '',
+      event.advisorName || '',
     ];
 
-    await this.googleSheetsService.appendRow('Pagos!A:M', rowValues);
+    await this.googleSheetsService.appendRow('Pagos!A:N', rowValues);
   }
 }

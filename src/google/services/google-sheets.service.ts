@@ -129,4 +129,58 @@ export class GoogleSheetsService implements OnModuleInit {
       // No lanzamos el error para evitar interrumpir el flujo principal de bd si falla sheets
     }
   }
+
+  async updateCell(range: string, value: string | number): Promise<void> {
+    try {
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [[value]],
+        },
+      });
+      this.logger.log(`Celda ${range} actualizada exitosamente.`);
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error(
+          `Error al actualizar celda en Google Sheets: ${error.message}`,
+          error.stack,
+        );
+      } else {
+        this.logger.error(
+          'Error al actualizar celda en Google Sheets: Unknown error',
+          String(error),
+        );
+      }
+      throw error;
+    }
+  }
+
+  async updateRange(range: string, values: (string | number)[][]): Promise<void> {
+    try {
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values,
+        },
+      });
+      this.logger.log(`Rango ${range} actualizado exitosamente.`);
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error(
+          `Error al actualizar rango en Google Sheets: ${error.message}`,
+          error.stack,
+        );
+      } else {
+        this.logger.error(
+          'Error al actualizar rango en Google Sheets: Unknown error',
+          String(error),
+        );
+      }
+      throw error;
+    }
+  }
 }
