@@ -124,11 +124,11 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
     it('should throw an error if elements are missing from HTML', async () => {
       const mockHtml = `
         <div>Invalid HTML format</div>
-      `;
+      `.padEnd(1000, ' ');
 
       jest.spyOn(axios, 'get').mockResolvedValueOnce({ data: mockHtml });
 
-      await expect(scrapeBcvRates(1)).rejects.toThrow('Could not extract rates or date from BCV website.');
+      await expect(scrapeBcvRates(1)).rejects.toThrow(/Could not extract:/);
     });
 
     it('should retry on failure and succeed if subsequent request is valid', async () => {
@@ -136,7 +136,7 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
         <div id="euro"><strong> 123,45 </strong></div>
         <div id="dolar"><strong> 543,21 </strong></div>
         Fecha Valor: <span content="2023-10-15T00:00:00-04:00"></span>
-      `;
+      `.padEnd(1000, ' ');
 
       const getSpy = jest.spyOn(axios, 'get');
       getSpy.mockRejectedValueOnce(new Error('Network error 1'));
@@ -183,7 +183,7 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
         <div id="euro"><strong> 10,00 </strong></div>
         <div id="dolar"><strong> 10,00 </strong></div>
         Fecha Valor: <span content="${scrapedDate.toISOString()}"></span>
-      `;
+      `.padEnd(1000, ' ');
 
       jest.spyOn(axios, 'get').mockResolvedValueOnce({ data: mockHtml });
 
@@ -207,7 +207,7 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
         <div id="euro"><strong> 20,00 </strong></div>
         <div id="dolar"><strong> 20,00 </strong></div>
         Fecha Valor: <span content="${scrapedFutureDate.toISOString()}"></span>
-      `;
+      `.padEnd(1000, ' ');
       jest.spyOn(axios, 'get').mockResolvedValueOnce({ data: mockHtml });
 
       // Mock DB: previous rate exists
@@ -238,7 +238,7 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
         <div id="euro"><strong> 30,00 </strong></div>
         <div id="dolar"><strong> 30,00 </strong></div>
         Fecha Valor: <span content="${scrapedFutureDate.toISOString()}"></span>
-      `;
+      `.padEnd(1000, ' ');
       jest.spyOn(axios, 'get').mockResolvedValueOnce({ data: mockHtml });
 
       // Mock DB: no previous rates
@@ -270,8 +270,8 @@ Fecha Valor: <span class="date-display-single" property="dc:date" datatype="xsd:
       await mainPromise;
 
       expect(console.error).toHaveBeenCalledWith(
-        'An error occurred during database operations:',
-        expect.any(String) // Just check it's called with some error string
+        '[FATAL]',
+        expect.any(Error)
       );
       // Ensure pool.end is still called
       expect(mockEnd).toHaveBeenCalled();
