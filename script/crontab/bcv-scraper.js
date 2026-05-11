@@ -19,12 +19,12 @@ async function scrapeBcvRates(retries = 3) {
       const { data } = await axios.get('https://www.bcv.org.ve/', { httpsAgent: agent });
 
       // Extract dollar
-      const dolarMatch = data.match(/<div id="dolar"[\s\S]*?<strong>\s*(.*?)\s*<\/strong>/);
+      const dolarMatch = data.match(/<div id="dolar"[\s\S]*?<strong[^>]*>\s*(.*?)\s*<\/strong>/);
       const dolarStr = dolarMatch ? dolarMatch[1].replace(',', '.') : null;
       const dolar = dolarStr ? parseFloat(dolarStr) : null;
 
       // Extract euro
-      const euroMatch = data.match(/<div id="euro"[\s\S]*?<strong>\s*(.*?)\s*<\/strong>/);
+      const euroMatch = data.match(/<div id="euro"[\s\S]*?<strong[^>]*>\s*(.*?)\s*<\/strong>/);
       const euroStr = euroMatch ? euroMatch[1].replace(',', '.') : null;
       const euro = euroStr ? parseFloat(euroStr) : null;
 
