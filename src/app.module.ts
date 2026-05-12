@@ -22,6 +22,7 @@ import { PdfModule } from './pdf/pdf.module';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { AdvisorsModule } from './advisors/advisors.module';
 import config from './config/configurations';
+import { StatisticsModule } from './statistics/statistics.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import config from './config/configurations';
       }),
     }),
     AdvisorsModule,
+    StatisticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
