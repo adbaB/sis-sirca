@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Contract } from '../../contracts/entities/contract.entity';
+import { Exclude } from 'class-transformer';
 
 @Entity('advisors')
 export class Advisor {
@@ -23,12 +24,15 @@ export class Advisor {
   @OneToMany('Contract', (contract: Contract) => contract.advisor)
   contracts: Contract[];
 
+  @Exclude()
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
 
+  @Exclude()
   @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
   updatedAt: Date;
 
+  @Exclude()
   @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
   deletedAt: Date;
 }
