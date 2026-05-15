@@ -189,6 +189,7 @@ export class BillingService {
       const personName = enrichedPayment?.person?.name || '';
       const datePaymentReceipt = createPaymentDto.datePaymentReceipt || '';
       const totalInvoice = enrichedPayment?.invoice?.totalAmount ?? invoice?.totalAmount ?? 0;
+      const billingMonth = enrichedPayment?.invoice?.billingMonth ?? invoice?.billingMonth ?? '';
       const planNames = [
         ...new Set(
           (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
@@ -209,6 +210,7 @@ export class BillingService {
         datePaymentReceipt,
         planNames,
         advisorName,
+        billingMonth,
       );
 
       if (deferredEvents) {
