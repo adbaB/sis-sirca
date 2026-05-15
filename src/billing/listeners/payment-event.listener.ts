@@ -38,8 +38,9 @@ export class PaymentEventListener {
       event.totalInvoice,
       event.planNames || '',
       event.advisorName || '',
+      event.billingMonth || '',
     ];
 
-    await this.googleSheetsService.appendRow('Pagos!A:N', rowValues);
+    await this.googleSheetsService.appendRow('Pagos!A:O', rowValues);
   }
 }

@@ -12,5 +12,6 @@ export class PaymentRegisteredEvent {
     public readonly dateReceipt: string | undefined | null,
     public readonly planNames: string,
     public readonly advisorName: string,
+    public readonly billingMonth: string,
   ) {}
 }
