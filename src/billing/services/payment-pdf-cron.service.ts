@@ -112,18 +112,25 @@ export class PaymentPdfCronService {
     amountUsd: string;
     amountBs: string | null;
     exchangeRateUsdToBs: string | null;
+    totalAmount: string;
+    amountUnpaid: string;
   } {
     const amountBs = Number(payment.amountBs);
     const amountUsd = Number(payment.amount);
+    const totalAmount = Number(payment.invoice?.totalAmount);
+    const amountUnpaid = Number(totalAmount - amountUsd);
     const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
     const formatted = new Intl.NumberFormat('es-ES', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+
     return {
       amountUsd: formatted.format(amountUsd),
       amountBs: amountBs > 0 ? formatted.format(amountBs) : null,
       exchangeRateUsdToBs: formatted.format(Number(exchangeRate)),
+      totalAmount: formatted.format(totalAmount),
+      amountUnpaid: formatted.format(amountUnpaid),
     };
   }
 
