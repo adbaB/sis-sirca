@@ -314,7 +314,7 @@ export class ChatbotService {
         const mappedInvoices = invoices.map((inv) => ({
           id: inv.id,
           title: `Factura ${inv.billingMonth}`,
-          description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}$`,
+          description: `Contrato ${inv.contract?.code} - Monto: ${(Number(inv.totalAmount) - Number(inv.paidAmount)).toFixed(2)}$`,
         }));
 
         return {
