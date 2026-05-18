@@ -27,7 +27,7 @@ export class PaymentEventListener {
   private buildRowValues(event: PaymentRegisteredEvent, fecha: string, hora: string) {
     // Column order:
     // A=Contrato, B=Nombre, C=Fecha, D=Hora, E=Referencia,
-    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID, K=FechaComprobante, L=TotalFactura, M=Planes, N=Asesor
+    // F=Monto$, G=MontoBs, H=URL, I=Estado, J=PaymentID, K=FechaComprobante, L=TotalFactura, M=Planes, N=Asesor, O=Mes Factura
     return [
       event.contractCode || '',
       event.personName || '',
