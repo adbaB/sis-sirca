@@ -60,11 +60,12 @@ export class GoogleSheetsService implements OnModuleInit {
     };
 
     // Chain onto the queue: wait for previous task (ignore its failure) then run ours.
+    const ignoreError = () => undefined;
     const previous = this.appendQueue;
-    const current = previous.catch(() => {}).then(() => execute());
-    this.appendQueue = current.catch(() => {}); // Keep the chain alive even if one task fails
+    const current = previous.catch(ignoreError).then(() => execute());
+    this.appendQueue = current.catch(ignoreError).then(ignoreError); // Keep the chain alive even if one task fails
 
-    return current;
+    await current;
   }
 
   async readRows(range: string): Promise<string[][]> {
