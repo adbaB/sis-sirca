@@ -16,6 +16,7 @@ import { ChatbotService } from './chatbot.service';
 import { MetaSignatureGuard } from './guards/meta-signature.guard';
 import { ConfigType } from '@nestjs/config';
 import config from '../config/configurations';
+import { Public } from '../auth/decorators';
 
 interface FlowEndpointBody {
   encrypted_aes_key: string;
@@ -23,6 +24,7 @@ interface FlowEndpointBody {
   initial_vector: string;
 }
 
+@Public()
 @Controller('chatbot')
 export class ChatbotController {
   private readonly logger = new Logger(ChatbotController.name);

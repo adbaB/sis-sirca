@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { useContainer } from 'class-validator';
 import { ConfigType } from '@nestjs/config';
+import cookieParser from 'cookie-parser';
 
 import config from './config/configurations';
 
@@ -11,6 +12,8 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });
+
+  app.use(cookieParser());
 
   app.useGlobalPipes(
     new ValidationPipe({

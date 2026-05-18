@@ -23,11 +23,19 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { AdvisorsModule } from './advisors/advisors.module';
 import config from './config/configurations';
 import { StatisticsModule } from './statistics/statistics.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { RolesModule } from './roles/roles.module';
+import { PermissionsModule } from './permissions/permissions.module';
 
 @Module({
   imports: [
     EnvConfigModule,
     DatabaseModule,
+    AuthModule,
+    UsersModule,
+    RolesModule,
+    PermissionsModule,
     AwsModule,
     EmailModule,
     PaymentsModule,

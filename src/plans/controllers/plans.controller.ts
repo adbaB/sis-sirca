@@ -2,7 +2,9 @@ import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/commo
 import { PlansService } from '../services/plans.service';
 import { CreatePlanDto } from '../dto/create-plan.dto';
 import { UpdatePlanDto } from '../dto/update-plan.dto';
+import { Public } from '../../auth/decorators';
 
+@Public()
 @Controller('plans')
 export class PlansController {
   constructor(private readonly plansService: PlansService) {}
