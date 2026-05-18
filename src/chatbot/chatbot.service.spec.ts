@@ -247,7 +247,7 @@ describe('ChatbotService', () => {
         'https://graph.facebook.com/v25.0/phoneid/messages',
         expect.objectContaining({
           to: '123',
-          text: { body: expect.stringContaining('asesor comercial') },
+          text: { body: expect.stringContaining('asesores comerciales') },
         }),
         expect.any(Object),
       );

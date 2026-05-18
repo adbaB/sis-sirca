@@ -21,7 +21,7 @@ export class PaymentEventListener {
     const hora = dateObj.toFormat('HH:mm:ss');
 
     const rowValues = this.buildRowValues(event, fecha, hora);
-    await this.googleSheetsService.appendRow('Pagos!A:N', rowValues);
+    await this.googleSheetsService.appendRow('Pagos!A:O', rowValues);
   }
 
   private buildRowValues(event: PaymentRegisteredEvent, fecha: string, hora: string) {
@@ -43,6 +43,7 @@ export class PaymentEventListener {
       event.totalInvoice,
       event.planNames || '',
       event.advisorName || '',
+      event.billingMonth || '',
     ];
   }
 }

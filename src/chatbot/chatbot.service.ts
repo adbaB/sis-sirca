@@ -314,7 +314,7 @@ export class ChatbotService {
         const mappedInvoices = invoices.map((inv) => ({
           id: inv.id,
           title: `Factura ${inv.billingMonth}`,
-          description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}$`,
+          description: `Contrato ${inv.contract?.code} - Monto: ${(Number(inv.totalAmount) - Number(inv.paidAmount)).toFixed(2)}$`,
         }));
 
         return {
@@ -541,7 +541,7 @@ export class ChatbotService {
       if (incomingText === 'info_planes') {
         await this.sendMessage(
           fromNumber,
-          '¡Claro! Te pongo en contacto con nuestro asesor comercial para que te dé todos los detalles de los planes. ✨\n\nÉl te espera por aquí:\n📱 *WhatsApp:* +58 412-1201012\n\n¡Seguro encontrará el plan ideal para ti! 😊',
+          '¡Claro! Te pongo en contacto con nuestros asesores comerciales para que te dé todos los detalles de los planes. ✨\n\nEllos te esperan por aquí:\n📱 *WhatsApp:* +58 424-6537074 / +58 412-1201012\n\n¡Seguro encontrará el plan ideal para ti! 😊',
         );
         await this.redis.del(`chatbot_state:${fromNumber}`);
         return;
@@ -774,7 +774,7 @@ export class ChatbotService {
             const pendingInvoices = invoices.map((inv) => ({
               id: inv.id,
               title: `Factura ${inv.billingMonth}`,
-              description: `Contrato ${inv.contract?.code} - Monto: ${Number(inv.totalAmount) - Number(inv.paidAmount)}`,
+              description: `Contrato ${inv.contract?.code} - Monto: ${(Number(inv.totalAmount) - Number(inv.paidAmount)).toFixed(2)}`,
               amount: Number(inv.totalAmount) - Number(inv.paidAmount),
             }));
 

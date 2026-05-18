@@ -19,7 +19,7 @@ export class BillingCronService {
     private readonly surplusService: SurplusService,
   ) {}
 
-  @Cron('1 0 1 * *')
+  @Cron('1 0 25 * *')
   async generateMonthlyInvoices() {
     this.logger.log('Starting monthly invoice generation...');
 
@@ -27,15 +27,26 @@ export class BillingCronService {
     let offset = 0;
 
     const now = new Date();
-    // 1st of the current month
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    // Last millisecond of the current month
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    // Let's set a due date for the 5th of the next month
-    const dueDate = new Date(now.getFullYear(), now.getMonth() + 1, 5);
+    // Calculate the target month (next month) since invoices are generated on the 25th of the current month
+    const targetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    // 1st of the target month
+    const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+    // Last millisecond of the target month
+    const endOfMonth = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+    // Let's set a due date for the 5th of the target month
+    const dueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 5);
 
     // Create billingMonth string YYYY-MM
-    const billingMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const billingMonth = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
     while (true) {
       const contracts = await this.contractRepository.find({

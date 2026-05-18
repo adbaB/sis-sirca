@@ -106,7 +106,9 @@
       font-weight: 600;
     }
     .total-section {
-      text-align: right;
+      display: flex;
+      align-content: space-between;
+      align-items: center;
       font-size: 15px;
     }
     .total-amount {
@@ -213,10 +215,15 @@
               <td>Asesor</td>
               <td style="text-align: right;">{{ advisor }}</td>
             </tr>
+            <tr>
+              <td>Saldo pendiente (USD)</td>
+              <td style="text-align: right;">{{ amountUnpaid }}</td>
+            </tr>
           </tbody>
         </table>
 
         <div class="total-section">
+          <p>Total a pagar (USD):<span class="total-amount">${{ totalAmount }}</span></p>
           <p>Total Pagado (USD): <span class="total-amount">${{ amountUsd }}</span></p>
         </div>
       </div>
