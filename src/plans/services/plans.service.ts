@@ -19,7 +19,7 @@ export class PlansService {
   }
 
   async findAll(): Promise<Plan[]> {
-    return this.plansRepository.find();
+    return this.plansRepository.find({ order: { name: 'desc' } });
   }
 
   async findOne(id: string): Promise<Plan> {

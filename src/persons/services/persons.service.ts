@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -6,9 +12,9 @@ import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
 
+import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
-import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 
 @Injectable()
 export class PersonsService {
@@ -18,6 +24,7 @@ export class PersonsService {
     @InjectRepository(ContractPerson)
     private contractPersonRepository: Repository<ContractPerson>,
     private plansService: PlansService,
+    @Inject(forwardRef(() => ContractsService))
     private contractsService: ContractsService,
   ) {}
 
@@ -25,6 +32,44 @@ export class PersonsService {
     const { planId, contractId, role, isBillingOwner, ...personData } = createPersonDto;
     const resolvedRole = role || PersonRole.AFILIADO;
 
+    // Check if a person with this identityCard already exists
+    const person = await this.findByIdentityCard(
+      personData.identityCard,
+      personData.typeIdentityCard,
+    );
+
+    if (person) {
+      // If contractId is provided, associate the existing person to this contract
+      if (contractId) {
+        const contract = await this.contractsService.findOne(contractId);
+        if (!contract) {
+          throw new NotFoundException(`Contract with ID "${contractId}" not found`);
+        }
+
+        // Check if the person is already associated with this contract
+        const existingJunction = await this.contractPersonRepository.findOne({
+          where: { contract: { id: contractId }, person: { id: person.id } },
+        });
+
+        if (!existingJunction) {
+          // Create junction table entry
+          const contractPerson = this.contractPersonRepository.create({
+            contract,
+            person,
+            role: resolvedRole,
+            isBillingOwner: isBillingOwner ?? false,
+          });
+          await this.contractPersonRepository.save(contractPerson);
+
+          await this.contractsService.recalculateMonthlyAmount(contractId);
+        } else {
+          throw new BadRequestException('La persona ya está afiliada a este contrato.');
+        }
+      }
+      return person;
+    }
+
+    // Normal flow when person does NOT exist:
     // Titulars don't have a plan
     let plan = null;
     if (resolvedRole === PersonRole.AFILIADO && planId) {
@@ -42,12 +87,12 @@ export class PersonsService {
       }
     }
 
-    const person = this.personsRepository.create({
+    const newPerson = this.personsRepository.create({
       ...personData,
       plan,
     });
 
-    const savedPerson = await this.personsRepository.save(person);
+    const savedPerson = await this.personsRepository.save(newPerson);
 
     if (contract) {
       // Create junction table entry
@@ -55,7 +100,7 @@ export class PersonsService {
         contract,
         person: savedPerson,
         role: resolvedRole,
-        isBillingOwner: isBillingOwner,
+        isBillingOwner: isBillingOwner ?? false,
       });
       await this.contractPersonRepository.save(contractPerson);
 
@@ -74,7 +119,7 @@ export class PersonsService {
   async findByIdentityCard(
     identityCard: string,
     typeIdentityCard: TypeIdentityCard,
-  ): Promise<Person> {
+  ): Promise<Person | null> {
     return this.personsRepository.findOne({
       where: { identityCard, typeIdentityCard },
       relations: ['plan', 'contractPersons', 'contractPersons.contract'],
@@ -159,7 +204,15 @@ export class PersonsService {
         (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner);
 
       if (junctionNeedsUpdate) {
-        if (role !== undefined) existingJunction.role = role;
+        if (role !== undefined) {
+          if (role === PersonRole.TITULAR && existingJunction.role !== PersonRole.TITULAR) {
+            await this.contractPersonRepository.update(
+              { contract: { id: contractId } },
+              { role: PersonRole.AFILIADO },
+            );
+          }
+          existingJunction.role = role;
+        }
         if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
         await this.contractPersonRepository.save(existingJunction);
       }
