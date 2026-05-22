@@ -28,8 +28,8 @@ export class CreatePersonDto {
   birthDate?: string;
 
   @IsBoolean()
-  @IsNotEmpty()
-  gender: boolean;
+  @IsOptional()
+  gender?: boolean;
 
   @IsUUID()
   @IsNotEmpty()

@@ -52,6 +52,11 @@ export default registerAs('config', () => {
       notificationEmail: process.env.SES_NOTIFICATION_EMAIL,
     },
 
+    jwt: {
+      secret: process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION',
+      expiresIn: process.env.JWT_EXPIRES_IN || '8h',
+    },
+
     env: process.env.NODE_ENV || 'development',
   };
 });

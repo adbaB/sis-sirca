@@ -1,18 +1,21 @@
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { NotFoundException } from '@nestjs/common';
 
-import { ContractsService } from './contracts.service';
-import { Contract, ContractStatus } from '../entities/contract.entity';
+import { Person, PersonStatus } from '../../persons/entities/person.entity';
+import { PersonsService } from '../../persons/services/persons.service';
+import { Plan } from '../../plans/entities/plan.entity';
 import { CreateContractDto } from '../dto/create-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
-import { Person, PersonStatus } from '../../persons/entities/person.entity';
-import { Plan } from '../../plans/entities/plan.entity';
+import { ContractPerson } from '../entities/contract-person.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractsService } from './contracts.service';
 
 describe('ContractsService', () => {
   let service: ContractsService;
   let repository: Repository<Contract>;
+  let contractPersonsRepository: Repository<ContractPerson>;
 
   const mockContract: Contract = {
     id: '1',
@@ -27,11 +30,22 @@ describe('ContractsService', () => {
   };
 
   const CONTRACTS_REPOSITORY_TOKEN = getRepositoryToken(Contract);
+  const CONTRACT_PERSONS_REPOSITORY_TOKEN = getRepositoryToken(ContractPerson);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
+        {
+          provide: PersonsService,
+          useValue: {
+            create: jest.fn(),
+            findAll: jest.fn(),
+            findOne: jest.fn(),
+            update: jest.fn(),
+            remove: jest.fn(),
+          },
+        },
         {
           provide: CONTRACTS_REPOSITORY_TOKEN,
           useValue: {
@@ -40,6 +54,17 @@ describe('ContractsService', () => {
             find: jest.fn(),
             findOne: jest.fn(),
             softRemove: jest.fn(),
+            findAndCount: jest.fn(),
+            update: jest.fn(),
+          },
+        },
+        {
+          provide: CONTRACT_PERSONS_REPOSITORY_TOKEN,
+          useValue: {
+            create: jest.fn(),
+            save: jest.fn(),
+            findOne: jest.fn(),
+            find: jest.fn(),
           },
         },
       ],
@@ -47,6 +72,9 @@ describe('ContractsService', () => {
 
     service = module.get<ContractsService>(ContractsService);
     repository = module.get<Repository<Contract>>(CONTRACTS_REPOSITORY_TOKEN);
+    contractPersonsRepository = module.get<Repository<ContractPerson>>(
+      CONTRACT_PERSONS_REPOSITORY_TOKEN,
+    );
   });
 
   it('should be defined', () => {
@@ -73,14 +101,29 @@ describe('ContractsService', () => {
 
   describe('findAll', () => {
     it('should return an array of contracts', async () => {
-      jest.spyOn(repository, 'find').mockResolvedValue([mockContract]);
+      jest.spyOn(repository, 'findAndCount').mockResolvedValue([[mockContract], 1]);
 
-      const result = await service.findAll();
+      const result = await service.findAll({});
 
-      expect(repository.find).toHaveBeenCalledWith({
+      expect(repository.findAndCount).toHaveBeenCalledWith({
         relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+        order: { code: 'ASC' },
+        skip: 0,
+        take: 10,
+        where: {
+          code: undefined,
+        },
       });
-      expect(result).toEqual([mockContract]);
+      expect(result).toEqual({
+        data: [mockContract],
+        meta: {
+          totalItems: 1,
+          itemCount: 1,
+          itemsPerPage: 10,
+          totalPages: 1,
+          currentPage: 1,
+        },
+      });
     });
   });
 
@@ -92,7 +135,15 @@ describe('ContractsService', () => {
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: '1' },
-        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+        relations: [
+          'contractPersons',
+          'contractPersons.person',
+          'contractPersons.person.plan',
+          'invoices',
+          'invoices.payments',
+          'surpluses',
+          'surpluses.payment',
+        ],
       });
       expect(result).toEqual(mockContract);
     });
@@ -145,34 +196,47 @@ describe('ContractsService', () => {
       const mockPerson2 = { plan: mockPlan2 } as Person;
       const mockPersonWithoutPlan = { plan: null } as Person;
 
-      const contractWithPersons: Contract = {
-        ...mockContract,
-        contractPersons: [
-          { role: 'AFILIADO', person: mockPerson1 },
-          { role: 'AFILIADO', person: mockPerson2 },
-          { role: 'TITULAR', person: mockPersonWithoutPlan }, // should not be counted even if it had a plan
-        ] as unknown as import('../entities/contract-person.entity').ContractPerson[],
-      };
+      const mockAffiliates = [
+        { role: 'AFILIADO', person: mockPerson1 },
+        { role: 'AFILIADO', person: mockPerson2 },
+        { role: 'TITULAR', person: mockPersonWithoutPlan }, // should not be counted even if it had a plan
+      ];
 
-      jest.spyOn(repository, 'findOne').mockResolvedValue(contractWithPersons);
-      jest.spyOn(repository, 'save').mockResolvedValue(contractWithPersons);
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValue(mockAffiliates as ContractPerson[]);
+      jest
+        .spyOn(repository, 'update')
+        .mockResolvedValue(undefined as unknown as import('typeorm').UpdateResult);
 
       await service.recalculateMonthlyAmount('1');
 
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1', contractPersons: { person: { status: PersonStatus.ACTIVE } } },
-        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+      expect(contractPersonsRepository.find).toHaveBeenCalledWith({
+        where: {
+          contract: { id: '1' },
+          person: { status: PersonStatus.ACTIVE },
+        },
+        relations: ['person', 'person.plan'],
       });
-      expect(contractWithPersons.monthlyAmount).toEqual(30); // 10 + 20
-      expect(repository.save).toHaveBeenCalledWith(contractWithPersons);
+      expect(repository.update).toHaveBeenCalledWith('1', { monthlyAmount: 30 }); // 10 + 20
     });
 
     it('should gracefully handle an invalid contract id', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
+      jest.spyOn(contractPersonsRepository, 'find').mockResolvedValue([]);
+      jest
+        .spyOn(repository, 'update')
+        .mockResolvedValue(undefined as unknown as import('typeorm').UpdateResult);
 
       await service.recalculateMonthlyAmount('invalid-id');
 
-      expect(repository.save).not.toHaveBeenCalled();
+      expect(contractPersonsRepository.find).toHaveBeenCalledWith({
+        where: {
+          contract: { id: 'invalid-id' },
+          person: { status: PersonStatus.ACTIVE },
+        },
+        relations: ['person', 'person.plan'],
+      });
+      expect(repository.update).toHaveBeenCalledWith('invalid-id', { monthlyAmount: 0 });
     });
   });
 });

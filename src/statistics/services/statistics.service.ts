@@ -103,7 +103,6 @@ export class StatisticsService {
         COALESCE(SUM(CASE WHEN processing_qty > 0 THEN paid_amount_bs ELSE 0 END), 0)        AS monto_sin_verificar_bs
       FROM EstadoFacturas;
     `;
-    console.log(sql, params);
     const rows = await this.datasource.query<VerificationKpiRaw[]>(sql, params);
     return (
       rows[0] ?? {

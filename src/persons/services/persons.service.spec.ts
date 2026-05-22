@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { Plan } from '../../plans/entities/plan.entity';
@@ -11,7 +12,6 @@ import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from './persons.service';
-import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 
 describe('PersonsService', () => {
   let service: PersonsService;
@@ -139,6 +139,7 @@ describe('PersonsService', () => {
         contract: mockContract,
         person: mockPerson,
         role: PersonRole.AFILIADO,
+        isBillingOwner: false,
       });
       expect(cpRepository.save).toHaveBeenCalledWith(mockContractPerson);
       expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');

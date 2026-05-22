@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
@@ -22,7 +21,7 @@ export class SurplusCronService {
     private readonly surplusRepository: Repository<Surplus>,
   ) {}
 
-  @Cron('0 6 * * *')
+  // DEPRECATED - this cron job was a temporary workaround to sync surplus status from Google Sheets until we have a proper process in place. It can be removed once all surpluses are processed through the new system and the sheet is no longer used as a source of truth.
   async checkSurplusStatusTransitions() {
     this.logger.log('Iniciando CRON: Revisión de estados de sobrantes en Google Sheets...');
 

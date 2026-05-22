@@ -9,7 +9,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { PaymentsService } from './payments.service';
+import { Public } from '../auth/decorators';
 
+@Public()
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}

@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
@@ -29,8 +28,7 @@ export class PaymentCronService {
     private readonly paymentRepository: Repository<Payment>,
     private readonly billingService: BillingService,
   ) {}
-
-  @Cron(CronExpression.EVERY_HOUR)
+  // DEPRECATED - this cron job was a temporary workaround to sync payment status from Google Sheets until we have a proper payment gateway integration. It can be removed once all payments are processed through the new system and the sheet is no longer used as a source of truth.
   async checkPaymentStatusTransitions() {
     this.logger.log('Iniciando CRON: Revisión de estados de pagos en Google Sheets...');
 

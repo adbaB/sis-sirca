@@ -1,7 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { StatisticsService } from '../services/statistics.service';
 import { StatisticsResponse } from '../interfaces/response.interface';
+import { Public } from '../../auth/decorators';
 
+@Public()
 @Controller('statistics')
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}
