@@ -18,6 +18,7 @@ import { SurplusEventListener } from './listeners/surplus-event.listener';
 import { EmailModule } from '../email/email.module';
 import { PdfModule } from '../pdf/pdf.module';
 
+import { BillingController } from './billing.controller';
 import { AwsModule } from '../aws/aws.module';
 
 @Module({
@@ -29,7 +30,7 @@ import { AwsModule } from '../aws/aws.module';
     PdfModule,
     AwsModule,
   ],
-  controllers: [],
+  controllers: [BillingController],
   providers: [
     BillingService,
     BillingCronService,

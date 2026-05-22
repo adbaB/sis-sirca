@@ -70,6 +70,8 @@ export class ContractsService {
         'contractPersons.person.plan',
         'invoices',
         'invoices.payments',
+        'surpluses',
+        'surpluses.payment',
       ],
     });
     if (!contract) {

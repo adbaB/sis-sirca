@@ -550,4 +550,135 @@ export class BillingService {
       return totalAmount;
     }
   }
+
+  async findPayments(
+    page = 1,
+    limit = 10,
+    status?: string,
+    search?: string,
+    month?: number,
+    year?: number,
+  ) {
+    const queryBuilder = this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.person', 'person')
+      .leftJoinAndSelect('payment.invoice', 'invoice')
+      .leftJoinAndSelect('invoice.contract', 'contract')
+      .orderBy('payment.createdAt', 'DESC');
+
+    if (status) {
+      queryBuilder.andWhere('payment.status = :status', { status });
+    }
+
+    if (search) {
+      queryBuilder.andWhere(
+        '(payment.referenceNumber ILIKE :search OR person.identityCard ILIKE :search OR person.name ILIKE :search OR contract.code ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (year && month) {
+      const formattedMonth = String(month).padStart(2, '0');
+      queryBuilder.andWhere('invoice.billingMonth = :billingMonth', {
+        billingMonth: `${year}-${formattedMonth}`,
+      });
+    } else if (year) {
+      queryBuilder.andWhere('invoice.billingMonth LIKE :billingMonthPattern', {
+        billingMonthPattern: `${year}-%`,
+      });
+    } else if (month) {
+      const formattedMonth = String(month).padStart(2, '0');
+      queryBuilder.andWhere('invoice.billingMonth LIKE :billingMonthPattern', {
+        billingMonthPattern: `%-${formattedMonth}`,
+      });
+    }
+
+    const [data, total] = await queryBuilder
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data,
+      meta: {
+        totalItems: total,
+        itemCount: data.length,
+        itemsPerPage: limit,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+      },
+    };
+  }
+
+  async countPendingPayments(): Promise<number> {
+    return await this.paymentRepository.count({
+      where: { status: PaymentStatus.PROCESSING },
+    });
+  }
+
+  async approvePayment(id: string): Promise<Payment> {
+    const payment = await this.paymentRepository.findOne({
+      where: { id },
+      relations: ['invoice'],
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment with ID ${id} not found`);
+    }
+    payment.status = PaymentStatus.COMPLETED;
+    const saved = await this.paymentRepository.save(payment);
+    if (payment.invoice) {
+      await this.recalculateInvoicePaidAmount(payment.invoice.id);
+    }
+    return saved;
+  }
+
+  async rejectPayment(id: string, reason: string): Promise<Payment> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const paymentRepo = queryRunner.manager.getRepository(Payment);
+      const surplusRepo = queryRunner.manager.getRepository(Surplus);
+
+      const payment = await paymentRepo.findOne({
+        where: { id },
+        relations: ['invoice'],
+      });
+      if (!payment) {
+        throw new NotFoundException(`Payment with ID ${id} not found`);
+      }
+
+      payment.status = PaymentStatus.REJECTED;
+      const metadata = payment.metadata || {};
+      metadata.rejectionReason = reason;
+      payment.metadata = metadata;
+
+      const saved = await paymentRepo.save(payment);
+
+      // Find and cancel associated surpluses
+      const associatedSurpluses = await surplusRepo.find({
+        where: { payment: { id: payment.id } },
+      });
+
+      for (const surplus of associatedSurpluses) {
+        if (surplus.status === SurplusStatus.PENDING) {
+          surplus.status = SurplusStatus.CANCELLED;
+          await surplusRepo.save(surplus);
+        }
+      }
+
+      if (payment.invoice) {
+        await this.recalculateInvoicePaidAmount(payment.invoice.id, queryRunner);
+      }
+
+      await queryRunner.commitTransaction();
+      return saved;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
 }
