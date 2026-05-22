@@ -141,6 +141,8 @@ describe('ContractsService', () => {
           'contractPersons.person.plan',
           'invoices',
           'invoices.payments',
+          'surpluses',
+          'surpluses.payment',
         ],
       });
       expect(result).toEqual(mockContract);

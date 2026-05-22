@@ -12,6 +12,7 @@ import {
 import type { ContractPerson } from './contract-person.entity';
 import type { Invoice } from '../../billing/entities/invoice.entity';
 import type { Advisor } from '../../advisors/entities/advisor.entity';
+import type { Surplus } from '../../billing/entities/surplus.entity';
 
 export enum ContractStatus {
   ACTIVE = 'ACTIVE',
@@ -43,6 +44,9 @@ export class Contract {
 
   @OneToMany('Invoice', (invoice: Invoice) => invoice.contract)
   invoices?: Invoice[] | null;
+
+  @OneToMany('Surplus', (surplus: Surplus) => surplus.contract)
+  surpluses?: Surplus[] | null;
 
   @ManyToOne('Advisor', (advisor: Advisor) => advisor.contracts, { nullable: true })
   @JoinColumn({ name: 'advisor_id' })
