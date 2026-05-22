@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ContractsController } from './contracts.controller';
-import { ContractsService } from '../services/contracts.service';
 import { CreateContractDto } from '../dto/create-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractsService } from '../services/contracts.service';
+import { ContractsController } from './contracts.controller';
 
 describe('ContractsController', () => {
   let controller: ContractsController;
@@ -59,13 +59,23 @@ describe('ContractsController', () => {
   });
 
   describe('findAll', () => {
-    it('should return an array of contracts', async () => {
-      jest.spyOn(service, 'findAll').mockResolvedValue([mockContract]);
+    it('should return a paginated result of contracts', async () => {
+      const paginatedResult = {
+        data: [mockContract],
+        meta: {
+          totalItems: 1,
+          itemCount: 1,
+          itemsPerPage: 10,
+          totalPages: 1,
+          currentPage: 1,
+        },
+      };
+      jest.spyOn(service, 'findAll').mockResolvedValue(paginatedResult);
 
-      const result = await controller.findAll();
+      const result = await controller.findAll({});
 
       expect(service.findAll).toHaveBeenCalled();
-      expect(result).toEqual([mockContract]);
+      expect(result).toEqual(paginatedResult);
     });
   });
 

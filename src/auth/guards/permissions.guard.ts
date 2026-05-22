@@ -2,9 +2,8 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PERMISSIONS_KEY } from '../decorators';
-import { IS_PUBLIC_KEY } from '../decorators';
 import { Role } from '../../roles/entities/role.entity';
+import { IS_PUBLIC_KEY, PERMISSIONS_KEY } from '../decorators';
 import type { JwtPayload } from './auth.guard';
 
 @Injectable()
@@ -57,8 +56,8 @@ export class PermissionsGuard implements CanActivate {
 
     const userPermissionNames = role.permissions.map((p) => p.name);
 
-    // Verificar que el usuario tenga TODOS los permisos requeridos
-    const hasAllPermissions = requiredPermissions.every((required) =>
+    // Verificar que el usuario tenga AL MENOS UNO de los permisos requeridos
+    const hasAllPermissions = requiredPermissions.some((required) =>
       userPermissionNames.includes(required),
     );
 

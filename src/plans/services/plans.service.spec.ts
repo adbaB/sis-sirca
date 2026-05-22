@@ -2,11 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { PlansService } from './plans.service';
-import { Plan } from '../entities/plan.entity';
+import { NotFoundException } from '@nestjs/common';
 import { CreatePlanDto } from '../dto/create-plan.dto';
 import { UpdatePlanDto } from '../dto/update-plan.dto';
-import { NotFoundException } from '@nestjs/common';
+import { Plan } from '../entities/plan.entity';
+import { PlansService } from './plans.service';
 
 describe('PlansService', () => {
   let service: PlansService;
