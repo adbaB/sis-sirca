@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
@@ -56,6 +56,7 @@ describe('ContractsService', () => {
             softRemove: jest.fn(),
             findAndCount: jest.fn(),
             update: jest.fn(),
+            createQueryBuilder: jest.fn(),
           },
         },
         {
@@ -100,20 +101,26 @@ describe('ContractsService', () => {
   });
 
   describe('findAll', () => {
-    it('should return an array of contracts', async () => {
-      jest.spyOn(repository, 'findAndCount').mockResolvedValue([[mockContract], 1]);
+    it('should return a paginated result of contracts', async () => {
+      const mockQueryBuilder = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[mockContract], 1]),
+      };
+
+      jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
 
       const result = await service.findAll({});
 
-      expect(repository.findAndCount).toHaveBeenCalledWith({
-        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
-        order: { code: 'ASC' },
-        skip: 0,
-        take: 10,
-        where: {
-          code: undefined,
-        },
-      });
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith('contract');
+      expect(mockQueryBuilder.leftJoinAndSelect).toHaveBeenCalled();
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('contract.code', 'ASC');
       expect(result).toEqual({
         data: [mockContract],
         meta: {
@@ -123,6 +130,52 @@ describe('ContractsService', () => {
           totalPages: 1,
           currentPage: 1,
         },
+      });
+    });
+
+    it('should apply search filter when search param is provided', async () => {
+      const mockQueryBuilder = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+
+      jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
+
+      await service.findAll({ search: 'test' });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('ILIKE :search'),
+        { search: '%test%' },
+      );
+    });
+
+    it('should apply advisor filter when advisorId is provided', async () => {
+      const mockQueryBuilder = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+
+      jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
+
+      const advisorId = '123e4567-e89b-12d3-a456-426614174000';
+      await service.findAll({ advisorId });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('contract.advisor_id = :advisorId', {
+        advisorId,
       });
     });
   });

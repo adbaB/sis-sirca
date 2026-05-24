@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import type { Role } from '../../roles/entities/role.entity';
+import type { Advisor } from '../../advisors/entities/advisor.entity';
 
 @Entity('users')
 export class User {
@@ -31,6 +32,13 @@ export class User {
   @ManyToOne('Role', (role: Role) => role.users, { eager: true })
   @JoinColumn({ name: 'role_id' })
   role: Role;
+
+  @Column({ type: 'uuid', name: 'advisor_id', nullable: true })
+  advisorId: string;
+
+  @ManyToOne('Advisor', { nullable: true, eager: true })
+  @JoinColumn({ name: 'advisor_id' })
+  advisor: Advisor;
 
   @Exclude()
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })

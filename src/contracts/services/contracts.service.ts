@@ -6,10 +6,10 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
-import { paginateRepository } from '../../common/utils/pagination.util';
+import { paginateQueryBuilder } from '../../common/utils/pagination.util';
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
@@ -20,6 +20,19 @@ import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
+
+export interface PipelineTotals {
+  totalPipeline: number;
+  totalCollected: number;
+  totalPending: number;
+}
+
+export interface PipelineCounts {
+  pending: number;
+  rejected: number;
+  partial: number;
+  paid: number;
+}
 
 @Injectable()
 export class ContractsService {
@@ -42,17 +55,369 @@ export class ContractsService {
   }
 
   async findAll(query: FindContractDto): Promise<PaginatedResult<Contract>> {
-    return paginateRepository(
-      this.contractsRepository,
-      {
-        where: {
-          code: query.search ? ILike(`%${query.search}%`) : undefined,
-        },
-        order: { code: 'ASC' },
-        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
-      },
-      query,
+    const queryBuilder = this.contractsRepository.createQueryBuilder('contract');
+    const targetBillingMonth = this.buildTargetBillingMonth(query);
+
+    this.applyRelations(queryBuilder);
+    this.applySearchFilter(queryBuilder, query.search);
+    this.applyAdvisorFilter(queryBuilder, query.advisorId);
+    this.applyInvoiceJoins(queryBuilder, targetBillingMonth);
+    this.applyStageFilter(queryBuilder, query.stage, targetBillingMonth);
+
+    queryBuilder.orderBy('contract.code', 'ASC');
+
+    return paginateQueryBuilder(queryBuilder, query);
+  }
+
+  // ---------------------------------------------------------------------------
+  // findAll — private helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Builds the `YYYY-MM` billing month string when both month and year are present.
+   */
+  private buildTargetBillingMonth(query: FindContractDto): string | undefined {
+    if (query.month && query.year) {
+      return `${query.year}-${String(query.month).padStart(2, '0')}`;
+    }
+    return undefined;
+  }
+
+  /**
+   * Joins the base relations needed for listing contracts.
+   */
+  private applyRelations(qb: SelectQueryBuilder<Contract>): void {
+    qb.leftJoinAndSelect('contract.contractPersons', 'contractPersons')
+      .leftJoinAndSelect('contractPersons.person', 'person')
+      .leftJoinAndSelect('person.plan', 'plan')
+      .leftJoinAndSelect('contract.advisor', 'advisor');
+  }
+
+  /**
+   * Adds the ILIKE search clause for code, billing-owner name, or identity card.
+   */
+  private applySearchFilter(qb: SelectQueryBuilder<Contract>, search?: string): void {
+    if (!search) return;
+    qb.andWhere(
+      '(contract.code ILIKE :search OR (contractPersons.isBillingOwner = true AND (person.name ILIKE :search OR person.identityCard ILIKE :search)))',
+      { search: `%${search}%` },
     );
+  }
+
+  /**
+   * Filters contracts by advisor when an advisorId is provided.
+   */
+  private applyAdvisorFilter(qb: SelectQueryBuilder<Contract>, advisorId?: string): void {
+    if (!advisorId) return;
+    qb.andWhere('contract.advisor_id = :advisorId', { advisorId });
+  }
+
+  /**
+   * Joins invoices and payments. When a billing month is specified the invoice
+   * join is constrained to that month only.
+   */
+  private applyInvoiceJoins(qb: SelectQueryBuilder<Contract>, targetBillingMonth?: string): void {
+    if (targetBillingMonth) {
+      qb.setParameter('targetBillingMonth', targetBillingMonth);
+      qb.leftJoinAndSelect(
+        'contract.invoices',
+        'invoices',
+        'invoices.billingMonth = :targetBillingMonth',
+      ).leftJoinAndSelect('invoices.payments', 'payments');
+    } else {
+      qb.leftJoinAndSelect('contract.invoices', 'invoices').leftJoinAndSelect(
+        'invoices.payments',
+        'payments',
+      );
+    }
+  }
+
+  /**
+   * Dispatches to the correct stage-filter strategy.
+   */
+  private applyStageFilter(
+    qb: SelectQueryBuilder<Contract>,
+    stage?: string,
+    targetBillingMonth?: string,
+  ): void {
+    if (!stage) return;
+
+    const stageFilterMap: Record<
+      string,
+      (qb: SelectQueryBuilder<Contract>, billingMonthClause: string) => void
+    > = {
+      rejected: this.applyRejectedFilter,
+      partial: this.applyPartialFilter,
+      paid: this.applyPaidFilter,
+      pending: this.applyPendingFilter,
+    };
+
+    const filterFn = stageFilterMap[stage];
+    if (!filterFn) return;
+
+    const billingMonthClause = targetBillingMonth
+      ? 'AND inv.billing_month = :targetBillingMonth'
+      : '';
+
+    filterFn(qb, billingMonthClause);
+  }
+
+  /**
+   * Stage filter: contracts with at least one rejected payment on a
+   * pending/partial invoice.
+   */
+  private applyRejectedFilter(qb: SelectQueryBuilder<Contract>, billingMonthClause: string): void {
+    qb.andWhere(
+      `EXISTS (
+        SELECT 1 FROM invoices inv
+        LEFT JOIN payments p ON p.invoice_id = inv.id
+        WHERE inv.contract_id = contract.id
+          ${billingMonthClause}
+          AND inv.status IN ('PENDING', 'PARTIAL')
+          AND p.status = 'REJECTED'
+      )`,
+    );
+  }
+
+  /**
+   * Stage filter: contracts with a PARTIAL invoice but no rejections.
+   */
+  private applyPartialFilter(qb: SelectQueryBuilder<Contract>, billingMonthClause: string): void {
+    qb.andWhere(
+      `EXISTS (
+        SELECT 1 FROM invoices inv
+        WHERE inv.contract_id = contract.id
+          ${billingMonthClause}
+          AND inv.status = 'PARTIAL'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM invoices inv
+        LEFT JOIN payments p ON p.invoice_id = inv.id
+        WHERE inv.contract_id = contract.id
+          ${billingMonthClause}
+          AND inv.status IN ('PENDING', 'PARTIAL')
+          AND p.status = 'REJECTED'
+      )`,
+    );
+  }
+
+  /**
+   * Stage filter: contracts whose relevant invoices are fully paid or cancelled.
+   */
+  private applyPaidFilter(qb: SelectQueryBuilder<Contract>, billingMonthClause: string): void {
+    if (billingMonthClause) {
+      // With billing month: at least one PAID/CANCELLED invoice in that month
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM invoices inv
+          WHERE inv.contract_id = contract.id
+            ${billingMonthClause}
+            AND inv.status IN ('PAID', 'CANCELLED')
+        )`,
+      );
+    } else {
+      // Without billing month: ALL invoices must be PAID/CANCELLED
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM invoices inv
+          WHERE inv.contract_id = contract.id
+        ) AND NOT EXISTS (
+          SELECT 1 FROM invoices inv
+          WHERE inv.contract_id = contract.id
+            AND inv.status NOT IN ('PAID', 'CANCELLED')
+        )`,
+      );
+    }
+  }
+
+  /**
+   * Stage filter: contracts still pending — no rejections, no partial, and
+   * not fully paid.
+   */
+  private applyPendingFilter(qb: SelectQueryBuilder<Contract>, billingMonthClause: string): void {
+    if (billingMonthClause) {
+      // With billing month: PENDING invoice exists and no rejections
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM invoices inv
+          WHERE inv.contract_id = contract.id
+            ${billingMonthClause}
+            AND inv.status = 'PENDING'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM invoices inv
+          LEFT JOIN payments p ON p.invoice_id = inv.id
+          WHERE inv.contract_id = contract.id
+            ${billingMonthClause}
+            AND inv.status IN ('PENDING', 'PARTIAL')
+            AND p.status = 'REJECTED'
+        )`,
+      );
+    } else {
+      // Without billing month: no rejections, no partial, and not all paid
+      qb.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM invoices inv
+          LEFT JOIN payments p ON p.invoice_id = inv.id
+          WHERE inv.contract_id = contract.id
+            AND inv.status IN ('PENDING', 'PARTIAL')
+            AND p.status = 'REJECTED'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM invoices inv
+          WHERE inv.contract_id = contract.id
+            AND inv.status = 'PARTIAL'
+        ) AND (
+          NOT EXISTS (SELECT 1 FROM invoices inv WHERE inv.contract_id = contract.id)
+          OR EXISTS (
+            SELECT 1 FROM invoices inv
+            WHERE inv.contract_id = contract.id
+              AND inv.status NOT IN ('PAID', 'CANCELLED')
+          )
+        )`,
+      );
+    }
+  }
+
+  async getPipelineStats(advisorId?: string, month?: string, year?: string) {
+    const targetBillingMonth =
+      month && year ? `${year}-${String(month).padStart(2, '0')}` : undefined;
+
+    const contracts = await this.buildPipelineQuery(advisorId, targetBillingMonth);
+
+    const totals: PipelineTotals = { totalPipeline: 0, totalCollected: 0, totalPending: 0 };
+    const counts: PipelineCounts = { pending: 0, rejected: 0, partial: 0, paid: 0 };
+
+    for (const contract of contracts) {
+      if (targetBillingMonth) {
+        this.classifyContractByMonth(contract, targetBillingMonth, totals, counts);
+      } else {
+        this.classifyContractCumulative(contract, totals, counts);
+      }
+    }
+
+    return { stats: totals, counts };
+  }
+
+  // ---------------------------------------------------------------------------
+  // getPipelineStats — private helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Builds and executes the query to fetch contracts with their related
+   * persons, invoices, and payments for the pipeline dashboard.
+   */
+  private async buildPipelineQuery(
+    advisorId?: string,
+    targetBillingMonth?: string,
+  ): Promise<Contract[]> {
+    const qb = this.contractsRepository.createQueryBuilder('contract');
+
+    qb.leftJoinAndSelect('contract.contractPersons', 'contractPersons').leftJoinAndSelect(
+      'contractPersons.person',
+      'person',
+    );
+
+    if (advisorId) {
+      qb.andWhere('contract.advisor_id = :advisorId', { advisorId });
+    }
+
+    if (targetBillingMonth) {
+      qb.leftJoinAndSelect(
+        'contract.invoices',
+        'invoices',
+        'invoices.billingMonth = :targetBillingMonth',
+        { targetBillingMonth },
+      ).leftJoinAndSelect('invoices.payments', 'payments');
+    } else {
+      qb.leftJoinAndSelect('contract.invoices', 'invoices').leftJoinAndSelect(
+        'invoices.payments',
+        'payments',
+      );
+    }
+
+    return qb.getMany();
+  }
+
+  /**
+   * Classifies a single contract and accumulates financial stats when a
+   * specific billing month is targeted.
+   */
+  private classifyContractByMonth(
+    contract: Contract,
+    targetBillingMonth: string,
+    totals: PipelineTotals,
+    counts: PipelineCounts,
+  ): void {
+    const targetInvoice = contract.invoices?.find((inv) => inv.billingMonth === targetBillingMonth);
+    if (!targetInvoice) return;
+
+    totals.totalPipeline += Number(targetInvoice.totalAmount);
+
+    const hasRejection = targetInvoice.payments?.some((p) => p.status === 'REJECTED');
+    if (
+      hasRejection &&
+      (targetInvoice.status === 'PENDING' || targetInvoice.status === 'PARTIAL')
+    ) {
+      counts.rejected++;
+    } else if (targetInvoice.status === 'PARTIAL') {
+      counts.partial++;
+    } else if (targetInvoice.status === 'PAID' || targetInvoice.status === 'CANCELLED') {
+      counts.paid++;
+    } else {
+      counts.pending++;
+    }
+
+    this.accumulateInvoiceStats(targetInvoice, totals);
+  }
+
+  /**
+   * Classifies a single contract and accumulates financial stats across
+   * all invoices (no specific billing month).
+   */
+  private classifyContractCumulative(
+    contract: Contract,
+    totals: PipelineTotals,
+    counts: PipelineCounts,
+  ): void {
+    totals.totalPipeline += Number(contract.monthlyAmount);
+
+    const hasRejection = contract.invoices?.some(
+      (inv) =>
+        (inv.status === 'PENDING' || inv.status === 'PARTIAL') &&
+        inv.payments?.some((p) => p.status === 'REJECTED'),
+    );
+
+    if (hasRejection) {
+      counts.rejected++;
+    } else {
+      const hasPartial = contract.invoices?.some((inv) => inv.status === 'PARTIAL');
+      if (hasPartial) {
+        counts.partial++;
+      } else {
+        const allPaid =
+          !!contract.invoices &&
+          contract.invoices.length > 0 &&
+          contract.invoices.every((inv) => inv.status === 'PAID' || inv.status === 'CANCELLED');
+        counts[allPaid ? 'paid' : 'pending']++;
+      }
+    }
+
+    contract.invoices?.forEach((inv) => this.accumulateInvoiceStats(inv, totals));
+  }
+
+  /**
+   * Adds a single invoice's financial contribution to the running totals.
+   */
+  private accumulateInvoiceStats(
+    inv: { status: string; totalAmount: number; paidAmount: number },
+    totals: PipelineTotals,
+  ): void {
+    if (inv.status === 'PAID') {
+      totals.totalCollected += Number(inv.totalAmount);
+    } else if (inv.status === 'PARTIAL') {
+      totals.totalCollected += Number(inv.paidAmount);
+      totals.totalPending += Number(inv.totalAmount - inv.paidAmount);
+    } else if (inv.status === 'PENDING') {
+      totals.totalPending += Number(inv.totalAmount);
+    }
   }
 
   async findByCode(code: string): Promise<Contract> {

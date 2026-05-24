@@ -22,6 +22,10 @@ export class CreateUserDto {
   @IsOptional()
   roleId?: string;
 
+  @IsUUID('4', { message: 'El advisorId debe ser un UUID válido.' })
+  @IsOptional()
+  advisorId?: string;
+
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
