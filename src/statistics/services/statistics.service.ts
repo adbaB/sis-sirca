@@ -130,10 +130,20 @@ export class StatisticsService {
       SELECT
         SUM(CASE WHEN i.status = 'PAID'    THEN 1              ELSE 0 END) AS invoices_paid,
         SUM(CASE WHEN i.status = 'PAID'    THEN i.paid_amount  ELSE 0 END) AS total_paid,
-        SUM(CASE WHEN i.status = 'PARTIAL' THEN 1              ELSE 0 END) AS invoices_partial,
+        SUM(CASE WHEN i.status = 'PARTIAL' AND NOT EXISTS (
+          SELECT 1 FROM payments p 
+          WHERE p.invoice_id = i.id 
+            AND p.status = 'REJECTED' 
+            AND p.deleted_at IS NULL
+        ) THEN 1 ELSE 0 END) AS invoices_partial,
         SUM(CASE WHEN i.status = 'PARTIAL' THEN i.paid_amount  ELSE 0 END) AS total_partial,
         SUM(CASE WHEN i.status = 'PARTIAL' THEN i.total_amount ELSE 0 END) AS total_partial_to_paid,
-        SUM(CASE WHEN i.status = 'PENDING' THEN 1              ELSE 0 END) AS invoices_pending,
+        SUM(CASE WHEN i.status = 'PENDING' AND NOT EXISTS (
+          SELECT 1 FROM payments p 
+          WHERE p.invoice_id = i.id 
+            AND p.status = 'REJECTED' 
+            AND p.deleted_at IS NULL
+        ) THEN 1 ELSE 0 END) AS invoices_pending,
         SUM(CASE WHEN i.status = 'PENDING' THEN i.total_amount ELSE 0 END) AS total_pending,
         COALESCE(SUM(i.total_amount), 0)                                    AS grand_total_amount,
         COALESCE(SUM(CASE WHEN i.status IN ('PAID', 'PARTIAL') THEN i.paid_amount ELSE 0 END), 0) AS total_collected

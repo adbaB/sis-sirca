@@ -63,6 +63,7 @@ export class ContractsService {
     this.applyAdvisorFilter(queryBuilder, query.advisorId);
     this.applyInvoiceJoins(queryBuilder, targetBillingMonth);
     this.applyStageFilter(queryBuilder, query.stage, targetBillingMonth);
+    queryBuilder.andWhere("contract.status = 'ACTIVE'");
 
     queryBuilder.orderBy('contract.code', 'ASC');
 
@@ -315,6 +316,8 @@ export class ContractsService {
       'person',
     );
 
+    qb.andWhere("contract.status = 'ACTIVE'");
+
     if (advisorId) {
       qb.andWhere('contract.advisor_id = :advisorId', { advisorId });
     }
@@ -411,7 +414,7 @@ export class ContractsService {
     totals: PipelineTotals,
   ): void {
     if (inv.status === 'PAID') {
-      totals.totalCollected += Number(inv.totalAmount);
+      totals.totalCollected += Number(inv.paidAmount);
     } else if (inv.status === 'PARTIAL') {
       totals.totalCollected += Number(inv.paidAmount);
       totals.totalPending += Number(inv.totalAmount - inv.paidAmount);
