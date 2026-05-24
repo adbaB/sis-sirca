@@ -19,13 +19,23 @@ export class ContractsController {
   }
 
   @Get()
-  @RequirePermissions('read:contracts')
+  @RequirePermissions('read:contracts', 'read:pipeline')
   findAll(@Query() query: FindContractDto) {
     return this.contractsService.findAll(query);
   }
 
+  @Get('pipeline-stats')
+  @RequirePermissions('read:contracts', 'read:pipeline')
+  getPipelineStats(
+    @Query('advisorId') advisorId?: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+  ) {
+    return this.contractsService.getPipelineStats(advisorId, month, year);
+  }
+
   @Get(':id')
-  @RequirePermissions('read:contracts')
+  @RequirePermissions('read:contracts', 'read:pipeline')
   findOne(@Param('id') id: string) {
     return this.contractsService.findOne(id);
   }

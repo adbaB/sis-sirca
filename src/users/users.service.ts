@@ -42,7 +42,7 @@ export class UsersService {
 
   findAll(): Promise<User[]> {
     return this.userRepository.find({
-      relations: ['role', 'role.permissions'],
+      relations: ['role', 'role.permissions', 'advisor'],
       order: { email: 'ASC' },
     });
   }
@@ -50,7 +50,7 @@ export class UsersService {
   async findOne(id: string): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id },
-      relations: ['role', 'role.permissions'],
+      relations: ['role', 'role.permissions', 'advisor'],
     });
     if (!user) {
       throw new NotFoundException(`Usuario con ID "${id}" no encontrado.`);
@@ -61,7 +61,7 @@ export class UsersService {
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepository.findOne({
       where: { email },
-      relations: ['role', 'role.permissions'],
+      relations: ['role', 'role.permissions', 'advisor'],
     });
   }
 

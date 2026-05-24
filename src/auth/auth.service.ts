@@ -51,6 +51,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         isActive: user.isActive,
+        advisorId: user.advisorId ?? null,
         role: user.role
           ? {
               id: user.role.id,
