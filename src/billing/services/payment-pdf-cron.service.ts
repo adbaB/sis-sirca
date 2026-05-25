@@ -1,21 +1,20 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { IsNull, Repository } from 'typeorm';
 
-import configurations from '../../config/configurations';
 import { AwsService } from '../../aws/aws.service';
+import configurations from '../../config/configurations';
+import { ContractPerson } from '../../contracts/entities/contract-person.entity';
+import { Contract } from '../../contracts/entities/contract.entity';
 import { EmailService } from '../../email/email.service';
 import { PdfService } from '../../pdf/services/pdf.service';
-import { Payment, PaymentStatus } from '../entities/payment.entity';
-import { Contract } from '../../contracts/entities/contract.entity';
 import { InvoiceDetail } from '../entities/invoice-detail.entity';
-import { ContractPerson } from '../../contracts/entities/contract-person.entity';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
 
-@Injectable()
 export class PaymentPdfCronService {
   private readonly logger = new Logger(PaymentPdfCronService.name);
 
@@ -34,7 +33,7 @@ export class PaymentPdfCronService {
    * null, build a single PDF (one page per payment) and send it in one email.
    * Only after the email is sent successfully are all payments marked with sendAt.
    */
-  @Cron('5 * * * *')
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async generateAndSendPendingReceipts(): Promise<void> {
     this.logger.log('CRON [payment-pdf]: Buscando pagos COMPLETED sin envío...');
 
