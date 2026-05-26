@@ -1,12 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import * as xlsx from 'xlsx';
 
-import config from '../../config/configurations';
 import { AdvisorsService } from '../../advisors/advisors.service';
-import { ContractsService } from '../../contracts/services/contracts.service';
+import config from '../../config/configurations';
 import { PersonRole } from '../../contracts/entities/contract-person.entity';
+import { ContractsService } from '../../contracts/services/contracts.service';
 import { GoogleDriveService } from '../../google/services/google-drive.service';
 import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
@@ -27,7 +26,7 @@ export class SyncService {
     private readonly advisorsService: AdvisorsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
+  // DEPRECATED - This method is no longer scheduled to run automatically. It can be triggered manually if needed for one-off syncs, but the preferred approach is to use the new CLI command for better control and observability.
   async handleHourlySync() {
     this.logger.log('Starting hourly Excel sync...');
 
