@@ -6,7 +6,6 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { PaymentStatus } from '../billing/entities/payment.entity';
-import { PersonRole } from '../contracts/entities/contract-person.entity';
 import { PdfService } from '../pdf/services/pdf.service';
 
 interface ContractReportRow {
@@ -69,7 +68,7 @@ export class ReportsService {
       const contract = invoice.contract;
 
       // Find the TITULAR person
-      const titularCp = contract.contractPersons?.find((cp) => cp.role === PersonRole.TITULAR);
+      const titularCp = contract.contractPersons?.find((cp) => cp.isBillingOwner);
       const titular = titularCp?.person
         ? `${titularCp.person.typeIdentityCard}-${titularCp.person.identityCard} ${titularCp.person.name}`
         : 'Sin titular';
