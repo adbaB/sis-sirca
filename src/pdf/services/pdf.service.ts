@@ -13,7 +13,11 @@ export class PdfService {
    * @param templateName Nombre del archivo sin extensión (ej. 'invoice')
    * @param data Objeto con los datos a inyectar en la plantilla
    */
-  async generatePdf(templateName: string, data: Record<string, unknown>): Promise<Buffer> {
+  async generatePdf(
+    templateName: string,
+    data: Record<string, unknown>,
+    options?: { landscape?: boolean },
+  ): Promise<Buffer> {
     try {
       // 1. Read the template file.
       //    In production (node dist/) the file lives in dist/pdf/templates/.
@@ -67,6 +71,7 @@ export class PdfService {
       // 5. Generate PDF
       const pdfBuffer = await page.pdf({
         format: 'Letter',
+        landscape: options?.landscape ?? false,
         printBackground: true,
         margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
       });

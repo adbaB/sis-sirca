@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reporte de Contratos - {{ monthLabel }} {{ year }}</title>
+  <style>
+    :root {
+      --primary-color: #1d9e11;
+      --text-color: #333333;
+      --border-color: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      font-size: 12px;
+    }
+    .page-container {
+      width: 100%;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid var(--primary-color);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .header-logo {
+      height: 45px;
+      width: auto;
+      object-fit: contain;
+    }
+    .header h1 {
+      color: var(--primary-color);
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .header-subtitle {
+      color: #666;
+      font-size: 12px;
+      margin: 2px 0 0 0;
+    }
+    .header-right {
+      text-align: right;
+      font-size: 11px;
+      color: #666;
+    }
+    .header-right p { margin: 2px 0; }
+
+    /* ── Report title ─────────────────────────────────────── */
+    .report-title {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .report-title h2 {
+      color: var(--primary-color);
+      margin: 0 0 4px 0;
+      font-size: 18px;
+    }
+    .report-title p {
+      color: #666;
+      margin: 0;
+      font-size: 12px;
+    }
+
+    /* ── Table ────────────────────────────────────────────── */
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .report-table th,
+    .report-table td {
+      padding: 7px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 11px;
+    }
+    .report-table th {
+      background-color: var(--primary-color);
+      color: white;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .report-table tbody tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+    .report-table tbody tr:hover {
+      background-color: #f0f4f8;
+    }
+    .text-right {
+      text-align: right !important;
+    }
+    .text-center {
+      text-align: center !important;
+    }
+
+    /* ── Status badges ────────────────────────────────────── */
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-paid {
+      background-color: #dcfce7;
+      color: #166534;
+    }
+    .status-partial {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+    .status-pending {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+    .status-cancelled {
+      background-color: #f3f4f6;
+      color: #6b7280;
+    }
+
+    /* ── Footer ───────────────────────────────────────────── */
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 10px;
+      color: #999;
+      border-top: 1px solid var(--border-color);
+      padding-top: 10px;
+    }
+    .footer p { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        {{#if logo}}
+        <img src="{{ logo }}" alt="Logo" class="header-logo" />
+        {{/if}}
+        <div>
+          <h1>SIRCA Plan de Salud</h1>
+          <p class="header-subtitle">Salud Integral El Rosario C.A.</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <p>Generado: <strong>{{ generatedAt }}</strong></p>
+      </div>
+    </div>
+
+    <!-- Report title -->
+    <div class="report-title">
+      <h2>Reporte de Contratos - {{ monthLabel }} {{ year }}</h2>
+      <p>Detalle de facturación y pagos por contrato</p>
+    </div>
+
+    <!-- Data table -->
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Titular</th>
+          <th class="text-right">Monto Mensual</th>
+          <th class="text-right">Total Factura</th>
+          <th class="text-right">Pagado ($)</th>
+          <th class="text-right">Pagado (Bs)</th>
+          <th class="text-center">Estado</th>
+          <th class="text-center">Fecha Pago</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each rows}}
+        <tr>
+          <td>{{ contractCode }}</td>
+          <td>{{ titular }}</td>
+          <td class="text-right">${{ monthlyAmountFormatted }}</td>
+          <td class="text-right">${{ totalAmountFormatted }}</td>
+          <td class="text-right">${{ paidAmountUsdFormatted }}</td>
+          <td class="text-right">{{ paidAmountBsFormatted }} Bs</td>
+          <td class="text-center">
+            <span class="status-badge status-{{ statusClass }}">{{ invoiceStatus }}</span>
+          </td>
+          <td class="text-center">{{#if paymentDate}}{{ paymentDate }}{{else}}-{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>Documento generado automáticamente por el sistema SIRCA</p>
+      <p>Salud Integral El Rosario C.A. &mdash; {{ generatedAt }}</p>
+    </div>
+  </div>
+</body>
+</html>
