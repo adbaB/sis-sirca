@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, IsNull } from 'typeorm';
+import { Repository, DataSource, IsNull, In } from 'typeorm';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
-import { Invoice } from '../entities/invoice.entity';
+import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SurplusCreatedEvent } from '../events/surplus-created.event';
@@ -11,6 +11,7 @@ import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.
 import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
 import { DateTime } from 'luxon';
 import { BillingService } from './billing.service';
+import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 
 @Injectable()
 export class SurplusService {
@@ -46,14 +47,15 @@ export class SurplusService {
         throw new Error(`Invoice ${invoiceId} not found`);
       }
 
-      // Fetch pending surpluses inside the transaction with a lock to prevent concurrent applications
+      // Fetch pending surpluses inside the transaction with a lock to prevent concurrent applications.
+      // We lock the records without loading relations first to prevent PostgreSQL from throwing:
+      // "FOR UPDATE cannot be applied to the nullable side of an outer join".
       const surpluses = await queryRunner.manager.find(Surplus, {
         where: {
           contract: { id: contractId },
           status: SurplusStatus.PENDING,
           invoice: IsNull(),
         },
-        relations: ['payment', 'payment.person', 'contract'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -62,6 +64,14 @@ export class SurplusService {
         return;
       }
 
+      // Safely load the relations for the already locked surpluses.
+      const surplusesWithRelations = await queryRunner.manager.find(Surplus, {
+        where: {
+          id: In(surpluses.map((s) => s.id)),
+        },
+        relations: ['payment', 'payment.person', 'contract'],
+      });
+
       const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
       let exchangeRate: ExchangeRate | null = null;
       let remainingBalanceUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
@@ -69,7 +79,7 @@ export class SurplusService {
       const appliedSurplusIds: string[] = [];
       const newLeftoverSurpluses: Surplus[] = [];
 
-      for (const surplus of surpluses) {
+      for (const surplus of surplusesWithRelations) {
         if (remainingBalanceUsd <= 0.01) {
           // Invoice is already fully covered. Leave remaining surpluses pending.
           break;
@@ -193,5 +203,47 @@ export class SurplusService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Finds all active contracts, locates their oldest pending or partial invoices,
+   * and attempts to apply any pending surpluses to them in bulk.
+   */
+  async applyPendingSurplusesToAllActiveInvoices(): Promise<void> {
+    this.logger.log('Starting bulk pending surplus application...');
+
+    const contracts = await this.dataSource.getRepository(Contract).find({
+      where: { status: ContractStatus.ACTIVE },
+    });
+
+    this.logger.log(`Found ${contracts.length} active contracts to process.`);
+
+    for (const contract of contracts) {
+      // Find the oldest PENDING or PARTIAL invoice for this contract
+      const pendingInvoice = await this.dataSource.getRepository(Invoice).findOne({
+        where: {
+          contract: { id: contract.id },
+          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+        },
+        order: { billingMonth: 'ASC' },
+      });
+
+      if (pendingInvoice) {
+        try {
+          this.logger.log(
+            `Applying pending surpluses to invoice ${pendingInvoice.id} (${pendingInvoice.billingMonth}) for contract ${contract.code}`,
+          );
+          await this.applyPendingSurplusesToInvoice(contract.id, pendingInvoice.id);
+        } catch (error) {
+          this.logger.error(
+            `Error applying pending surpluses to invoice ${pendingInvoice.id} for contract ${contract.code}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+
+    this.logger.log('Bulk pending surplus application completed.');
   }
 }

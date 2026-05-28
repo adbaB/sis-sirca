@@ -23,6 +23,7 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { AdvisorsModule } from './advisors/advisors.module';
 import config from './config/configurations';
 import { StatisticsModule } from './statistics/statistics.module';
+import { ReportsModule } from './reports/reports.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -61,6 +62,7 @@ import { PermissionsModule } from './permissions/permissions.module';
     }),
     AdvisorsModule,
     StatisticsModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
