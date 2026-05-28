@@ -7,6 +7,7 @@ import * as path from 'path';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { PaymentStatus } from '../billing/entities/payment.entity';
 import { PdfService } from '../pdf/services/pdf.service';
+import { ContractStatus } from 'src/contracts/entities/contract.entity';
 
 interface ContractReportRow {
   contractCode: string;
@@ -55,7 +56,12 @@ export class ReportsService {
     const billingMonth = `${year}-${String(month).padStart(2, '0')}`;
 
     const invoices = await this.invoiceRepository.find({
-      where: { billingMonth },
+      where: {
+        billingMonth,
+        contract: {
+          status: ContractStatus.ACTIVE,
+        },
+      },
       relations: [
         'contract',
         'contract.contractPersons',
