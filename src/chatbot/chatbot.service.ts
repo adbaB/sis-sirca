@@ -616,7 +616,7 @@ export class ChatbotService {
 
               // Process OCR
               try {
-                const extractedData = await this.ocrService.extractReceiptData(buffer);
+                const extractedData = await this.ocrService.extractReceiptData(receiptUrl);
                 state.extracted_data = { ...state.extracted_data, ...extractedData };
 
                 state.step = 'AWAITING_CONFIRMATION';
