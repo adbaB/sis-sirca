@@ -61,9 +61,16 @@ export class ContractsService {
     this.applyRelations(queryBuilder);
     this.applySearchFilter(queryBuilder, query.search);
     this.applyAdvisorFilter(queryBuilder, query.advisorId);
-    this.applyInvoiceJoins(queryBuilder, targetBillingMonth);
-    this.applyStageFilter(queryBuilder, query.stage, targetBillingMonth);
-    queryBuilder.andWhere("contract.status = 'ACTIVE'");
+    if (query.stage || targetBillingMonth) {
+      this.applyInvoiceJoins(queryBuilder, targetBillingMonth);
+      this.applyStageFilter(queryBuilder, query.stage, targetBillingMonth);
+    }
+
+    if (query.stage) {
+      queryBuilder.andWhere("contract.status = 'ACTIVE'");
+    } else if (query.status) {
+      queryBuilder.andWhere('contract.status = :status', { status: query.status });
+    }
 
     queryBuilder.orderBy('contract.code', 'ASC');
 

@@ -53,46 +53,76 @@ export class OcrService {
 
       let imageUrl = '';
       if (typeof imageBufferOrUrl === 'string') {
+        // Prefer URLs to avoid base64 token overhead (~37k tokens vs ~1.4k tokens)
         imageUrl = imageBufferOrUrl;
       } else {
+        this.logger.warn(
+          'Received image as Buffer instead of URL. This will increase token usage significantly. Prefer passing a URL.',
+        );
         const base64Image = imageBufferOrUrl.toString('base64');
         imageUrl = `data:image/jpeg;base64,${base64Image}`;
       }
 
-      this.logger.log('Sending image directly to OpenRouter (openai/gpt-4o-mini)...');
+      this.logger.log('Sending image to OpenRouter (openai/gpt-4o)...');
 
-      const prompt = `
-         Extrae los datos del comprobante de pago adjunto y devuelve ÚNICAMENTE un objeto JSON válido.
+      const prompt = `Extrae los datos del comprobante de pago bancario venezolano adjunto.
 
-            Reglas críticas de formato:
-            1. MONTO: Convierte el formato venezolano (decimal con coma) a formato numérico estándar (decimal con punto). Elimina puntos de miles. Ejemplo: "1.250,50" -> 1250.50.
-            2. REFERENCIA: Transcripción LITERAL y EXACTA. Extrae el número dígito por dígito. PROHIBIDO invertir números, adivinar, redondear o añadir espacios. La precisión absoluta es obligatoria.
-            3. CAMPOS VACÍOS: Usa null si el dato no es legible o no existe.
-            4. SALIDA: Sin texto adicional, sin formato markdown de bloques de código json, SOLO el JSON puro.
+INSTRUCCIONES PARA LA REFERENCIA:
+1. Busca la referencia bajo etiquetas como: "Referencia:", "Nro. de referencia:", "Número de operación", "Nro de Referencia", "Ref:", "N° Referencia", "El número de operación es:", "Comprobante Nro".
+2. La referencia es una secuencia NUMÉRICA de entre 4 y 20 dígitos.
+3. Transcribe CADA DÍGITO individualmente, de izquierda a derecha.
+4. CONSERVA todos los ceros iniciales (ejemplo: 000080329301, NO 80329301).
+5. NO confundas dígitos visualmente similares (5/6, 8/0, 3/8, 1/7).
+6. Si la referencia está parcialmente cortada o no es completamente visible, devuelve null.
+7. IGNORA íconos de copiar/pegar que puedan aparecer junto a la referencia.
 
-            Campos a extraer:
-            {
-            "_referencia_verificacion": (string) Escribe aquí la referencia separando cada dígito con un guión, ej: "1-2-3-4-5-6",
-            "monto": (number),
-            "referencia": (string) La referencia final unida y corregida en base al campo anterior,
-            "beneficiario": (string),
-            "bancoDestino": (string),
-            "fecha": (string),
-            "origen": (string),
-            "descripcion": (string),
-            "nombreBanco": (string),
-            "moneda": (string)
-            }
-      `;
+INSTRUCCIONES PARA EL MONTO:
+- Formato venezolano: "1.250,50" → 1250.50 (elimina puntos de miles, coma decimal se convierte en punto).
+- Si ves "Bs.", "BS", "Bs" o "VES", la moneda es "VES".
+- Si ves "$", "USD" o "US$", la moneda es "USD".
+- Si el comprobante muestra tanto monto en Bs como en $, usa el monto principal de la operación.
+
+INSTRUCCIONES PARA IDENTIFICAR EL BANCO ORIGEN (quien envía el pago):
+Identifica el banco usando texto visible O por sus características visuales:
+- Mercantil: Fondo azul degradado, logo "Mercantil" con flecha azul, texto "Tu Tpago fue exitoso".
+- Banco de Venezuela (BDV): Encabezado rojo/vinotinto, logo tricolor (amarillo/azul/rojo), texto "PagomóvilBDV", URL "banvenez.com".
+- Banesco: Tema verde, logo circular verde, texto "Banesco".
+- BNC (Banco Nacional de Crédito): Encabezado azul oscuro, logo "BNC" en blanco, texto en azul/blanco.
+- Provincial (BBVA): Tema azul con detalles blancos, logo BBVA Provincial.
+- Banco del Tesoro: Tema azul claro, logo con estrella.
+- Bicentenario: Tema verde/dorado, logo con estrella.
+- Bancaribe: Tema naranja/blanco.
+- Banco Exterior: Tema azul, logo con "E".
+- BOD (Banco Occidental de Descuento): Tema azul/blanco.
+- Banco Plaza: Tema verde.
+- BFC (Banco Fondo Común): Tema verde.
+- Bancamiga: Tema azul/naranja.
+- Banco Activo: Tema azul.
+- Banplus: Tema verde/azul.
+Si no puedes identificar el banco origen, devuelve null.
+
+FORMATO DE SALIDA:
+Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
+{
+  "monto": (number|null),
+  "referencia": (string|null) Solo dígitos, sin espacios ni guiones,
+  "beneficiario": (string|null) Nombre del beneficiario/receptor del pago,
+  "bancoDestino": (string|null) Banco receptor del pago,
+  "fecha": (string|null) formato DD/MM/YYYY,
+  "origen": (string|null) Banco desde donde se realizó el pago (identificado por texto o logo),
+  "descripcion": (string|null) Concepto o descripción del pago,
+  "nombreBanco": (string|null) Nombre del banco que emitió el comprobante (mismo que origen),
+  "moneda": (string|null) "VES" o "USD"
+}`;
 
       const completion = await this.openai.chat.completions.create(
         {
-          model: 'openai/gpt-4o-mini',
+          model: 'openai/gpt-4o',
           messages: [
             {
               role: 'system',
               content:
-                'Eres un asistente experto en analizar recibos de pago a partir de imágenes y extraer datos en formato JSON puro. No uses bloques de código markdown.',
+                'Eres un asistente experto en OCR de comprobantes de pago bancarios venezolanos. Conoces los logos, colores y diseños de todos los bancos venezolanos. Extraes datos en formato JSON puro. No uses bloques de código markdown.',
             },
             {
               role: 'user',
@@ -102,16 +132,13 @@ export class OcrService {
                   type: 'image_url',
                   image_url: {
                     url: imageUrl,
-                    // "high" detail reads the image in 512×512 tiles.
-                    // Pre-resizing to max 1024px caps this at 4 tiles (~765 tokens total)
-                    // instead of 37k+ tokens from a full-resolution camera photo.
                     detail: 'high',
                   },
                 },
               ],
             },
           ],
-          response_format: { type: 'json_object' }, // Supported by OpenAI models
+          response_format: { type: 'json_object' },
           temperature: 0,
         },
         { timeout: 30_000 },
@@ -127,9 +154,23 @@ export class OcrService {
 
       const raw = JSON.parse(responseContent) as Partial<ReceiptData>;
 
+      // Post-OCR validation: sanitize referencia
+      let referencia = raw.referencia ?? null;
+      if (referencia) {
+        // Strip any non-digit characters the model may have included
+        referencia = referencia.replace(/\D/g, '');
+        // Validate reasonable length for Venezuelan bank references (4-20 digits)
+        if (referencia.length < 4 || referencia.length > 20) {
+          this.logger.warn(
+            `Reference "${referencia}" has unusual length (${referencia.length}). Setting to null.`,
+          );
+          referencia = null;
+        }
+      }
+
       const parsedData: ReceiptData = {
         monto: raw.monto ?? null,
-        referencia: raw.referencia ?? null,
+        referencia,
         beneficiario: raw.beneficiario ?? null,
         bancoDestino: raw.bancoDestino ?? null,
         fecha: raw.fecha ?? null,

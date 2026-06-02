@@ -6,6 +6,10 @@ export class FindContractDto extends PaginationQueryDto {
   @IsOptional()
   search?: string;
 
+  @IsString()
+  @IsOptional()
+  status?: string;
+
   @IsUUID('4', { message: 'El advisorId debe ser un UUID válido.' })
   @IsOptional()
   advisorId?: string;
