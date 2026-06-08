@@ -65,25 +65,27 @@ export class OcrService {
 
       this.logger.log('Sending image to OpenRouter (openai/gpt-4o)...');
 
-      const prompt = `Extrae los datos del comprobante de pago bancario venezolano adjunto.
+      const prompt = `Extrae los datos del comprobante de pago adjunto. Puede ser una transferencia bancaria venezolana O un pago Zelle desde un banco estadounidense.
 
 INSTRUCCIONES PARA LA REFERENCIA:
-1. Busca la referencia bajo etiquetas como: "Referencia:", "Nro. de referencia:", "Número de operación", "Nro de Referencia", "Ref:", "N° Referencia", "El número de operación es:", "Comprobante Nro".
-2. La referencia es una secuencia NUMÉRICA de entre 4 y 20 dígitos.
-3. Transcribe CADA DÍGITO individualmente, de izquierda a derecha.
+1. Busca la referencia bajo etiquetas como: "Referencia:", "Nro. de referencia:", "Número de operación", "El número de operación es:", "Comprobante Nro", "Ref:", "N° Referencia", "Confirmation", "Confirmación", "Número de confirmación", "Reference Number".
+2. La referencia puede ser NUMÉRICA (bancos venezolanos, ej: 000080329301) o ALFANUMÉRICA (Zelle, ej: WFCT128RS4V9, sa845yhrn, l0pxs6yl0).
+3. Transcribe CADA CARÁCTER exactamente como aparece, respetando mayúsculas/minúsculas.
 4. CONSERVA todos los ceros iniciales (ejemplo: 000080329301, NO 80329301).
-5. NO confundas dígitos visualmente similares (5/6, 8/0, 3/8, 1/7).
+5. NO confundas caracteres visualmente similares: 0/O, 1/l/I, 5/S, 8/B.
 6. Si la referencia está parcialmente cortada o no es completamente visible, devuelve null.
 7. IGNORA íconos de copiar/pegar que puedan aparecer junto a la referencia.
 
 INSTRUCCIONES PARA EL MONTO:
 - Formato venezolano: "1.250,50" → 1250.50 (elimina puntos de miles, coma decimal se convierte en punto).
+- Formato americano/Zelle: "$108.00" → 108.00 (ya usa punto decimal).
 - Si ves "Bs.", "BS", "Bs" o "VES", la moneda es "VES".
-- Si ves "$", "USD" o "US$", la moneda es "USD".
-- Si el comprobante muestra tanto monto en Bs como en $, usa el monto principal de la operación.
+- Si ves "$", "USD", "US$" o es un pago Zelle, la moneda es "USD".
 
 INSTRUCCIONES PARA IDENTIFICAR EL BANCO ORIGEN (quien envía el pago):
 Identifica el banco usando texto visible O por sus características visuales:
+
+Bancos venezolanos:
 - Mercantil: Fondo azul degradado, logo "Mercantil" con flecha azul, texto "Tu Tpago fue exitoso".
 - Banco de Venezuela (BDV): Encabezado rojo/vinotinto, logo tricolor (amarillo/azul/rojo), texto "PagomóvilBDV", URL "banvenez.com".
 - Banesco: Tema verde, logo circular verde, texto "Banesco".
@@ -99,13 +101,23 @@ Identifica el banco usando texto visible O por sus características visuales:
 - Bancamiga: Tema azul/naranja.
 - Banco Activo: Tema azul.
 - Banplus: Tema verde/azul.
+
+Bancos Zelle (estadounidenses):
+- Bank of America: Logo con bandera roja/azul, texto "BANK OF AMERICA", comprobantes en español o inglés.
+- Wells Fargo: Tema rojo/dorado, fondo verde oscuro en check, logo carreta, "Confirmación" con prefijo "WFCT".
+- Chase: Tema azul, logo octágono azul, texto "Chase".
+- Zelle (app directa): Tema morado/púrpura oscuro, logo "Z" con ondas, texto "Payment Sent", "Reference Number".
+- Citi / Citibank: Tema azul, arco azul en logo.
+- Capital One: Tema rojo/blanco.
+- TD Bank: Tema verde.
+- PNC Bank: Tema naranja/azul.
 Si no puedes identificar el banco origen, devuelve null.
 
 FORMATO DE SALIDA:
 Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
 {
   "monto": (number|null),
-  "referencia": (string|null) Solo dígitos, sin espacios ni guiones,
+  "referencia": (string|null) Exactamente como aparece, sin espacios,
   "beneficiario": (string|null) Nombre del beneficiario/receptor del pago,
   "bancoDestino": (string|null) Banco receptor del pago,
   "fecha": (string|null) formato DD/MM/YYYY,
@@ -122,7 +134,7 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
             {
               role: 'system',
               content:
-                'Eres un asistente experto en OCR de comprobantes de pago bancarios venezolanos. Conoces los logos, colores y diseños de todos los bancos venezolanos. Extraes datos en formato JSON puro. No uses bloques de código markdown.',
+                'Eres un asistente experto en OCR de comprobantes de pago bancarios venezolanos y pagos Zelle de bancos estadounidenses. Conoces los logos, colores y diseños de todos estos bancos. Extraes datos en formato JSON puro. No uses bloques de código markdown.',
             },
             {
               role: 'user',
@@ -157,9 +169,10 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
       // Post-OCR validation: sanitize referencia
       let referencia = raw.referencia ?? null;
       if (referencia) {
-        // Strip any non-digit characters the model may have included
-        referencia = referencia.replace(/\D/g, '');
-        // Validate reasonable length for Venezuelan bank references (4-20 digits)
+        // Strip everything except letters and digits
+        // (Zelle references are alphanumeric, e.g. "WFCT128RS4V9", "sa845yhrn")
+        referencia = referencia.replace(/[^a-zA-Z0-9]/g, '');
+        // Validate reasonable length (4-20 characters for both numeric and alphanumeric references)
         if (referencia.length < 4 || referencia.length > 20) {
           this.logger.warn(
             `Reference "${referencia}" has unusual length (${referencia.length}). Setting to null.`,

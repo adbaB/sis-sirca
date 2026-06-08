@@ -9,6 +9,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { SurplusService } from './surplus.service';
 
 describe('BillingService', () => {
   let service: BillingService;
@@ -76,6 +77,12 @@ describe('BillingService', () => {
         {
           provide: EventEmitter2,
           useValue: mockEventEmitter,
+        },
+        {
+          provide: SurplusService,
+          useValue: {
+            applyPendingSurplusesToInvoice: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

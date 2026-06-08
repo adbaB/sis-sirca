@@ -1,19 +1,29 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DateTime } from 'luxon';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
+import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
-import { TypeIdentityCard } from '../../persons/entities/person.entity';
+import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
+import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
+import { InvoiceDetail } from '../entities/invoice-detail.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { PaymentRegisteredEvent } from '../events/payment-registered.event';
 import { SurplusCreatedEvent } from '../events/surplus-created.event';
+import { SurplusService } from './surplus.service';
 
 interface PaymentSplit {
   paymentAmountUsd: number;
@@ -43,6 +53,8 @@ export class BillingService {
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
     private readonly eventEmitter: EventEmitter2,
+    @Inject(forwardRef(() => SurplusService))
+    private readonly surplusService: SurplusService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -489,7 +501,7 @@ export class BillingService {
     const newPaidAmount = Number(result?.total ?? 0);
     const totalAmount = Number(invoice.totalAmount);
 
-    invoice.paidAmount = newPaidAmount;
+    invoice.paidAmount = Math.min(newPaidAmount, totalAmount);
 
     if (newPaidAmount >= totalAmount) {
       invoice.status = InvoiceStatus.PAID;
@@ -617,19 +629,64 @@ export class BillingService {
   }
 
   async approvePayment(id: string): Promise<Payment> {
-    const payment = await this.paymentRepository.findOne({
-      where: { id },
-      relations: ['invoice'],
-    });
-    if (!payment) {
-      throw new NotFoundException(`Payment with ID ${id} not found`);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const paymentRepo = queryRunner.manager.getRepository(Payment);
+      const surplusRepo = queryRunner.manager.getRepository(Surplus);
+
+      const payment = await queryRunner.manager
+        .createQueryBuilder(Payment, 'payment')
+        .setQueryRunner(queryRunner)
+        .leftJoinAndSelect('payment.invoice', 'invoice')
+        .where('payment.id = :id', { id })
+        .setLock('pessimistic_write')
+        .getOne();
+
+      if (!payment) {
+        throw new NotFoundException(`Payment with ID ${id} not found`);
+      }
+      if (payment.status === PaymentStatus.COMPLETED) {
+        throw new BadRequestException('El pago ya se encuentra aprobado.');
+      }
+
+      payment.status = PaymentStatus.COMPLETED;
+
+      // Remove rejection reason from metadata if present
+      const metadata = payment.metadata || {};
+      if (metadata.rejectionReason) {
+        delete metadata.rejectionReason;
+      }
+      payment.metadata = metadata;
+
+      const saved = await paymentRepo.save(payment);
+
+      // Find and restore associated surpluses (from cancelled to pending)
+      const associatedSurpluses = await surplusRepo.find({
+        where: { payment: { id: payment.id } },
+      });
+
+      for (const surplus of associatedSurpluses) {
+        if (surplus.status === SurplusStatus.CANCELLED) {
+          surplus.status = SurplusStatus.PENDING;
+          await surplusRepo.save(surplus);
+        }
+      }
+
+      if (payment.invoice) {
+        await this.recalculateInvoicePaidAmount(payment.invoice.id, queryRunner);
+      }
+
+      await queryRunner.commitTransaction();
+      return saved;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-    payment.status = PaymentStatus.COMPLETED;
-    const saved = await this.paymentRepository.save(payment);
-    if (payment.invoice) {
-      await this.recalculateInvoicePaidAmount(payment.invoice.id);
-    }
-    return saved;
   }
 
   async rejectPayment(id: string, reason: string): Promise<Payment> {
@@ -641,12 +698,19 @@ export class BillingService {
       const paymentRepo = queryRunner.manager.getRepository(Payment);
       const surplusRepo = queryRunner.manager.getRepository(Surplus);
 
-      const payment = await paymentRepo.findOne({
-        where: { id },
-        relations: ['invoice'],
-      });
+      const payment = await queryRunner.manager
+        .createQueryBuilder(Payment, 'payment')
+        .setQueryRunner(queryRunner)
+        .leftJoinAndSelect('payment.invoice', 'invoice')
+        .where('payment.id = :id', { id })
+        .setLock('pessimistic_write')
+        .getOne();
+
       if (!payment) {
         throw new NotFoundException(`Payment with ID ${id} not found`);
+      }
+      if (payment.status === PaymentStatus.REJECTED) {
+        throw new BadRequestException('El pago ya se encuentra rechazado.');
       }
 
       payment.status = PaymentStatus.REJECTED;
@@ -676,6 +740,204 @@ export class BillingService {
       return saved;
     } catch (error) {
       await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async generateInvoiceForContract(
+    contractId: string,
+    billingMonthInput?: string,
+  ): Promise<Invoice> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let billingMonth = billingMonthInput;
+    if (!billingMonth) {
+      const nowVe = DateTime.now().setZone('America/Caracas');
+      billingMonth = nowVe.toFormat('yyyy-MM');
+    }
+
+    try {
+      const contractRepo = queryRunner.manager.getRepository(Contract);
+      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+
+      const contract = await contractRepo.findOne({
+        where: { id: contractId },
+        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+      });
+
+      if (!contract) {
+        throw new NotFoundException(`Contrato con ID ${contractId} no encontrado`);
+      }
+
+      if (contract.status !== ContractStatus.ACTIVE) {
+        throw new BadRequestException('El contrato no está activo');
+      }
+
+      // Check if invoice already exists
+      const existingInvoice = await invoiceRepo.findOne({
+        where: {
+          contract: { id: contract.id },
+          billingMonth,
+        },
+      });
+
+      if (existingInvoice) {
+        throw new BadRequestException(
+          `Ya existe una factura para este contrato en el mes ${billingMonth}`,
+        );
+      }
+
+      const activeAfiliados =
+        contract.contractPersons
+          ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
+          .map((cp) => cp.person) || [];
+
+      if (activeAfiliados.length === 0) {
+        throw new BadRequestException('El contrato no tiene afiliados activos');
+      }
+
+      const invalidPerson = activeAfiliados.find(
+        (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
+      );
+      if (invalidPerson) {
+        throw new BadRequestException(
+          `El afiliado ${invalidPerson.name} no tiene un plan de salud válido asignado`,
+        );
+      }
+
+      let totalAmount = 0;
+      const invoiceDetailsData = activeAfiliados.map((person) => {
+        const amount = Number(person.plan.amount);
+        totalAmount += amount;
+
+        if (!Number.isFinite(amount) || amount < 0) {
+          throw new BadRequestException(
+            `El monto del plan del afiliado ${person.name} no es válido`,
+          );
+        }
+
+        return {
+          person: person,
+          plan: person.plan,
+          chargedAmount: amount,
+        };
+      });
+
+      const now = new Date();
+      const dueDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5);
+
+      const invoice = invoiceRepo.create({
+        contract: contract,
+        billingMonth: billingMonth,
+        issueDate: new Date(),
+        dueDate: dueDate,
+        totalAmount: totalAmount,
+        paidAmount: 0,
+        status: InvoiceStatus.PENDING,
+      });
+
+      const savedInvoice = await invoiceRepo.save(invoice);
+
+      const invoiceDetails = invoiceDetailsData.map((data) => {
+        return queryRunner.manager.create(InvoiceDetail, {
+          ...data,
+          invoice: savedInvoice,
+        });
+      });
+
+      await queryRunner.manager.save(invoiceDetails);
+
+      await queryRunner.commitTransaction();
+
+      // Apply surpluses
+      try {
+        await this.surplusService.applyPendingSurplusesToInvoice(contract.id, savedInvoice.id);
+      } catch (surplusError) {
+        this.logger.error(
+          `Error al aplicar excedentes al contrato ${contract.id} para la factura manual ${savedInvoice.id}`,
+          surplusError,
+        );
+      }
+
+      // Reload the invoice to get updated amounts/status/details
+      return await this.invoiceRepository.findOne({
+        where: { id: savedInvoice.id },
+        relations: ['contract', 'details', 'payments'],
+      });
+    } catch (error: unknown) {
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
+      // Postgres unique constraint violation (contract_id, billing_month)
+      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+        throw new BadRequestException(
+          `Ya existe una factura para este contrato en el mes ${billingMonth}`,
+        );
+      }
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async recalculateInvoiceAmountFromContract(invoiceId: string): Promise<Invoice> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+
+      const invoice = await invoiceRepo.findOne({
+        where: { id: invoiceId },
+        relations: ['contract'],
+      });
+
+      if (!invoice) {
+        throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
+      }
+
+      if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException(
+          'Solo las facturas pendientes o parciales pueden ser recalculadas.',
+        );
+      }
+
+      const contract = invoice.contract;
+      if (!contract) {
+        throw new BadRequestException('La factura no tiene un contrato asociado');
+      }
+
+      const newTotalAmount = Number(contract.monthlyAmount);
+
+      invoice.totalAmount = newTotalAmount;
+
+      // Adjust paidAmount if it exceeds totalAmount to avoid DB check constraint violations
+      if (invoice.paidAmount > newTotalAmount) {
+        invoice.paidAmount = newTotalAmount;
+      }
+
+      // Save intermediate state in transaction
+      await invoiceRepo.save(invoice);
+
+      // Recalculate properly based on payments inside the transaction
+      await this.recalculateInvoicePaidAmount(invoice.id, queryRunner);
+
+      await queryRunner.commitTransaction();
+
+      // Reload and return
+      return await this.invoiceRepository.findOne({
+        where: { id: invoice.id },
+        relations: ['contract', 'details', 'payments'],
+      });
+    } catch (error) {
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
       await queryRunner.release();

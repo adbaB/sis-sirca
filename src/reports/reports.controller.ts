@@ -1,14 +1,14 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
-import { Public } from '../auth/decorators';
+import { RequirePermissions } from '../auth/decorators';
 import { ReportsService } from './reports.service';
 
-@Public()
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('contracts/excel')
+  @RequirePermissions('read:reports')
   async downloadExcel(
     @Query('year') year: number,
     @Query('month') month: number,
@@ -25,6 +25,7 @@ export class ReportsController {
   }
 
   @Get('contracts/pdf')
+  @RequirePermissions('read:reports')
   async downloadPdf(
     @Query('year') year: number,
     @Query('month') month: number,

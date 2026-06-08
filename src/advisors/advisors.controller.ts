@@ -2,9 +2,6 @@ import { Controller, Get, Body, Param, Query } from '@nestjs/common';
 import { AdvisorsService } from './advisors.service';
 import { CreateAdvisorDto } from './dto/create-advisor.dto';
 import { UpdateAdvisorDto } from './dto/update-advisor.dto';
-import { Public } from '../auth/decorators';
-
-@Public()
 @Controller('advisors')
 export class AdvisorsController {
   constructor(private readonly advisorsService: AdvisorsService) {}
