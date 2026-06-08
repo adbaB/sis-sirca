@@ -169,9 +169,9 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
       // Post-OCR validation: sanitize referencia
       let referencia = raw.referencia ?? null;
       if (referencia) {
-        // Strip whitespace and special characters, but KEEP letters and digits
+        // Strip everything except letters and digits
         // (Zelle references are alphanumeric, e.g. "WFCT128RS4V9", "sa845yhrn")
-        referencia = referencia.replace(/[\s\-./]/g, '');
+        referencia = referencia.replace(/[^a-zA-Z0-9]/g, '');
         // Validate reasonable length (4-20 characters for both numeric and alphanumeric references)
         if (referencia.length < 4 || referencia.length > 20) {
           this.logger.warn(

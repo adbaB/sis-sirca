@@ -52,31 +52,40 @@ export class PersonsService {
         });
 
         if (!existingJunction) {
-          // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
-          if (resolvedRole === PersonRole.AFILIADO) {
-            const affiliateJunctions = await this.contractPersonRepository.find({
-              where: { person: { id: person.id }, role: PersonRole.AFILIADO },
-              relations: ['contract'],
-            });
+          // Wrap in transaction: delete old junctions + create new one atomically
+          await this.contractPersonRepository.manager.transaction(async (em) => {
+            // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
+            if (resolvedRole === PersonRole.AFILIADO) {
+              const affiliateJunctions = await em.find(ContractPerson, {
+                where: { person: { id: person.id }, role: PersonRole.AFILIADO },
+                relations: ['contract'],
+              });
 
-            for (const cp of affiliateJunctions) {
-              if (cp.contract.id !== contractId) {
-                await this.contractPersonRepository.remove(cp);
-                await this.contractsService.recalculateMonthlyAmount(cp.contract.id);
+              const contractsToRecalc: string[] = [];
+              for (const cp of affiliateJunctions) {
+                if (cp.contract.id !== contractId) {
+                  await em.remove(cp);
+                  contractsToRecalc.push(cp.contract.id);
+                }
+              }
+
+              // Recalculate old contracts after removal
+              for (const cid of contractsToRecalc) {
+                await this.contractsService.recalculateMonthlyAmount(cid);
               }
             }
-          }
 
-          // Create junction table entry
-          const contractPerson = this.contractPersonRepository.create({
-            contract,
-            person,
-            role: resolvedRole,
-            isBillingOwner: isBillingOwner ?? false,
+            // Create junction table entry
+            const contractPerson = em.create(ContractPerson, {
+              contract,
+              person,
+              role: resolvedRole,
+              isBillingOwner: isBillingOwner ?? false,
+            });
+            await em.save(contractPerson);
+
+            await this.contractsService.recalculateMonthlyAmount(contractId);
           });
-          await this.contractPersonRepository.save(contractPerson);
-
-          await this.contractsService.recalculateMonthlyAmount(contractId);
         } else {
           throw new BadRequestException('La persona ya está afiliada a este contrato.');
         }
@@ -199,17 +208,19 @@ export class PersonsService {
 
     if (resolvedRole === PersonRole.AFILIADO) {
       // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
-      const afiliadoJunctions = await this.contractPersonRepository.find({
-        where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
-        relations: ['contract'],
-      });
+      await this.contractPersonRepository.manager.transaction(async (em) => {
+        const afiliadoJunctions = await em.find(ContractPerson, {
+          where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
+          relations: ['contract'],
+        });
 
-      for (const cp of afiliadoJunctions) {
-        if (cp.contract.id !== contractId) {
-          await this.contractPersonRepository.remove(cp);
-          contractsToRecalculate.add(cp.contract.id);
+        for (const cp of afiliadoJunctions) {
+          if (cp.contract.id !== contractId) {
+            await em.remove(cp);
+            contractsToRecalculate.add(cp.contract.id);
+          }
         }
-      }
+      });
     }
 
     if (existingJunction) {

@@ -637,12 +637,19 @@ export class BillingService {
       const paymentRepo = queryRunner.manager.getRepository(Payment);
       const surplusRepo = queryRunner.manager.getRepository(Surplus);
 
-      const payment = await paymentRepo.findOne({
-        where: { id },
-        relations: ['invoice'],
-      });
+      const payment = await queryRunner.manager
+        .createQueryBuilder(Payment, 'payment')
+        .setQueryRunner(queryRunner)
+        .leftJoinAndSelect('payment.invoice', 'invoice')
+        .where('payment.id = :id', { id })
+        .setLock('pessimistic_write')
+        .getOne();
+
       if (!payment) {
         throw new NotFoundException(`Payment with ID ${id} not found`);
+      }
+      if (payment.status === PaymentStatus.COMPLETED) {
+        throw new BadRequestException('El pago ya se encuentra aprobado.');
       }
 
       payment.status = PaymentStatus.COMPLETED;
@@ -691,12 +698,19 @@ export class BillingService {
       const paymentRepo = queryRunner.manager.getRepository(Payment);
       const surplusRepo = queryRunner.manager.getRepository(Surplus);
 
-      const payment = await paymentRepo.findOne({
-        where: { id },
-        relations: ['invoice'],
-      });
+      const payment = await queryRunner.manager
+        .createQueryBuilder(Payment, 'payment')
+        .setQueryRunner(queryRunner)
+        .leftJoinAndSelect('payment.invoice', 'invoice')
+        .where('payment.id = :id', { id })
+        .setLock('pessimistic_write')
+        .getOne();
+
       if (!payment) {
         throw new NotFoundException(`Payment with ID ${id} not found`);
+      }
+      if (payment.status === PaymentStatus.REJECTED) {
+        throw new BadRequestException('El pago ya se encuentra rechazado.');
       }
 
       payment.status = PaymentStatus.REJECTED;
@@ -740,6 +754,12 @@ export class BillingService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
+    let billingMonth = billingMonthInput;
+    if (!billingMonth) {
+      const nowVe = DateTime.now().setZone('America/Caracas');
+      billingMonth = nowVe.toFormat('yyyy-MM');
+    }
+
     try {
       const contractRepo = queryRunner.manager.getRepository(Contract);
       const invoiceRepo = queryRunner.manager.getRepository(Invoice);
@@ -755,12 +775,6 @@ export class BillingService {
 
       if (contract.status !== ContractStatus.ACTIVE) {
         throw new BadRequestException('El contrato no está activo');
-      }
-
-      let billingMonth = billingMonthInput;
-      if (!billingMonth) {
-        const now = new Date();
-        billingMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       }
 
       // Check if invoice already exists
@@ -854,9 +868,15 @@ export class BillingService {
         where: { id: savedInvoice.id },
         relations: ['contract', 'details', 'payments'],
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (queryRunner.isTransactionActive) {
         await queryRunner.rollbackTransaction();
+      }
+      // Postgres unique constraint violation (contract_id, billing_month)
+      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+        throw new BadRequestException(
+          `Ya existe una factura para este contrato en el mes ${billingMonth}`,
+        );
       }
       throw error;
     } finally {

@@ -68,12 +68,29 @@ describe('PersonsService', () => {
         },
         {
           provide: CP_REPOSITORY_TOKEN,
-          useValue: {
-            create: jest.fn(),
-            save: jest.fn(),
-            findOne: jest.fn(),
-            find: jest.fn(),
-            remove: jest.fn(),
+          useFactory: () => {
+            const mockRepo = {
+              create: jest.fn(),
+              save: jest.fn(),
+              findOne: jest.fn(),
+              find: jest.fn(),
+              remove: jest.fn(),
+              update: jest.fn(),
+              manager: {
+                transaction: null as unknown,
+              },
+            };
+            // The transaction mock calls the callback with a mock EM that reuses
+            // the same jest.fn() references, so existing spies and assertions work.
+            mockRepo.manager.transaction = jest.fn(async (cb: (em: unknown) => Promise<void>) => {
+              await cb({
+                find: mockRepo.find,
+                remove: mockRepo.remove,
+                create: mockRepo.create,
+                save: mockRepo.save,
+              });
+            });
+            return mockRepo;
           },
         },
         {
