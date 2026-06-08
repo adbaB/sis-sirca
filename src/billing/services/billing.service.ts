@@ -640,7 +640,7 @@ export class BillingService {
       const payment = await queryRunner.manager
         .createQueryBuilder(Payment, 'payment')
         .setQueryRunner(queryRunner)
-        .leftJoinAndSelect('payment.invoice', 'invoice')
+        .innerJoinAndSelect('payment.invoice', 'invoice')
         .where('payment.id = :id', { id })
         .setLock('pessimistic_write')
         .getOne();
@@ -701,7 +701,7 @@ export class BillingService {
       const payment = await queryRunner.manager
         .createQueryBuilder(Payment, 'payment')
         .setQueryRunner(queryRunner)
-        .leftJoinAndSelect('payment.invoice', 'invoice')
+        .innerJoinAndSelect('payment.invoice', 'invoice')
         .where('payment.id = :id', { id })
         .setLock('pessimistic_write')
         .getOne();

@@ -1,14 +1,15 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { BillingService } from './billing.service';
-import { Payment, PaymentStatus } from '../entities/payment.entity';
-import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
-import { CreatePaymentDto } from '../dto/create-payment.dto';
-import { NotFoundException } from '@nestjs/common';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { CreatePaymentDto } from '../dto/create-payment.dto';
+import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { SurplusStatus } from '../entities/surplus.entity';
+import { BillingService } from './billing.service';
 import { SurplusService } from './surplus.service';
 
 describe('BillingService', () => {
@@ -297,6 +298,163 @@ describe('BillingService', () => {
       expect(mockInvoiceRepository.save).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('nonexistent'));
       warnSpy.mockRestore();
+    });
+  });
+
+  describe('approvePayment', () => {
+    it('should approve a payment and change status to COMPLETED', async () => {
+      const mockInvoice = createMockInvoice('inv-1', 100, 0);
+      const mockPayment = {
+        id: 'pay-1',
+        status: PaymentStatus.PROCESSING,
+        invoice: mockInvoice,
+        metadata: {},
+      } as Payment;
+
+      const qb = {
+        setQueryRunner: jest.fn().mockReturnThis(),
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockPayment),
+      };
+      (mockQueryRunner.manager.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const mockSurplus = { id: 'surplus-1', status: SurplusStatus.CANCELLED };
+      const mockSurplusRepo = {
+        find: jest.fn().mockResolvedValue([mockSurplus]),
+        save: jest.fn().mockResolvedValue(mockSurplus),
+      };
+      const mockPaymentRepo = {
+        save: jest.fn().mockImplementation(async (p) => p),
+        createQueryBuilder: mockPaymentRepository.createQueryBuilder,
+      };
+
+      mockQueryRunner.manager.getRepository.mockImplementation((entity) => {
+        if (entity === Payment) return mockPaymentRepo;
+        if (entity === Invoice || entity.name === 'Invoice') return mockInvoiceRepository;
+        if (entity === 'Surplus' || entity.name === 'Surplus') return mockSurplusRepo;
+      });
+
+      // Recalculate mocks
+      mockInvoiceRepository.findOne.mockResolvedValue(mockInvoice);
+      const paymentQb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ total: '100' }),
+      };
+      mockPaymentRepository.createQueryBuilder.mockReturnValue(paymentQb);
+
+      const result = await service.approvePayment('pay-1');
+
+      expect(result.status).toBe(PaymentStatus.COMPLETED);
+      expect(mockPaymentRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: PaymentStatus.COMPLETED }),
+      );
+      expect(mockSurplus.status).toBe(SurplusStatus.PENDING);
+      expect(mockSurplusRepo.save).toHaveBeenCalledWith(mockSurplus);
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if payment is already COMPLETED', async () => {
+      const mockPayment = {
+        id: 'pay-1',
+        status: PaymentStatus.COMPLETED,
+        invoice: {},
+        metadata: {},
+      } as Payment;
+
+      const qb = {
+        setQueryRunner: jest.fn().mockReturnThis(),
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockPayment),
+      };
+      (mockQueryRunner.manager.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await expect(service.approvePayment('pay-1')).rejects.toThrow(BadRequestException);
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('rejectPayment', () => {
+    it('should reject a payment and change status to REJECTED', async () => {
+      const mockInvoice = createMockInvoice('inv-1', 100, 100);
+      const mockPayment = {
+        id: 'pay-1',
+        status: PaymentStatus.PROCESSING,
+        invoice: mockInvoice,
+        metadata: {},
+      } as Payment;
+
+      const qb = {
+        setQueryRunner: jest.fn().mockReturnThis(),
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockPayment),
+      };
+      (mockQueryRunner.manager.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const mockSurplus = { id: 'surplus-1', status: SurplusStatus.PENDING };
+      const mockSurplusRepo = {
+        find: jest.fn().mockResolvedValue([mockSurplus]),
+        save: jest.fn().mockResolvedValue(mockSurplus),
+      };
+      const mockPaymentRepo = {
+        save: jest.fn().mockImplementation(async (p) => p),
+        createQueryBuilder: mockPaymentRepository.createQueryBuilder,
+      };
+
+      mockQueryRunner.manager.getRepository.mockImplementation((entity) => {
+        if (entity === Payment) return mockPaymentRepo;
+        if (entity === Invoice || entity.name === 'Invoice') return mockInvoiceRepository;
+        if (entity === 'Surplus' || entity.name === 'Surplus') return mockSurplusRepo;
+      });
+
+      // Recalculate mocks
+      mockInvoiceRepository.findOne.mockResolvedValue(mockInvoice);
+      const paymentQb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ total: '0' }),
+      };
+      mockPaymentRepository.createQueryBuilder.mockReturnValue(paymentQb);
+
+      const result = await service.rejectPayment('pay-1', 'Invalid receipt');
+
+      expect(result.status).toBe(PaymentStatus.REJECTED);
+      expect((result.metadata as unknown as { rejectionReason: string }).rejectionReason).toBe(
+        'Invalid receipt',
+      );
+      expect(mockPaymentRepo.save).toHaveBeenCalled();
+      expect(mockSurplus.status).toBe(SurplusStatus.CANCELLED);
+      expect(mockSurplusRepo.save).toHaveBeenCalledWith(mockSurplus);
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if payment is already REJECTED', async () => {
+      const mockPayment = {
+        id: 'pay-1',
+        status: PaymentStatus.REJECTED,
+        invoice: {},
+        metadata: {},
+      } as Payment;
+
+      const qb = {
+        setQueryRunner: jest.fn().mockReturnThis(),
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockPayment),
+      };
+      (mockQueryRunner.manager.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await expect(service.rejectPayment('pay-1', 'Reason')).rejects.toThrow(BadRequestException);
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
     });
   });
 });
