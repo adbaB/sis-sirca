@@ -52,6 +52,21 @@ export class PersonsService {
         });
 
         if (!existingJunction) {
+          // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
+          if (resolvedRole === PersonRole.AFILIADO) {
+            const affiliateJunctions = await this.contractPersonRepository.find({
+              where: { person: { id: person.id }, role: PersonRole.AFILIADO },
+              relations: ['contract'],
+            });
+
+            for (const cp of affiliateJunctions) {
+              if (cp.contract.id !== contractId) {
+                await this.contractPersonRepository.remove(cp);
+                await this.contractsService.recalculateMonthlyAmount(cp.contract.id);
+              }
+            }
+          }
+
           // Create junction table entry
           const contractPerson = this.contractPersonRepository.create({
             contract,

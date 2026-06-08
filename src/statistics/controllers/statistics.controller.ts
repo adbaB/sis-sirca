@@ -1,9 +1,8 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { StatisticsService } from '../services/statistics.service';
 import { StatisticsResponse } from '../interfaces/response.interface';
-import { Public } from '../../auth/decorators';
+import { RequirePermissions } from '../../auth/decorators';
 
-@Public()
 @Controller('statistics')
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}
@@ -21,6 +20,7 @@ export class StatisticsController {
    * asignados a ese asesor.
    */
   @Get()
+  @RequirePermissions('read:statistics')
   async getStatistics(
     @Query('month_billing') monthBilling: string,
     @Query('advisor_uuid') advisorUuid?: string,

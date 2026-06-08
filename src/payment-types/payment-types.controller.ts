@@ -1,14 +1,14 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { PaymentTypesService } from './payment-types.service';
 import { CreatePaymentTypeDto } from './dto/create-payment-type.dto';
-import { Public } from '../auth/decorators';
+import { RequirePermissions } from '../auth/decorators';
 
-@Public()
 @Controller('payment-types')
 export class PaymentTypesController {
   constructor(private readonly paymentTypesService: PaymentTypesService) {}
 
   @Post()
+  @RequirePermissions('create:roles')
   create(@Body() createPaymentTypeDto: CreatePaymentTypeDto) {
     return this.paymentTypesService.create(createPaymentTypeDto);
   }

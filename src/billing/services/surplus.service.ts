@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull, In } from 'typeorm';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
@@ -22,6 +22,7 @@ export class SurplusService {
     private readonly surplusRepository: Repository<Surplus>,
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
+    @Inject(forwardRef(() => BillingService))
     private readonly billingService: BillingService,
     private readonly eventEmitter: EventEmitter2,
   ) {}

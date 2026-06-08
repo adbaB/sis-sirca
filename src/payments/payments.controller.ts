@@ -9,14 +9,14 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { PaymentsService } from './payments.service';
-import { Public } from '../auth/decorators';
+import { RequirePermissions } from '../auth/decorators';
 
-@Public()
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('submit')
+  @RequirePermissions('create:payments')
   @UseInterceptors(FileInterceptor('file'))
   async submitPayment(
     @UploadedFile() file: Express.Multer.File,
