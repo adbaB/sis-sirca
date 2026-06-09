@@ -44,6 +44,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/typeorm": "^11.0.0",
+    "@sentry/nestjs": "^10.56.0",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",

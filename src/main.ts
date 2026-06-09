@@ -1,9 +1,11 @@
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 import { Logger, ValidationPipe } from '@nestjs/common';
-import { useContainer } from 'class-validator';
 import { ConfigType } from '@nestjs/config';
+import { useContainer } from 'class-validator';
 import cookieParser from 'cookie-parser';
 
 import config from './config/configurations';
@@ -29,7 +31,7 @@ async function bootstrap(): Promise<void> {
     credentials: true,
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'sentry-trace', 'baggage'],
   });
 
   const appConfig = app.get<ConfigType<typeof config>>(config.KEY);
