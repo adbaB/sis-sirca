@@ -9,7 +9,6 @@ import { BillingService } from '../billing/services/billing.service';
 import { PersonsService } from '../persons/services/persons.service';
 import config from '../config/configurations';
 import { DataSource } from 'typeorm';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -101,7 +100,6 @@ describe('ChatbotService', () => {
         { provide: BillingService, useValue: mockBillingService },
         { provide: PersonsService, useValue: mockPersonsService },
         { provide: DataSource, useValue: mockDataSource },
-        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 

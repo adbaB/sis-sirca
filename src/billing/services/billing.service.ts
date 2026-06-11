@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DateTime } from 'luxon';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
 
@@ -21,8 +20,6 @@ import { InvoiceDetail } from '../entities/invoice-detail.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
-import { PaymentRegisteredEvent } from '../events/payment-registered.event';
-import { SurplusCreatedEvent } from '../events/surplus-created.event';
 import { SurplusService } from './surplus.service';
 
 interface PaymentSplit {
@@ -52,7 +49,6 @@ export class BillingService {
     private readonly paymentRepository: Repository<Payment>,
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
-    private readonly eventEmitter: EventEmitter2,
     @Inject(forwardRef(() => SurplusService))
     private readonly surplusService: SurplusService,
   ) {}
@@ -61,41 +57,18 @@ export class BillingService {
   // Public API
   // ---------------------------------------------------------------------------
 
-  async createPayment(
-    createPaymentDto: CreatePaymentDto,
-    externalQueryRunner?: QueryRunner,
-    deferredEvents?: Array<{ name: string; payload: unknown }>,
-  ) {
+  async createPayment(createPaymentDto: CreatePaymentDto, externalQueryRunner?: QueryRunner) {
     const amount = Number(createPaymentDto.amount);
     const amountExtracted = Number(createPaymentDto.amountExtracted);
     this.validateAmounts(createPaymentDto, amount, amountExtracted);
 
     const queryRunner = externalQueryRunner || this.dataSource.createQueryRunner();
-    const { savedPayment, invoice, surplusId, surplusAmountUsd, surplusAmountBs, paymentDate } =
-      await this.executePaymentTransaction(
-        createPaymentDto,
-        amount,
-        amountExtracted,
-        queryRunner,
-        externalQueryRunner,
-      );
-
-    const enrichedPayment = await this.reloadPaymentWithRelations(queryRunner, savedPayment.id);
-    await this.emitPaymentRegisteredEvent(
+    const { savedPayment } = await this.executePaymentTransaction(
       createPaymentDto,
-      savedPayment,
-      enrichedPayment,
-      invoice,
-      deferredEvents,
-    );
-    await this.emitSurplusCreatedEvent(
-      savedPayment,
-      invoice,
-      surplusId,
-      surplusAmountUsd,
-      surplusAmountBs,
-      paymentDate,
-      deferredEvents,
+      amount,
+      amountExtracted,
+      queryRunner,
+      externalQueryRunner,
     );
 
     return savedPayment;
@@ -318,148 +291,6 @@ export class BillingService {
       }),
     );
     return saved.id;
-  }
-
-  /**
-   * Reloads the saved payment with all necessary relations.
-   * Swallows errors and returns null so event emission can fall back gracefully.
-   */
-  private async reloadPaymentWithRelations(
-    queryRunner: QueryRunner,
-    paymentId: string,
-  ): Promise<Payment | null> {
-    try {
-      const paymentRepo = queryRunner.manager.getRepository(Payment);
-      return await paymentRepo.findOne({
-        where: { id: paymentId },
-        relations: [
-          'person',
-          'invoice',
-          'invoice.contract',
-          'invoice.contract.advisor',
-          'invoice.details',
-          'invoice.details.plan',
-        ],
-      });
-    } catch (reloadError) {
-      this.logger.warn(
-        `Could not reload payment ${paymentId} with relations, falling back to saved data. ${
-          reloadError instanceof Error ? reloadError.message : String(reloadError)
-        }`,
-      );
-      return null;
-    }
-  }
-
-  /** Derives all display fields from enriched/fallback data and builds the event. */
-  private buildPaymentRegisteredEvent(
-    dto: CreatePaymentDto,
-    savedPayment: Payment,
-    enrichedPayment: Payment | null,
-    invoice: Invoice,
-  ): PaymentRegisteredEvent {
-    const contractCode = enrichedPayment?.invoice?.contract?.code || invoice?.contract?.code || '';
-    const personName = enrichedPayment?.person?.name || '';
-    const datePaymentReceipt = dto.datePaymentReceipt || '';
-    const totalInvoice = enrichedPayment?.invoice?.totalAmount ?? invoice?.totalAmount ?? 0;
-    const billingMonth = enrichedPayment?.invoice?.billingMonth ?? invoice?.billingMonth ?? '';
-    const planNames = [
-      ...new Set(
-        (enrichedPayment?.invoice?.details ?? []).map((d) => d.plan?.name).filter(Boolean),
-      ),
-    ].join(', ');
-    const advisorName = enrichedPayment?.invoice?.contract?.advisor?.name || '';
-
-    return new PaymentRegisteredEvent(
-      savedPayment.referenceNumber,
-      savedPayment.amount,
-      savedPayment.amountBs,
-      savedPayment.url,
-      savedPayment.createdAt || new Date(),
-      contractCode,
-      personName,
-      savedPayment.id,
-      totalInvoice,
-      datePaymentReceipt,
-      planNames,
-      advisorName,
-      billingMonth,
-    );
-  }
-
-  /**
-   * Emits an event immediately or pushes it to the deferred queue.
-   * Centralises the repeated `if (deferredEvents) … else emit(…)` pattern.
-   */
-  private emitOrDefer(
-    eventName: string,
-    payload: unknown,
-    deferredEvents?: Array<{ name: string; payload: unknown }>,
-  ): void {
-    if (deferredEvents) {
-      deferredEvents.push({ name: eventName, payload });
-    } else {
-      this.eventEmitter.emit(eventName, payload);
-    }
-  }
-
-  /** Builds and emits/defers the `payment.registered` event. Errors are logged, never rethrown. */
-  private async emitPaymentRegisteredEvent(
-    dto: CreatePaymentDto,
-    savedPayment: Payment,
-    enrichedPayment: Payment | null,
-    invoice: Invoice,
-    deferredEvents?: Array<{ name: string; payload: unknown }>,
-  ): Promise<void> {
-    try {
-      const eventPayload = this.buildPaymentRegisteredEvent(
-        dto,
-        savedPayment,
-        enrichedPayment,
-        invoice,
-      );
-      this.emitOrDefer('payment.registered', eventPayload, deferredEvents);
-    } catch (emitError) {
-      this.logger.error(
-        `Failed to emit payment.registered event for payment ${savedPayment.id}. The payment was saved successfully.`,
-        emitError instanceof Error ? emitError.stack : String(emitError),
-      );
-    }
-  }
-
-  /**
-   * Builds and emits/defers the `surplus.created` event when a surplus exists.
-   * Errors are logged, never rethrown.
-   */
-  private async emitSurplusCreatedEvent(
-    savedPayment: Payment,
-    invoice: Invoice,
-    surplusId: string | null,
-    surplusAmountUsd: number | null,
-    surplusAmountBs: number | null,
-    paymentDate: Date,
-    deferredEvents?: Array<{ name: string; payload: unknown }>,
-  ): Promise<void> {
-    if ((surplusAmountUsd === null && surplusAmountBs === null) || surplusId === null) {
-      return;
-    }
-    try {
-      const surplusEvent = new SurplusCreatedEvent(
-        savedPayment.referenceNumber,
-        surplusAmountUsd,
-        surplusAmountBs,
-        savedPayment.url,
-        paymentDate,
-        invoice.contract?.code ?? '',
-        surplusId,
-      );
-      this.emitOrDefer('surplus.created', surplusEvent, deferredEvents);
-    } catch (emitError) {
-      this.logger.error(
-        `Failed to emit surplus.created event for payment ${savedPayment.id}. The surplus was saved successfully.`,
-        emitError instanceof Error ? emitError.stack : String(emitError),
-      );
-    }
   }
 
   // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -295,6 +295,38 @@ describe('PersonsService', () => {
 
       const updatePersonDto: UpdatePersonDto = { planId: 'invalid-plan', contractId: 'contract-1' };
       await expect(service.update('1', updatePersonDto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException if identityCard is updated to an already existing one', async () => {
+      const updatePersonDto: UpdatePersonDto = {
+        identityCard: '999999',
+        typeIdentityCard: TypeIdentityCard.V,
+        contractId: 'contract-1',
+      };
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
+
+      const conflictingPerson = { id: 'other-id', name: 'Other Guy' } as Person;
+      jest.spyOn(repository, 'findOne').mockResolvedValue(conflictingPerson);
+
+      await expect(service.update('1', updatePersonDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should allow identityCard update if the conflicting record matches the current person ID', async () => {
+      const updatePersonDto: UpdatePersonDto = {
+        identityCard: '123456',
+        typeIdentityCard: TypeIdentityCard.V,
+        contractId: 'contract-1',
+      };
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
+      jest.spyOn(repository, 'findOne').mockResolvedValue(mockPerson);
+      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson);
+      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(mockContractPerson);
+      jest.spyOn(cpRepository, 'find').mockResolvedValue([mockContractPerson]);
+
+      const result = await service.update('1', updatePersonDto);
+      expect(result).toEqual(mockPerson);
     });
   });
 

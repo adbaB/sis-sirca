@@ -13,7 +13,6 @@ import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 import { DataSource } from 'typeorm';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 
 interface UserState {
   step:
@@ -55,7 +54,6 @@ export class ChatbotService {
     private billingService: BillingService,
     private personsService: PersonsService,
     private dataSource: DataSource,
-    private eventEmitter: EventEmitter2,
   ) {}
 
   private async sendMessage(to: string, text: string): Promise<void> {
@@ -958,7 +956,6 @@ export class ChatbotService {
     let isTransactionActive = false;
     let paymentsCreated = 0;
     let personId: string | undefined;
-    const deferredEvents: Array<{ name: string; payload: unknown }> = [];
 
     try {
       await queryRunner.connect();
@@ -1025,7 +1022,6 @@ export class ChatbotService {
               metadata: ocrMetadata,
             },
             queryRunner,
-            deferredEvents,
           );
           paymentsCreated++;
         }
@@ -1069,7 +1065,6 @@ export class ChatbotService {
               metadata: ocrMetadata,
             },
             queryRunner,
-            deferredEvents,
           );
           paymentsCreated++;
         }
@@ -1099,16 +1094,6 @@ export class ChatbotService {
     }
 
     try {
-      for (const event of deferredEvents) {
-        try {
-          // Use emitAsync so each async listener (e.g. Google Sheets appendRow) completes before
-          // the next event is fired, preventing race conditions when multiple invoices are paid.
-          await this.eventEmitter.emitAsync(event.name, event.payload);
-        } catch (evtError) {
-          this.logger.error(`Error emitting deferred event ${event.name}`, evtError);
-        }
-      }
-
       await this.redis.del(`chatbot_state:${fromNumber}`);
       await this.sendMessage(
         fromNumber,

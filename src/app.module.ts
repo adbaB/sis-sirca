@@ -30,6 +30,7 @@ import { RolesModule } from './roles/roles.module';
 import { StatisticsModule } from './statistics/statistics.module';
 import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
+import { PortfoliosModule } from './portfolios/portfolios.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { UsersModule } from './users/users.module';
     AdvisorsModule,
     StatisticsModule,
     ReportsModule,
+    PortfoliosModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,5 +1,4 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -47,13 +46,7 @@ describe('BillingService', () => {
     save: jest.fn(),
   };
 
-  let mockEventEmitter: { emit: jest.Mock };
-
   beforeEach(async () => {
-    mockEventEmitter = {
-      emit: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BillingService,
@@ -74,10 +67,6 @@ describe('BillingService', () => {
           useValue: {
             getExchangeRateByDate: jest.fn().mockResolvedValue({ rateUsd: 1 }),
           },
-        },
-        {
-          provide: EventEmitter2,
-          useValue: mockEventEmitter,
         },
         {
           provide: SurplusService,

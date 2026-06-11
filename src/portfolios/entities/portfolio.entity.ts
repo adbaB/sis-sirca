@@ -8,47 +8,53 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Person } from '../../persons/entities/person.entity';
+import { Contract } from '../../contracts/entities/contract.entity';
+import { Exclude } from 'class-transformer';
 
-export enum PlanStatus {
+export enum PortfolioStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
 }
 
-@Entity('plans')
+@Entity('portfolios')
 @Check(`"percentage" >= 0 AND "percentage" <= 100`)
-export class Plan {
+export class Portfolio {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'int', name: 'max_age' })
-  maxAge: number;
-
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
-  amount: number;
-
-  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0.0 })
-  percentage: number;
+  @Column({ type: 'varchar', length: 255, unique: true })
+  code: string;
 
   @Column({
     type: 'enum',
-    enum: PlanStatus,
-    default: PlanStatus.ACTIVE,
+    enum: PortfolioStatus,
+    default: PortfolioStatus.ACTIVE,
   })
-  status: PlanStatus;
+  status: PortfolioStatus;
 
-  @OneToMany('Person', (person: Person) => person.plan)
-  persons: Person[];
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0.0,
+  })
+  percentage: number;
 
+  @OneToMany(() => Contract, (contract: Contract) => contract.portfolio)
+  contracts: Contract[];
+
+  @Exclude()
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
 
+  @Exclude()
   @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
   updatedAt: Date;
 
+  @Exclude()
   @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
   deletedAt: Date;
 }
