@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { CreatePlanDto } from '../dto/create-plan.dto';
 import { UpdatePlanDto } from '../dto/update-plan.dto';
-import { Plan } from '../entities/plan.entity';
+import { Plan, PlanStatus } from '../entities/plan.entity';
 import { PlansService } from './plans.service';
 
 describe('PlansService', () => {
@@ -17,6 +17,8 @@ describe('PlansService', () => {
     name: 'Basic Plan',
     maxAge: 30,
     amount: 10,
+    percentage: 0,
+    status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,

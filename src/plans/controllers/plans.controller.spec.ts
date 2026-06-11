@@ -3,7 +3,7 @@ import { PlansController } from './plans.controller';
 import { PlansService } from '../services/plans.service';
 import { CreatePlanDto } from '../dto/create-plan.dto';
 import { UpdatePlanDto } from '../dto/update-plan.dto';
-import { Plan } from '../entities/plan.entity';
+import { Plan, PlanStatus } from '../entities/plan.entity';
 
 describe('PlansController', () => {
   let controller: PlansController;
@@ -14,6 +14,8 @@ describe('PlansController', () => {
     name: 'Basic Plan',
     amount: 10,
     maxAge: 30,
+    percentage: 0,
+    status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,

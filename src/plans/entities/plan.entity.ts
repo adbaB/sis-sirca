@@ -9,6 +9,11 @@ import {
 } from 'typeorm';
 import type { Person } from '../../persons/entities/person.entity';
 
+export enum PlanStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
 @Entity('plans')
 export class Plan {
   @PrimaryGeneratedColumn('uuid')
@@ -22,6 +27,16 @@ export class Plan {
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0.0 })
+  percentage: number;
+
+  @Column({
+    type: 'enum',
+    enum: PlanStatus,
+    default: PlanStatus.ACTIVE,
+  })
+  status: PlanStatus;
 
   @OneToMany('Person', (person: Person) => person.plan)
   persons: Person[];
