@@ -11,4 +11,12 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  @Get('debug-sentry')
+  getError() {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Debug endpoint is disabled in production');
+    }
+    throw new Error('My first Sentry error!');
+  }
 }

@@ -177,6 +177,26 @@ export class PersonsService {
       throw new NotFoundException(`Contract with ID "${contractId}" not found`);
     }
 
+    // ── 2.1. Validar unicidad de la cédula/RIF ──────────────────────────────
+    const targetIdentityCard = updateData.identityCard ?? person.identityCard;
+    const targetTypeIdentityCard = updateData.typeIdentityCard ?? person.typeIdentityCard;
+
+    if (
+      targetIdentityCard !== person.identityCard ||
+      targetTypeIdentityCard !== person.typeIdentityCard
+    ) {
+      const existingPerson = await this.personsRepository.findOne({
+        where: { identityCard: targetIdentityCard, typeIdentityCard: targetTypeIdentityCard },
+        withDeleted: true,
+      });
+
+      if (existingPerson && existingPerson.id !== id) {
+        throw new BadRequestException(
+          `La cédula o RIF ${targetTypeIdentityCard}-${targetIdentityCard} ya está registrada por otra persona (${existingPerson.name}).`,
+        );
+      }
+    }
+
     // ── 3. Resolver junction existente y rol ─────────────────────────────────
 
     const existingJunction = await this.contractPersonRepository.findOne({

@@ -20,6 +20,8 @@ import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
+import { Advisor } from '../../advisors/entities/advisor.entity';
+import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 
 export interface PipelineTotals {
   totalPipeline: number;
@@ -46,10 +48,11 @@ export class ContractsService {
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
-    const { advisorId, ...rest } = createContractDto;
+    const { advisorId, portfolioId, ...rest } = createContractDto;
     const contract = this.contractsRepository.create({
       ...rest,
       ...(advisorId ? { advisor: { id: advisorId } } : {}),
+      ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
     });
     return this.contractsRepository.save(contract);
   }
@@ -98,7 +101,8 @@ export class ContractsService {
     qb.leftJoinAndSelect('contract.contractPersons', 'contractPersons')
       .leftJoinAndSelect('contractPersons.person', 'person')
       .leftJoinAndSelect('person.plan', 'plan')
-      .leftJoinAndSelect('contract.advisor', 'advisor');
+      .leftJoinAndSelect('contract.advisor', 'advisor')
+      .leftJoinAndSelect('contract.portfolio', 'portfolio');
   }
 
   /**
@@ -447,6 +451,8 @@ export class ContractsService {
         'invoices.payments',
         'surpluses',
         'surpluses.payment',
+        'advisor',
+        'portfolio',
       ],
     });
     if (!contract) {
@@ -457,8 +463,19 @@ export class ContractsService {
 
   async update(id: string, updateContractDto: UpdateContractDto): Promise<Contract> {
     const contract = await this.findOne(id);
-    const updatedContract = Object.assign(contract, updateContractDto);
-    return this.contractsRepository.save(updatedContract);
+    const { advisorId, portfolioId, ...rest } = updateContractDto;
+
+    Object.assign(contract, rest);
+
+    if (advisorId !== undefined) {
+      contract.advisor = advisorId ? ({ id: advisorId } as Advisor) : null;
+    }
+
+    if (portfolioId !== undefined) {
+      contract.portfolio = portfolioId ? ({ id: portfolioId } as Portfolio) : null;
+    }
+
+    return this.contractsRepository.save(contract);
   }
 
   async remove(id: string): Promise<void> {

@@ -13,6 +13,7 @@ import type { ContractPerson } from './contract-person.entity';
 import type { Invoice } from '../../billing/entities/invoice.entity';
 import type { Advisor } from '../../advisors/entities/advisor.entity';
 import type { Surplus } from '../../billing/entities/surplus.entity';
+import type { Portfolio } from '../../portfolios/entities/portfolio.entity';
 
 export enum ContractStatus {
   ACTIVE = 'ACTIVE',
@@ -51,6 +52,10 @@ export class Contract {
   @ManyToOne('Advisor', (advisor: Advisor) => advisor.contracts, { nullable: true })
   @JoinColumn({ name: 'advisor_id' })
   advisor?: Advisor | null;
+
+  @ManyToOne('Portfolio', (portfolio: Portfolio) => portfolio.contracts, { nullable: true })
+  @JoinColumn({ name: 'portfolio_id' })
+  portfolio?: Portfolio | null;
 
   @Column({ type: 'enum', enum: ContractStatus, default: ContractStatus.ACTIVE })
   status: ContractStatus;

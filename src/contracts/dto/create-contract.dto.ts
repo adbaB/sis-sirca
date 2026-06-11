@@ -11,4 +11,8 @@ export class CreateContractDto {
   @IsOptional()
   @IsUUID()
   advisorId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  portfolioId?: string;
 }
