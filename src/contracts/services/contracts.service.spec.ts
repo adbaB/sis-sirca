@@ -228,6 +228,60 @@ describe('ContractsService', () => {
       expect(repository.save).toHaveBeenCalled();
       expect(result.affiliationDate.toISOString()).toContain('2023-02-01');
     });
+
+    it('should update and associate advisorId and portfolioId', async () => {
+      const updateContractDto: UpdateContractDto = {
+        advisorId: 'adv-1',
+        portfolioId: 'port-1',
+      };
+      const updatedContract = {
+        ...mockContract,
+        advisor: { id: 'adv-1' },
+        portfolio: { id: 'port-1' },
+      };
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
+      jest.spyOn(repository, 'save').mockResolvedValue(updatedContract as unknown as Contract);
+
+      const result = await service.update('1', updateContractDto);
+
+      expect(service.findOne).toHaveBeenCalledWith('1');
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          advisor: { id: 'adv-1' },
+          portfolio: { id: 'port-1' },
+        }),
+      );
+      expect(result.advisor).toEqual({ id: 'adv-1' });
+      expect(result.portfolio).toEqual({ id: 'port-1' });
+    });
+
+    it('should detach advisorId and portfolioId when they are null', async () => {
+      const updateContractDto: UpdateContractDto = {
+        advisorId: null,
+        portfolioId: null,
+      };
+      const updatedContract = {
+        ...mockContract,
+        advisor: null,
+        portfolio: null,
+      };
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
+      jest.spyOn(repository, 'save').mockResolvedValue(updatedContract as unknown as Contract);
+
+      const result = await service.update('1', updateContractDto);
+
+      expect(service.findOne).toHaveBeenCalledWith('1');
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          advisor: null,
+          portfolio: null,
+        }),
+      );
+      expect(result.advisor).toBeNull();
+      expect(result.portfolio).toBeNull();
+    });
   });
 
   describe('remove', () => {

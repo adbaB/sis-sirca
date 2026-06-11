@@ -192,7 +192,7 @@ export class PersonsService {
 
       if (existingPerson && existingPerson.id !== id) {
         throw new BadRequestException(
-          `La cédula o RIF ${targetTypeIdentityCard}-${targetIdentityCard} ya está registrada por otra persona (${existingPerson.name}).`,
+          `La cédula o RIF ${targetTypeIdentityCard}-${targetIdentityCard} ya está registrada.`,
         );
       }
     }

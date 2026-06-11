@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -7,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Contract } from '../../contracts/entities/contract.entity';
+import { Contract } from '../../contracts/entities/contract.entity';
 import { Exclude } from 'class-transformer';
 
 export enum PortfolioStatus {
@@ -16,6 +17,7 @@ export enum PortfolioStatus {
 }
 
 @Entity('portfolios')
+@Check(`"percentage" >= 0 AND "percentage" <= 100`)
 export class Portfolio {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -41,7 +43,7 @@ export class Portfolio {
   })
   percentage: number;
 
-  @OneToMany('Contract', (contract: Contract) => contract.portfolio)
+  @OneToMany(() => Contract, (contract: Contract) => contract.portfolio)
   contracts: Contract[];
 
   @Exclude()

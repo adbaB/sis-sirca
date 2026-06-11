@@ -9,7 +9,7 @@ export class AddPercentageAndPermissionsToPlans1781186541547 implements Migratio
       `ALTER TABLE "plans" ADD "percentage" numeric(5,2) NOT NULL DEFAULT 0.00`,
     );
     await queryRunner.query(
-      `ALTER TABLE "plans" ADD "status" character varying(20) NOT NULL DEFAULT 'ACTIVE'`,
+      `ALTER TABLE "plans" ADD "status" character varying(20) NOT NULL DEFAULT 'ACTIVE' CONSTRAINT "CK_plans_status" CHECK ("status" IN ('ACTIVE', 'INACTIVE'))`,
     );
 
     // 2. Seed RBAC permissions
@@ -41,11 +41,20 @@ export class AddPercentageAndPermissionsToPlans1781186541547 implements Migratio
     const permissions = ['create:plans', 'read:plans', 'update:plans', 'delete:plans'];
 
     for (const name of permissions) {
+      const description = `Permiso para ${name.replace(':', ' ')}`;
       await queryRunner.query(
-        `DELETE FROM "role_permissions" WHERE permission_id = (SELECT id FROM "permissions" WHERE name = CAST($1 AS varchar))`,
-        [name],
+        `DELETE FROM "role_permissions" 
+         WHERE permission_id = (
+           SELECT id FROM "permissions" 
+           WHERE name = CAST($1 AS varchar) AND description = CAST($2 AS varchar)
+         )`,
+        [name, description],
       );
-      await queryRunner.query(`DELETE FROM "permissions" WHERE name = CAST($1 AS varchar)`, [name]);
+      await queryRunner.query(
+        `DELETE FROM "permissions" 
+         WHERE name = CAST($1 AS varchar) AND description = CAST($2 AS varchar)`,
+        [name, description],
+      );
     }
 
     await queryRunner.query(`ALTER TABLE "plans" DROP COLUMN "status"`);

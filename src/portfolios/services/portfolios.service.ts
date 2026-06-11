@@ -14,8 +14,12 @@ export class PortfoliosService {
 
   async create(createPortfolioDto: CreatePortfolioDto): Promise<Portfolio> {
     const codeTrimmed = createPortfolioDto.code.trim().toUpperCase();
+    if (!codeTrimmed) {
+      throw new BadRequestException('El código del portafolio no puede estar vacío');
+    }
     const existing = await this.portfoliosRepository.findOne({
       where: { code: ILike(codeTrimmed) },
+      withDeleted: true,
     });
     if (existing) {
       throw new BadRequestException(
@@ -47,26 +51,24 @@ export class PortfoliosService {
   async update(id: string, updatePortfolioDto: UpdatePortfolioDto): Promise<Portfolio> {
     const portfolio = await this.findOne(id);
 
-    if (updatePortfolioDto.code) {
-      const codeTrimmed = updatePortfolioDto.code.trim().toUpperCase();
-      if (codeTrimmed !== portfolio.code) {
-        const existing = await this.portfoliosRepository.findOne({
-          where: { code: ILike(codeTrimmed) },
-        });
-        if (existing) {
-          throw new BadRequestException(
-            `El portafolio con código "${updatePortfolioDto.code}" ya existe`,
-          );
-        }
-        portfolio.code = codeTrimmed;
-      }
-    }
-
     const { code, ...rest } = updatePortfolioDto;
     Object.assign(portfolio, rest);
 
-    if (code) {
-      portfolio.code = code.trim().toUpperCase();
+    if (code !== undefined) {
+      const codeTrimmed = code.trim().toUpperCase();
+      if (!codeTrimmed) {
+        throw new BadRequestException('El código del portafolio no puede estar vacío');
+      }
+      if (codeTrimmed !== portfolio.code) {
+        const existing = await this.portfoliosRepository.findOne({
+          where: { code: ILike(codeTrimmed) },
+          withDeleted: true,
+        });
+        if (existing && existing.id !== id) {
+          throw new BadRequestException(`El portafolio con código "${code}" ya existe`);
+        }
+        portfolio.code = codeTrimmed;
+      }
     }
 
     return this.portfoliosRepository.save(portfolio);

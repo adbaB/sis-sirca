@@ -85,13 +85,5 @@ export class CreatePortfoliosTable1781183626976 implements MigrationInterface {
 
     // Drop table
     await queryRunner.query(`DROP TABLE "portfolios"`);
-
-    // Recreate enum and column
-    await queryRunner.query(
-      `CREATE TYPE "public"."contracts_portfolio_enum" AS ENUM('HER', 'APF', 'GMP')`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "contracts" ADD "portfolio" "public"."contracts_portfolio_enum"`,
-    );
   }
 }

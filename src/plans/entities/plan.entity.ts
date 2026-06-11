@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -15,6 +16,7 @@ export enum PlanStatus {
 }
 
 @Entity('plans')
+@Check(`"percentage" >= 0 AND "percentage" <= 100`)
 export class Plan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
