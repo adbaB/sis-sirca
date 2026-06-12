@@ -52,6 +52,12 @@ export class BillingController {
     return this.billingService.rejectPayment(id, reason || 'Rechazado por el administrador');
   }
 
+  @Patch('payments/:id/date')
+  @RequirePermissions('update:payments')
+  updatePaymentDate(@Param('id') id: string, @Body('paymentDate') paymentDate: string) {
+    return this.billingService.updatePaymentDate(id, paymentDate);
+  }
+
   @Post('contracts/:contractId/invoices')
   @RequirePermissions('create:billing')
   generateInvoice(

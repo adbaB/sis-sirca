@@ -577,6 +577,135 @@ export class BillingService {
     }
   }
 
+  async updatePaymentDate(id: string, newDateStr: string): Promise<Payment> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const paymentRepo = queryRunner.manager.getRepository(Payment);
+      const surplusRepo = queryRunner.manager.getRepository(Surplus);
+
+      const payment = await queryRunner.manager
+        .createQueryBuilder(Payment, 'payment')
+        .setQueryRunner(queryRunner)
+        .innerJoinAndSelect('payment.invoice', 'invoice')
+        .where('payment.id = :id', { id })
+        .setLock('pessimistic_write')
+        .getOne();
+
+      if (!payment) {
+        throw new NotFoundException(`Pago con ID ${id} no encontrado`);
+      }
+
+      const dt = DateTime.fromISO(newDateStr, { zone: 'America/Caracas' });
+      if (!dt.isValid) {
+        throw new BadRequestException('Formato de fecha inválido');
+      }
+      const newDate = dt.toJSDate();
+
+      const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(newDate);
+      if (!exchangeRate) {
+        throw new BadRequestException('No se encontró tasa de cambio para la fecha especificada.');
+      }
+
+      const rateUsd = Number(exchangeRate.rateUsd);
+
+      // Obtener excedentes asociados y activos
+      const associatedSurpluses = await surplusRepo.find({
+        where: { payment: { id: payment.id } },
+      });
+
+      let totalBs = Number(payment.amountBs || 0);
+      let totalUsd = Number(payment.amount || 0);
+
+      const existingSurplus = associatedSurpluses.find((s) => s.status !== SurplusStatus.CANCELLED);
+      if (existingSurplus) {
+        totalBs += Number(existingSurplus.amountBs || 0);
+        totalUsd += Number(existingSurplus.amountUsd || 0);
+      }
+
+      // Obtener factura bloqueada pesimistamente
+      const invoice = await this.fetchInvoiceWithLock(queryRunner, payment.invoice.id);
+
+      // Recalcular saldo pendiente antes de este pago
+      const invoiceUnpaidBefore = Math.max(
+        0,
+        Number(invoice.totalAmount) - (Number(invoice.paidAmount) - Number(payment.amount)),
+      );
+
+      let amountUsdInput = totalUsd;
+      if (payment.paymentMethod !== 'zelle') {
+        amountUsdInput = totalBs / rateUsd;
+      }
+
+      const split = this.computePaymentSplit(
+        amountUsdInput,
+        invoiceUnpaidBefore,
+        totalBs,
+        payment.paymentMethod,
+        rateUsd,
+      );
+
+      payment.paymentDate = newDate;
+      payment.amount = split.paymentAmountUsd;
+      payment.amountBs = split.paymentAmountBs;
+
+      const savedPayment = await paymentRepo.save(payment);
+
+      const hasSurplus = split.surplusAmountUsd !== null || split.surplusAmountBs !== null;
+
+      if (hasSurplus) {
+        if (existingSurplus) {
+          existingSurplus.amountUsd = split.surplusAmountUsd;
+          existingSurplus.amountBs = split.surplusAmountBs;
+          existingSurplus.date = newDate;
+          existingSurplus.status = SurplusStatus.PENDING;
+          await surplusRepo.save(existingSurplus);
+        } else {
+          await surplusRepo.save(
+            surplusRepo.create({
+              amountBs: split.surplusAmountBs,
+              amountUsd: split.surplusAmountUsd,
+              date: newDate,
+              payment: savedPayment,
+              invoice: null,
+              contract: invoice.contract,
+              status: SurplusStatus.PENDING,
+            }),
+          );
+        }
+      } else {
+        if (existingSurplus) {
+          existingSurplus.status = SurplusStatus.CANCELLED;
+          existingSurplus.amountUsd = null;
+          existingSurplus.amountBs = null;
+          await surplusRepo.save(existingSurplus);
+        }
+      }
+
+      await this.recalculateInvoicePaidAmount(invoice.id, queryRunner);
+
+      await queryRunner.commitTransaction();
+
+      const reloadedPayment = await this.paymentRepository.findOne({
+        where: { id: savedPayment.id },
+        relations: ['person', 'invoice', 'invoice.contract'],
+      });
+
+      if (!reloadedPayment) {
+        throw new NotFoundException(`Pago con ID ${savedPayment.id} no encontrado tras guardar`);
+      }
+
+      return reloadedPayment;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async generateInvoiceForContract(
     contractId: string,
     billingMonthInput?: string,
