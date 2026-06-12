@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import * as fs from 'fs/promises';
+import { DateTime } from 'luxon';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
 import { PdfService } from '../pdf/services/pdf.service';
@@ -84,9 +85,13 @@ export class SipCommissionsService {
       JOIN contracts c     ON inv.contract_id = c.id        AND c.deleted_at IS NULL
       JOIN plans p         ON id_detail.plan_id = p.id
       LEFT JOIN portfolios pf ON c.portfolio_id = pf.id
-      JOIN payments pay    ON pay.invoice_id = inv.id        AND pay.deleted_at IS NULL
-      WHERE pay.status = 'COMPLETED'
-        AND pay.payment_date >= $1
+      JOIN (
+        SELECT invoice_id, MAX(payment_date) AS payment_date
+        FROM payments
+        WHERE status = 'COMPLETED' AND deleted_at IS NULL
+        GROUP BY invoice_id
+      ) pay ON pay.invoice_id = inv.id
+      WHERE pay.payment_date >= $1
         AND pay.payment_date < ($2::date + interval '1 day')
         AND c.status = 'ACTIVE'
         AND id_detail.deleted_at IS NULL
@@ -117,17 +122,24 @@ export class SipCommissionsService {
     };
 
     const convenioRe = new RegExp(convenioInicialPattern);
-    const startDt = new Date(startDate + 'T00:00:00');
-    const endDt = new Date(endDate + 'T00:00:00');
-    endDt.setDate(endDt.getDate() + 1);
+    const toDateString = (dateVal: Date | string) => {
+      if (!dateVal) return '';
+      const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
+      return d.toISOString().slice(0, 10);
+    };
 
     for (const row of rawData) {
-      const affiliationDate = new Date(row.affiliation_date);
-      const paymentDate = new Date(row.payment_date);
-      const dueDate = new Date(row.due_date);
+      const affiliationDateStr = toDateString(row.affiliation_date);
+      const paymentDateStr = DateTime.fromJSDate(
+        row.payment_date instanceof Date ? row.payment_date : new Date(row.payment_date),
+      )
+        .setZone('America/Caracas')
+        .toFormat('yyyy-MM-dd');
+      const dueDateStr = toDateString(row.due_date);
+
       const isConvenioInicial = convenioRe.test(row.contract_code);
-      const isNew = affiliationDate >= startDt && affiliationDate < endDt;
-      const isExtemporaneo = paymentDate > dueDate;
+      const isNew = affiliationDateStr >= startDate && affiliationDateStr <= endDate;
+      const isExtemporaneo = paymentDateStr > dueDateStr;
 
       if (isNew) {
         sectionBuckets.nuevos.push(row);
