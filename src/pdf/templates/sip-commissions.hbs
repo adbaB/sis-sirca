@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Resumen Mensual de Comisiones SIP</title>
+  <style>
+    :root {
+      --primary-color: #1d9e11;
+      --text-color: #333333;
+      --border-color: #e2e8f0;
+      --alt-bg: #f8fafc;
+      --subtotal-bg: #e8f5e9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      font-size: 10px;
+    }
+    .page-container {
+      width: 100%;
+      margin: 0 auto;
+      padding: 10px;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid var(--primary-color);
+      padding-bottom: 8px;
+      margin-bottom: 15px;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .header-logo {
+      height: 40px;
+      width: auto;
+      object-fit: contain;
+    }
+    .header h1 {
+      color: var(--primary-color);
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .header-subtitle {
+      color: #666;
+      font-size: 10px;
+      margin: 2px 0 0 0;
+    }
+    .header-right {
+      text-align: right;
+      font-size: 9px;
+      color: #666;
+    }
+    .header-right p { margin: 2px 0; }
+
+    /* ── Title ────────────────────────────────────────────── */
+    .report-title {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    .report-title h2 {
+      color: var(--primary-color);
+      margin: 0 0 4px 0;
+      font-size: 14px;
+    }
+    .report-title p {
+      color: #333;
+      margin: 0;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    /* ── Section Header ───────────────────────────────────── */
+    .section-title-bar {
+      background-color: var(--primary-color);
+      color: white;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 6px 10px;
+      margin-top: 15px;
+      margin-bottom: 0;
+      border-radius: 4px 4px 0 0;
+    }
+
+    /* ── Table ────────────────────────────────────────────── */
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+    }
+    .report-table th,
+    .report-table td {
+      padding: 5px 6px;
+      text-align: center;
+      border: 1px solid var(--border-color);
+      font-size: 9px;
+    }
+    .report-table th {
+      background-color: #f1f5f9;
+      color: #334155;
+      font-weight: bold;
+    }
+    .report-table tbody tr:nth-child(even) td {
+      background-color: var(--alt-bg);
+    }
+    .text-left {
+      text-align: left !important;
+    }
+    .text-right {
+      text-align: right !important;
+    }
+    
+    .subtotal-row td {
+      background-color: var(--subtotal-bg) !important;
+      font-weight: bold;
+    }
+    
+    .section-total-row td {
+      font-weight: bold;
+      color: var(--primary-color);
+      font-size: 10px;
+    }
+
+    /* ── Grand Total ──────────────────────────────────────── */
+    .grand-total-box {
+      margin-top: 25px;
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .grand-total-box td {
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: bold;
+      border: 1px solid var(--primary-color);
+    }
+    .grand-total-label {
+      background-color: var(--primary-color);
+      color: white;
+      text-align: right;
+    }
+    .grand-total-value {
+      background-color: var(--primary-color);
+      color: white;
+      text-align: center;
+      width: 150px;
+    }
+
+    /* ── Footer ───────────────────────────────────────────── */
+    .footer {
+      margin-top: 30px;
+      text-align: center;
+      font-size: 8px;
+      color: #999;
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+    }
+    .footer p { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        {{#if logo}}
+        <img src="{{ logo }}" alt="Logo" class="header-logo" />
+        {{/if}}
+        <div>
+          <h1>SIRCA Plan de Salud</h1>
+          <p class="header-subtitle">Salud Integral El Rosario C.A.</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <p>Generado: <strong>{{ generatedAt }}</strong></p>
+      </div>
+    </div>
+
+    <!-- Report title -->
+    <div class="report-title">
+      <h2>RESUMEN MENSUAL DE COMISIONES SIP</h2>
+      <p>Corte: Del {{ startDateES }} Al {{ endDateES }}</p>
+    </div>
+
+    <!-- Sections Loop -->
+    {{#each sections}}
+      {{#if rows.length}}
+        <div class="section-title-bar">{{ title }}</div>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th rowspan="2" class="text-left" style="width: 25%;">PLANES DE SALUD</th>
+              <th rowspan="2" class="text-right" style="width: 12%;">IMPORTE MENSUAL</th>
+              <th rowspan="2" class="text-right" style="width: 14%;">COMISIÓN X AFILIADO</th>
+              <th colspan="{{ ../portfolioCodes.length }}" class="text-center">AFILIADOS X CARTERA</th>
+              <th rowspan="2" class="text-center" style="width: 12%;">TOTAL AFILIAC.</th>
+              <th rowspan="2" class="text-right" style="width: 14%;">COMISIÓN TOTAL</th>
+            </tr>
+            <tr>
+              {{#each ../portfolioCodes}}
+                <th class="text-center">{{ this }}</th>
+              {{/each}}
+            </tr>
+          </thead>
+          <tbody>
+            {{#each rows}}
+              <tr>
+                <td class="text-left">{{ planName }}</td>
+                <td class="text-right">${{ planAmountFormatted }}</td>
+                <td class="text-right">${{ commissionAmountFormatted }}</td>
+                {{#each ../../portfolioCodes}}
+                  <td class="text-center">
+                    {{lookup ../affiliatesByPortfolio this}}
+                  </td>
+                {{/each}}
+                <td class="text-center">{{ totalAffiliates }}</td>
+                <td class="text-right">${{ totalCommissionFormatted }}</td>
+              </tr>
+            {{/each}}
+            
+            <!-- Subtotals Row -->
+            <tr class="subtotal-row">
+              <td class="text-left" colspan="3">Subtotales</td>
+              {{#each ../portfolioCodes}}
+                <td class="text-center">
+                  {{lookup ../subtotalAffiliatesByPortfolio this}}
+                </td>
+              {{/each}}
+              <td class="text-center">{{ subtotalAffiliates }}</td>
+              <td class="text-right">${{ subtotalCommissionFormatted }}</td>
+            </tr>
+
+            <!-- Section Total Row -->
+            <tr class="section-total-row">
+              <td class="text-right" colspan="{{ ../colspan }}">
+                MONTO TOTAL POR COMISIONES A PAGAR:
+              </td>
+              <td class="text-right" style="border: 2px solid var(--primary-color);">
+                ${{ subtotalCommissionFormatted }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      {{/if}}
+    {{/each}}
+
+    <!-- Grand Total Box -->
+    <table class="grand-total-box">
+      <tr>
+        <td class="grand-total-label">TOTAL MONTO A PAGAR POR COMISIONES AL CORTE:</td>
+        <td class="grand-total-value">${{ grandTotalCommissionFormatted }}</td>
+      </tr>
+    </table>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>P/Administración SIRCA</p>
+      <p>Documento generado automáticamente por el sistema SIRCA &mdash; {{ generatedAt }}</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -17,7 +17,7 @@ export enum PortfolioStatus {
 }
 
 @Entity('portfolios')
-@Check(`"percentage" >= 0 AND "percentage" <= 100`)
+@Check(`"commission_amount" >= 0`)
 export class Portfolio {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -37,11 +37,12 @@ export class Portfolio {
 
   @Column({
     type: 'decimal',
-    precision: 5,
+    precision: 10,
     scale: 2,
     default: 0.0,
+    name: 'commission_amount',
   })
-  percentage: number;
+  commissionAmount: number;
 
   @OneToMany(() => Contract, (contract: Contract) => contract.portfolio)
   contracts: Contract[];

@@ -6,11 +6,12 @@ import { ContractPerson } from '../contracts/entities/contract-person.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
+import { SipCommissionsService } from './sip-commissions.service';
 import { PdfModule } from '../pdf/pdf.module';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Invoice, Contract, ContractPerson, Payment]), PdfModule],
   controllers: [ReportsController],
-  providers: [ReportsService],
+  providers: [ReportsService, SipCommissionsService],
 })
 export class ReportsModule {}

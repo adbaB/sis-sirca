@@ -16,7 +16,7 @@ export enum PlanStatus {
 }
 
 @Entity('plans')
-@Check(`"percentage" >= 0 AND "percentage" <= 100`)
+@Check(`"commission_amount" >= 0`)
 export class Plan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -30,8 +30,8 @@ export class Plan {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 
-  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0.0 })
-  percentage: number;
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.0, name: 'commission_amount' })
+  commissionAmount: number;
 
   @Column({
     type: 'enum',

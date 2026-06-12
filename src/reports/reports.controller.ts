@@ -1,11 +1,15 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { RequirePermissions } from '../auth/decorators';
 import { ReportsService } from './reports.service';
+import { SipCommissionsService } from './sip-commissions.service';
 
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly sipCommissionsService: SipCommissionsService,
+  ) {}
 
   @Get('contracts/excel')
   @RequirePermissions('read:reports')
@@ -36,6 +40,48 @@ export class ReportsController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="reporte-contratos-${year}-${monthStr}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('sip-commissions/excel')
+  @RequirePermissions('read:reports')
+  async downloadSipCommissionsExcel(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Res() res: Response,
+  ) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      throw new BadRequestException('Formato de fecha inválido. Debe ser YYYY-MM-DD');
+    }
+
+    const buffer = await this.sipCommissionsService.generateExcel(startDate, endDate);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="comisiones-sip-${startDate}-a-${endDate}.xlsx"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('sip-commissions/pdf')
+  @RequirePermissions('read:reports')
+  async downloadSipCommissionsPdf(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Res() res: Response,
+  ) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      throw new BadRequestException('Formato de fecha inválido. Debe ser YYYY-MM-DD');
+    }
+
+    const buffer = await this.sipCommissionsService.generatePdf(startDate, endDate);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="comisiones-sip-${startDate}-a-${endDate}.pdf"`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);
