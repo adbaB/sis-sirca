@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PortfolioStatus } from '../entities/portfolio.entity';
 import { Type } from 'class-transformer';
 
@@ -17,7 +17,7 @@ export class CreatePortfolioDto {
 
   @IsNumber()
   @Min(0)
-  @Max(100)
+  @IsOptional()
   @Type(() => Number)
-  percentage: number;
+  commissionAmount?: number;
 }

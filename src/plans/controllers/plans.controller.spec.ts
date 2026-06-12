@@ -14,7 +14,7 @@ describe('PlansController', () => {
     name: 'Basic Plan',
     amount: 10,
     maxAge: 30,
-    percentage: 0,
+    commissionAmount: 0,
     status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),

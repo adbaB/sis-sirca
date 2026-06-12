@@ -4,7 +4,6 @@ import {
   IsNumber,
   IsOptional,
   IsPositive,
-  Max,
   Min,
   IsString,
   IsEnum,
@@ -27,10 +26,9 @@ export class CreatePlanDto {
 
   @IsNumber()
   @Min(0)
-  @Max(100)
   @IsOptional()
   @Type(() => Number)
-  percentage?: number;
+  commissionAmount?: number;
 
   @IsEnum(PlanStatus)
   @IsOptional()

@@ -7,7 +7,7 @@ import * as path from 'path';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { PaymentStatus } from '../billing/entities/payment.entity';
 import { PdfService } from '../pdf/services/pdf.service';
-import { ContractStatus } from 'src/contracts/entities/contract.entity';
+import { ContractStatus } from '../contracts/entities/contract.entity';
 
 interface ContractReportRow {
   contractCode: string;

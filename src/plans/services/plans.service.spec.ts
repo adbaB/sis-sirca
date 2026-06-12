@@ -17,7 +17,7 @@ describe('PlansService', () => {
     name: 'Basic Plan',
     maxAge: 30,
     amount: 10,
-    percentage: 0,
+    commissionAmount: 0,
     status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),
