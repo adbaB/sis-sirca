@@ -21,6 +21,7 @@ describe('SipCommissionsService', () => {
       affiliation_date: '2026-04-05',
       payment_date: '2026-04-10',
       due_date: '2026-04-15',
+      issue_date: '2026-04-01',
       affiliate_count: '2',
     },
     // 2. Cobranzas Nuevo Convenio (payment_date <= due_date, code is not initial)
@@ -33,6 +34,7 @@ describe('SipCommissionsService', () => {
       affiliation_date: '2026-03-01',
       payment_date: '2026-04-10',
       due_date: '2026-04-15',
+      issue_date: '2026-04-01',
       affiliate_count: '3',
     },
     // 3. Cobranzas Convenio Inicial (payment_date <= due_date, code is SIR-002-010)
@@ -45,6 +47,7 @@ describe('SipCommissionsService', () => {
       affiliation_date: '2026-03-01',
       payment_date: '2026-04-10',
       due_date: '2026-04-15',
+      issue_date: '2026-04-01',
       affiliate_count: '1',
     },
     // 4. Extemporaneos Nuevo Convenio (payment_date > due_date, code not initial)
@@ -57,6 +60,7 @@ describe('SipCommissionsService', () => {
       affiliation_date: '2026-03-01',
       payment_date: '2026-04-20',
       due_date: '2026-04-15',
+      issue_date: '2026-04-01',
       affiliate_count: '5',
     },
     // 5. Extemporaneos Convenio Inicial (payment_date > due_date, code is SIR-002-010)
@@ -69,6 +73,7 @@ describe('SipCommissionsService', () => {
       affiliation_date: '2026-03-01',
       payment_date: '2026-04-20',
       due_date: '2026-04-15',
+      issue_date: '2026-04-01',
       affiliate_count: '4',
     },
   ];
@@ -108,7 +113,7 @@ describe('SipCommissionsService', () => {
         .mockResolvedValueOnce(mockPortfolios) // first query
         .mockResolvedValueOnce(mockRawData); // second query
 
-      const result = await service.buildReportData('2026-04-01', '2026-04-30');
+      const result = await service.buildReportData(2026, 4);
 
       expect(querySpy).toHaveBeenCalledTimes(2);
       expect(result.portfolioCodes).toEqual(['APF', 'GMP', 'HER']);
@@ -168,7 +173,7 @@ describe('SipCommissionsService', () => {
         .mockResolvedValueOnce(mockPortfolios)
         .mockResolvedValueOnce(mockRawData);
 
-      const buffer = await service.generateExcel('2026-04-01', '2026-04-30');
+      const buffer = await service.generateExcel(2026, 4);
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
     });
@@ -181,7 +186,7 @@ describe('SipCommissionsService', () => {
         .mockResolvedValueOnce(mockPortfolios)
         .mockResolvedValueOnce(mockRawData);
 
-      const buffer = await service.generatePdf('2026-04-01', '2026-04-30');
+      const buffer = await service.generatePdf(2026, 4);
 
       expect(pdfService.generatePdf).toHaveBeenCalledWith(
         'sip-commissions',

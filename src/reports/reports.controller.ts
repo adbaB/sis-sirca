@@ -48,19 +48,19 @@ export class ReportsController {
   @Get('sip-commissions/excel')
   @RequirePermissions('read:reports')
   async downloadSipCommissionsExcel(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+    @Query('year') year: number,
+    @Query('month') month: number,
     @Res() res: Response,
   ) {
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
-      throw new BadRequestException('Formato de fecha inválido. Debe ser YYYY-MM-DD');
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      throw new BadRequestException('Año o mes inválidos.');
     }
 
-    const buffer = await this.sipCommissionsService.generateExcel(startDate, endDate);
+    const buffer = await this.sipCommissionsService.generateExcel(Number(year), Number(month));
+    const monthStr = String(month).padStart(2, '0');
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="comisiones-sip-${startDate}-a-${endDate}.xlsx"`,
+      'Content-Disposition': `attachment; filename="comisiones-sip-${year}-${monthStr}.xlsx"`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);
@@ -69,19 +69,19 @@ export class ReportsController {
   @Get('sip-commissions/pdf')
   @RequirePermissions('read:reports')
   async downloadSipCommissionsPdf(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+    @Query('year') year: number,
+    @Query('month') month: number,
     @Res() res: Response,
   ) {
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
-      throw new BadRequestException('Formato de fecha inválido. Debe ser YYYY-MM-DD');
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      throw new BadRequestException('Año o mes inválidos.');
     }
 
-    const buffer = await this.sipCommissionsService.generatePdf(startDate, endDate);
+    const buffer = await this.sipCommissionsService.generatePdf(Number(year), Number(month));
+    const monthStr = String(month).padStart(2, '0');
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="comisiones-sip-${startDate}-a-${endDate}.pdf"`,
+      'Content-Disposition': `attachment; filename="comisiones-sip-${year}-${monthStr}.pdf"`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);

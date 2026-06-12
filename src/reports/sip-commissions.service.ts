@@ -57,7 +57,14 @@ export class SipCommissionsService {
   /**
    * Build the complete SIP commission report data from the database.
    */
-  async buildReportData(startDate: string, endDate: string): Promise<SipCommissionReport> {
+  async buildReportData(year: number, month: number): Promise<SipCommissionReport> {
+    const monthStr = String(month).padStart(2, '0');
+    const billingMonth = `${year}-${monthStr}`;
+
+    const startDate = `${year}-${monthStr}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const endDate = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
     // 1. Get all active portfolio codes for column headers
     const portfolios = await this.dataSource.query(
       `SELECT code FROM portfolios WHERE status = 'ACTIVE' AND deleted_at IS NULL ORDER BY code`,
@@ -79,6 +86,7 @@ export class SipCommissionsService {
         c.affiliation_date,
         pay.payment_date,
         inv.due_date,
+        inv.issue_date,
         COUNT(DISTINCT id_detail.id) AS affiliate_count
       FROM invoice_details id_detail
       JOIN invoices inv    ON id_detail.invoice_id = inv.id AND inv.deleted_at IS NULL
@@ -91,14 +99,13 @@ export class SipCommissionsService {
         WHERE status = 'COMPLETED' AND deleted_at IS NULL
         GROUP BY invoice_id
       ) pay ON pay.invoice_id = inv.id
-      WHERE pay.payment_date >= $1
-        AND pay.payment_date < ($2::date + interval '1 day')
+      WHERE inv.billing_month = $1
         AND c.status = 'ACTIVE'
         AND id_detail.deleted_at IS NULL
       GROUP BY p.name, p.amount, p.commission_amount, pf.code,
-               c.code, c.affiliation_date, pay.payment_date, inv.due_date
+               c.code, c.affiliation_date, pay.payment_date, inv.due_date, inv.issue_date
       `,
-      [startDate, endDate],
+      [billingMonth],
     );
 
     // Collect all unique portfolio codes from rawData
@@ -136,9 +143,16 @@ export class SipCommissionsService {
         .setZone('America/Caracas')
         .toFormat('yyyy-MM-dd');
       const dueDateStr = toDateString(row.due_date);
+      const issueDateStr = toDateString(row.issue_date);
+      const nextIssueDateStr = DateTime.fromJSDate(
+        row.issue_date instanceof Date ? row.issue_date : new Date(row.issue_date),
+      )
+        .setZone('America/Caracas')
+        .plus({ months: 1 })
+        .toFormat('yyyy-MM-dd');
 
       const isConvenioInicial = convenioRe.test(row.contract_code);
-      const isNew = affiliationDateStr >= startDate && affiliationDateStr <= endDate;
+      const isNew = affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
       const isExtemporaneo = paymentDateStr > dueDateStr;
 
       if (isNew) {
@@ -268,8 +282,8 @@ export class SipCommissionsService {
   /**
    * Generate the formatted Excel workbook buffer.
    */
-  async generateExcel(startDate: string, endDate: string): Promise<Buffer> {
-    const report = await this.buildReportData(startDate, endDate);
+  async generateExcel(year: number, month: number): Promise<Buffer> {
+    const report = await this.buildReportData(year, month);
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'SIRCA - Sistema Integral';
     workbook.created = new Date();
@@ -605,8 +619,8 @@ export class SipCommissionsService {
   /**
    * Generate the formatted PDF report buffer.
    */
-  async generatePdf(startDate: string, endDate: string): Promise<Buffer> {
-    const report = await this.buildReportData(startDate, endDate);
+  async generatePdf(year: number, month: number): Promise<Buffer> {
+    const report = await this.buildReportData(year, month);
 
     const generatedAt = new Date().toLocaleString('es-VE', {
       timeZone: 'America/Caracas',

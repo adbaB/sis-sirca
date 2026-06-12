@@ -81,14 +81,13 @@ describe('ReportsController', () => {
   describe('downloadSipCommissionsExcel', () => {
     it('should generate and return SIP commissions Excel file with headers', async () => {
       const res = mockResponse();
-      await controller.downloadSipCommissionsExcel('2026-04-01', '2026-04-30', res);
+      await controller.downloadSipCommissionsExcel(2026, 4, res);
 
-      expect(sipCommissionsService.generateExcel).toHaveBeenCalledWith('2026-04-01', '2026-04-30');
+      expect(sipCommissionsService.generateExcel).toHaveBeenCalledWith(2026, 4);
       expect(res.set).toHaveBeenCalledWith(
         expect.objectContaining({
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition':
-            'attachment; filename="comisiones-sip-2026-04-01-a-2026-04-30.xlsx"',
+          'Content-Disposition': 'attachment; filename="comisiones-sip-2026-04.xlsx"',
         }),
       );
       expect(res.end).toHaveBeenCalledWith(Buffer.from('sip-commissions-excel'));
@@ -98,14 +97,13 @@ describe('ReportsController', () => {
   describe('downloadSipCommissionsPdf', () => {
     it('should generate and return SIP commissions PDF file with headers', async () => {
       const res = mockResponse();
-      await controller.downloadSipCommissionsPdf('2026-04-01', '2026-04-30', res);
+      await controller.downloadSipCommissionsPdf(2026, 4, res);
 
-      expect(sipCommissionsService.generatePdf).toHaveBeenCalledWith('2026-04-01', '2026-04-30');
+      expect(sipCommissionsService.generatePdf).toHaveBeenCalledWith(2026, 4);
       expect(res.set).toHaveBeenCalledWith(
         expect.objectContaining({
           'Content-Type': 'application/pdf',
-          'Content-Disposition':
-            'attachment; filename="comisiones-sip-2026-04-01-a-2026-04-30.pdf"',
+          'Content-Disposition': 'attachment; filename="comisiones-sip-2026-04.pdf"',
         }),
       );
       expect(res.end).toHaveBeenCalledWith(Buffer.from('sip-commissions-pdf'));
