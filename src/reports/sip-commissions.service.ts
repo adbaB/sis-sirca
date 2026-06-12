@@ -61,7 +61,7 @@ export class SipCommissionsService {
     const portfolios = await this.dataSource.query(
       `SELECT code FROM portfolios WHERE status = 'ACTIVE' AND deleted_at IS NULL ORDER BY code`,
     );
-    const portfolioCodes: string[] = portfolios.map((p: { code: string }) => p.code);
+    const activePortfolioCodes: string[] = portfolios.map((p: { code: string }) => p.code);
 
     // 2. Determine which contract codes are "convenio inicial" (SIR-002-001 to SIR-002-060)
     const convenioInicialPattern = `^SIR-002-0[0-5][0-9]$|^SIR-002-060$`;
@@ -96,6 +96,17 @@ export class SipCommissionsService {
       [startDate, endDate],
     );
 
+    // Collect all unique portfolio codes from rawData
+    const foundCodes = new Set<string>();
+    for (const row of rawData) {
+      foundCodes.add(row.portfolio_code);
+    }
+    const extraCodes = Array.from(foundCodes).filter(
+      (code) => !activePortfolioCodes.includes(code),
+    );
+    extraCodes.sort();
+    const portfolioCodes = [...activePortfolioCodes, ...extraCodes];
+
     // 4. Classify each record into a section
     const sectionBuckets: Record<string, Array<(typeof rawData)[0]>> = {
       nuevos: [],
@@ -106,15 +117,16 @@ export class SipCommissionsService {
     };
 
     const convenioRe = new RegExp(convenioInicialPattern);
-    const startDt = new Date(startDate);
-    const endDt = new Date(endDate);
+    const startDt = new Date(startDate + 'T00:00:00');
+    const endDt = new Date(endDate + 'T00:00:00');
+    endDt.setDate(endDt.getDate() + 1);
 
     for (const row of rawData) {
       const affiliationDate = new Date(row.affiliation_date);
       const paymentDate = new Date(row.payment_date);
       const dueDate = new Date(row.due_date);
       const isConvenioInicial = convenioRe.test(row.contract_code);
-      const isNew = affiliationDate >= startDt && affiliationDate <= endDt;
+      const isNew = affiliationDate >= startDt && affiliationDate < endDt;
       const isExtemporaneo = paymentDate > dueDate;
 
       if (isNew) {
@@ -610,7 +622,13 @@ export class SipCommissionsService {
         planName: row.planName,
         planAmountFormatted: Number(row.planAmount).toFixed(2),
         commissionAmountFormatted: Number(row.commissionAmount).toFixed(2),
-        affiliatesByPortfolio: row.affiliatesByPortfolio,
+        affiliatesByPortfolio: report.portfolioCodes.reduce(
+          (acc, code) => {
+            acc[code] = row.affiliatesByPortfolio[code] || 0;
+            return acc;
+          },
+          {} as Record<string, number>,
+        ),
         totalAffiliates: row.totalAffiliates,
         totalCommissionFormatted: Number(row.totalCommission).toFixed(2),
       })),

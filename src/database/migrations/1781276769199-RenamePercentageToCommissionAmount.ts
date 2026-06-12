@@ -53,6 +53,14 @@ export class RenamePercentageToCommissionAmount1781276769199 implements Migratio
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Clamp values to 100 to avoid numeric overflow and constraint errors during reversion
+    await queryRunner.query(
+      `UPDATE "portfolios" SET "commission_amount" = 100 WHERE "commission_amount" > 100`,
+    );
+    await queryRunner.query(
+      `UPDATE "plans" SET "commission_amount" = 100 WHERE "commission_amount" > 100`,
+    );
+
     // Revert portfolios
     await queryRunner.query(
       `ALTER TABLE "portfolios" DROP CONSTRAINT IF EXISTS "CHK_portfolios_commission_amount"`,

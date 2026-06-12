@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { RequirePermissions } from '../auth/decorators';
 import { ReportsService } from './reports.service';
@@ -52,6 +52,11 @@ export class ReportsController {
     @Query('endDate') endDate: string,
     @Res() res: Response,
   ) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      throw new BadRequestException('Formato de fecha inválido. Debe ser YYYY-MM-DD');
+    }
+
     const buffer = await this.sipCommissionsService.generateExcel(startDate, endDate);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -68,6 +73,11 @@ export class ReportsController {
     @Query('endDate') endDate: string,
     @Res() res: Response,
   ) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      throw new BadRequestException('Formato de fecha inválido. Debe ser YYYY-MM-DD');
+    }
+
     const buffer = await this.sipCommissionsService.generatePdf(startDate, endDate);
     res.set({
       'Content-Type': 'application/pdf',
