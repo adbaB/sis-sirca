@@ -20,6 +20,8 @@ interface AdvisorPaymentRow {
   invoiceStatusLabel: string;
   surplusAmount: number;
   surplusAmountFormatted: string;
+  surplusAmountBs: number;
+  surplusAmountBsFormatted: string;
   titularCard: string;
   titularName: string;
 }
@@ -29,6 +31,8 @@ interface PortfolioSection {
   payments: AdvisorPaymentRow[];
   subtotalSurplus: number;
   subtotalSurplusFormatted: string;
+  subtotalSurplusBs: number;
+  subtotalSurplusBsFormatted: string;
   subtotalBs: number;
   subtotalBsFormatted: string;
   subtotalUsd: number;
@@ -41,6 +45,8 @@ interface AdvisorPaymentsReport {
   sections: PortfolioSection[];
   grandTotalSurplus: number;
   grandTotalSurplusFormatted: string;
+  grandTotalSurplusBs: number;
+  grandTotalSurplusBsFormatted: string;
   grandTotalBs: number;
   grandTotalBsFormatted: string;
   grandTotalUsd: number;
@@ -125,6 +131,12 @@ export class AdvisorPaymentsService {
            WHERE s.payment_id = pay.id AND s.status != 'cancelled'),
           0
         ) AS surplus_amount,
+        COALESCE(
+          (SELECT SUM(amount_bs)
+           FROM surpluses s
+           WHERE s.payment_id = pay.id AND s.status != 'cancelled'),
+          0
+        ) AS surplus_amount_bs,
         pers.type_identity_card,
         pers.identity_card,
         pers.name AS titular_name
@@ -188,6 +200,8 @@ export class AdvisorPaymentsService {
         invoiceStatusLabel,
         surplusAmount: Number(row.surplus_amount || 0),
         surplusAmountFormatted: Number(row.surplus_amount || 0).toFixed(2),
+        surplusAmountBs: Number(row.surplus_amount_bs || 0),
+        surplusAmountBsFormatted: Number(row.surplus_amount_bs || 0).toFixed(2),
         titularCard,
         titularName: row.titular_name || 'Sin titular',
       });
@@ -196,15 +210,18 @@ export class AdvisorPaymentsService {
     // 4. Calculate subtotals and grand totals
     const sections: PortfolioSection[] = [];
     let grandTotalSurplus = 0;
+    let grandTotalSurplusBs = 0;
     let grandTotalBs = 0;
     let grandTotalUsd = 0;
 
     for (const [portfolioCode, payments] of portfolioGroups.entries()) {
       const subtotalSurplus = payments.reduce((sum, r) => sum + r.surplusAmount, 0);
+      const subtotalSurplusBs = payments.reduce((sum, r) => sum + r.surplusAmountBs, 0);
       const subtotalBs = payments.reduce((sum, r) => sum + r.paymentAmountBs, 0);
       const subtotalUsd = payments.reduce((sum, r) => sum + r.paymentAmount, 0);
 
       grandTotalSurplus += subtotalSurplus;
+      grandTotalSurplusBs += subtotalSurplusBs;
       grandTotalBs += subtotalBs;
       grandTotalUsd += subtotalUsd;
 
@@ -213,6 +230,8 @@ export class AdvisorPaymentsService {
         payments,
         subtotalSurplus,
         subtotalSurplusFormatted: subtotalSurplus.toFixed(2),
+        subtotalSurplusBs,
+        subtotalSurplusBsFormatted: subtotalSurplusBs.toFixed(2),
         subtotalBs,
         subtotalBsFormatted: subtotalBs.toFixed(2),
         subtotalUsd,
@@ -229,6 +248,8 @@ export class AdvisorPaymentsService {
       sections,
       grandTotalSurplus,
       grandTotalSurplusFormatted: grandTotalSurplus.toFixed(2),
+      grandTotalSurplusBs,
+      grandTotalSurplusBsFormatted: grandTotalSurplusBs.toFixed(2),
       grandTotalBs,
       grandTotalBsFormatted: grandTotalBs.toFixed(2),
       grandTotalUsd,
@@ -250,7 +271,7 @@ export class AdvisorPaymentsService {
       pageSetup: { orientation: 'landscape', fitToPage: true },
     });
 
-    const totalCols = 9;
+    const totalCols = 10;
 
     // A. TITLE
     const titleRow = ws.addRow(['RELACIÓN DE PAGOS POR ASESOR']);
@@ -326,6 +347,7 @@ export class AdvisorPaymentsService {
         'MÉTODO',
         'ESTADO FACT.',
         'EXCEDENTE ($)',
+        'EXCEDENTE (Bs.)',
         'MONTO BS.',
         'MONTO USD ($)',
       ];
@@ -355,6 +377,7 @@ export class AdvisorPaymentsService {
           pay.paymentMethod,
           pay.invoiceStatusLabel,
           pay.surplusAmount,
+          pay.surplusAmountBs,
           pay.paymentAmountBs,
           pay.paymentAmount,
         ];
@@ -373,8 +396,10 @@ export class AdvisorPaymentsService {
         row.getCell(7).alignment = { horizontal: 'right' };
         row.getCell(8).numFmt = '"Bs. "#,##0.00';
         row.getCell(8).alignment = { horizontal: 'right' };
-        row.getCell(9).numFmt = '$#,##0.00';
+        row.getCell(9).numFmt = '"Bs. "#,##0.00';
         row.getCell(9).alignment = { horizontal: 'right' };
+        row.getCell(10).numFmt = '$#,##0.00';
+        row.getCell(10).alignment = { horizontal: 'right' };
 
         for (let c = 1; c <= totalCols; c++) {
           row.getCell(c).border = {
@@ -397,6 +422,7 @@ export class AdvisorPaymentsService {
         '',
         '',
         section.subtotalSurplus,
+        section.subtotalSurplusBs,
         section.subtotalBs,
         section.subtotalUsd,
       ]);
@@ -414,9 +440,13 @@ export class AdvisorPaymentsService {
       subtotalRow.getCell(8).font = { name: 'Calibri', size: 10, bold: true };
       subtotalRow.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
 
-      subtotalRow.getCell(9).numFmt = '$#,##0.00';
+      subtotalRow.getCell(9).numFmt = '"Bs. "#,##0.00';
       subtotalRow.getCell(9).font = { name: 'Calibri', size: 10, bold: true };
       subtotalRow.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+
+      subtotalRow.getCell(10).numFmt = '$#,##0.00';
+      subtotalRow.getCell(10).font = { name: 'Calibri', size: 10, bold: true };
+      subtotalRow.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
 
       for (let c = 1; c <= totalCols; c++) {
         const cell = subtotalRow.getCell(c);
@@ -451,9 +481,10 @@ export class AdvisorPaymentsService {
       '',
       '',
       '',
+      '',
       report.grandTotalSurplus,
     ]);
-    ws.mergeCells(blankRowIdx + 1, 1, blankRowIdx + 1, 8);
+    ws.mergeCells(blankRowIdx + 1, 1, blankRowIdx + 1, 9);
     gtSurplusRow.height = 24;
     gtSurplusRow.getCell(1).font = {
       name: 'Calibri',
@@ -467,15 +498,55 @@ export class AdvisorPaymentsService {
       pattern: 'solid',
       fgColor: { argb: 'FF' + BRAND.primaryGreen },
     };
-    gtSurplusRow.getCell(9).numFmt = '$#,##0.00';
-    gtSurplusRow.getCell(9).font = {
+    gtSurplusRow.getCell(10).numFmt = '$#,##0.00';
+    gtSurplusRow.getCell(10).font = {
       name: 'Calibri',
       size: 11,
       bold: true,
       color: { argb: 'FFFFFFFF' },
     };
-    gtSurplusRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtSurplusRow.getCell(9).fill = {
+    gtSurplusRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+    gtSurplusRow.getCell(10).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF' + BRAND.primaryGreen },
+    };
+
+    const gtSurplusBsRow = ws.addRow([
+      'MONTO TOTAL EXCEDENTES BS. (Bs.):',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      report.grandTotalSurplusBs,
+    ]);
+    ws.mergeCells(blankRowIdx + 2, 1, blankRowIdx + 2, 9);
+    gtSurplusBsRow.height = 24;
+    gtSurplusBsRow.getCell(1).font = {
+      name: 'Calibri',
+      size: 11,
+      bold: true,
+      color: { argb: 'FFFFFFFF' },
+    };
+    gtSurplusBsRow.getCell(1).alignment = { horizontal: 'right', vertical: 'middle' };
+    gtSurplusBsRow.getCell(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF' + BRAND.primaryGreen },
+    };
+    gtSurplusBsRow.getCell(10).numFmt = '"Bs. "#,##0.00';
+    gtSurplusBsRow.getCell(10).font = {
+      name: 'Calibri',
+      size: 11,
+      bold: true,
+      color: { argb: 'FFFFFFFF' },
+    };
+    gtSurplusBsRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+    gtSurplusBsRow.getCell(10).fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF' + BRAND.primaryGreen },
@@ -490,9 +561,10 @@ export class AdvisorPaymentsService {
       '',
       '',
       '',
+      '',
       report.grandTotalBs,
     ]);
-    ws.mergeCells(blankRowIdx + 2, 1, blankRowIdx + 2, 8);
+    ws.mergeCells(blankRowIdx + 3, 1, blankRowIdx + 3, 9);
     gtBsRow.height = 24;
     gtBsRow.getCell(1).font = {
       name: 'Calibri',
@@ -506,15 +578,15 @@ export class AdvisorPaymentsService {
       pattern: 'solid',
       fgColor: { argb: 'FF' + BRAND.primaryGreen },
     };
-    gtBsRow.getCell(9).numFmt = '"Bs. "#,##0.00';
-    gtBsRow.getCell(9).font = {
+    gtBsRow.getCell(10).numFmt = '"Bs. "#,##0.00';
+    gtBsRow.getCell(10).font = {
       name: 'Calibri',
       size: 11,
       bold: true,
       color: { argb: 'FFFFFFFF' },
     };
-    gtBsRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtBsRow.getCell(9).fill = {
+    gtBsRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+    gtBsRow.getCell(10).fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF' + BRAND.primaryGreen },
@@ -529,9 +601,10 @@ export class AdvisorPaymentsService {
       '',
       '',
       '',
+      '',
       report.grandTotalUsd,
     ]);
-    ws.mergeCells(blankRowIdx + 3, 1, blankRowIdx + 3, 8);
+    ws.mergeCells(blankRowIdx + 4, 1, blankRowIdx + 4, 9);
     gtUsdRow.height = 24;
     gtUsdRow.getCell(1).font = {
       name: 'Calibri',
@@ -545,15 +618,15 @@ export class AdvisorPaymentsService {
       pattern: 'solid',
       fgColor: { argb: 'FF' + BRAND.primaryGreen },
     };
-    gtUsdRow.getCell(9).numFmt = '$#,##0.00';
-    gtUsdRow.getCell(9).font = {
+    gtUsdRow.getCell(10).numFmt = '$#,##0.00';
+    gtUsdRow.getCell(10).font = {
       name: 'Calibri',
       size: 11,
       bold: true,
       color: { argb: 'FFFFFFFF' },
     };
-    gtUsdRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtUsdRow.getCell(9).fill = {
+    gtUsdRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+    gtUsdRow.getCell(10).fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF' + BRAND.primaryGreen },
@@ -566,9 +639,10 @@ export class AdvisorPaymentsService {
     ws.getColumn(4).width = 18; // Reference
     ws.getColumn(5).width = 18; // Method
     ws.getColumn(6).width = 15; // Status
-    ws.getColumn(7).width = 18; // Surplus
-    ws.getColumn(8).width = 18; // Amount Bs
-    ws.getColumn(9).width = 18; // Amount USD
+    ws.getColumn(7).width = 18; // Surplus USD
+    ws.getColumn(8).width = 18; // Surplus Bs
+    ws.getColumn(9).width = 18; // Amount Bs
+    ws.getColumn(10).width = 18; // Amount USD
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
@@ -606,6 +680,7 @@ export class AdvisorPaymentsService {
       billingMonthLabel: report.billingMonthLabel,
       sections: report.sections,
       grandTotalSurplusFormatted: report.grandTotalSurplusFormatted,
+      grandTotalSurplusBsFormatted: report.grandTotalSurplusBsFormatted,
       grandTotalBsFormatted: report.grandTotalBsFormatted,
       grandTotalUsdFormatted: report.grandTotalUsdFormatted,
     };

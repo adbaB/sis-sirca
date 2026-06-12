@@ -199,12 +199,13 @@
           <thead>
             <tr>
               <th style="width: 10%;">CONTRATO</th>
-              <th class="text-left" style="width: 20%;">TITULAR</th>
+              <th class="text-left" style="width: 18%;">TITULAR</th>
               <th style="width: 10%;">FECHA PAGO</th>
-              <th style="width: 12%;">REFERENCIA</th>
-              <th style="width: 12%;">MÉTODO</th>
-              <th style="width: 10%;">ESTADO FACT.</th>
+              <th style="width: 10%;">REFERENCIA</th>
+              <th style="width: 10%;">MÉTODO</th>
+              <th style="width: 8%;">ESTADO FACT.</th>
               <th class="text-right" style="width: 8%;">EXCEDENTE ($)</th>
+              <th class="text-right" style="width: 8%;">EXCEDENTE (Bs.)</th>
               <th class="text-right" style="width: 9%;">MONTO BS.</th>
               <th class="text-right" style="width: 9%;">MONTO USD ($)</th>
             </tr>
@@ -219,6 +220,7 @@
                 <td>{{ paymentMethod }}</td>
                 <td>{{ invoiceStatusLabel }}</td>
                 <td class="text-right">${{ surplusAmountFormatted }}</td>
+                <td class="text-right">Bs. {{ surplusAmountBsFormatted }}</td>
                 <td class="text-right">Bs. {{ paymentAmountBsFormatted }}</td>
                 <td class="text-right">${{ paymentAmountFormatted }}</td>
               </tr>
@@ -228,6 +230,7 @@
             <tr class="subtotal-row">
               <td class="text-left" colspan="6">Subtotales</td>
               <td class="text-right">${{ subtotalSurplusFormatted }}</td>
+              <td class="text-right">Bs. {{ subtotalSurplusBsFormatted }}</td>
               <td class="text-right">Bs. {{ subtotalBsFormatted }}</td>
               <td class="text-right">${{ subtotalUsdFormatted }}</td>
             </tr>
@@ -241,6 +244,10 @@
       <tr>
         <td class="grand-total-label">MONTO TOTAL EXCEDENTES ($):</td>
         <td class="grand-total-value">${{ grandTotalSurplusFormatted }}</td>
+      </tr>
+      <tr>
+        <td class="grand-total-label">MONTO TOTAL EXCEDENTES BS. (Bs.):</td>
+        <td class="grand-total-value">Bs. {{ grandTotalSurplusBsFormatted }}</td>
       </tr>
       <tr>
         <td class="grand-total-label">MONTO TOTAL PAGOS BS. (Bs.):</td>
