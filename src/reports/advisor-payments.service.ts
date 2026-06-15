@@ -175,46 +175,77 @@ export class AdvisorPaymentsService {
 
     for (const row of rawData) {
       const portfolioCode = row.portfolio_code;
-      if (!portfolioGroups.has(portfolioCode)) {
-        portfolioGroups.set(portfolioCode, []);
+      let group = portfolioGroups.get(portfolioCode);
+      if (!group) {
+        group = [];
+        portfolioGroups.set(portfolioCode, group);
       }
 
-      const pDate = new Date(row.payment_date);
-      const paymentDateES = formatDateES(pDate);
-
-      const invoiceStatusLabel =
-        row.invoice_status === 'PAID'
-          ? 'PAGADA'
-          : row.invoice_status === 'PARTIAL'
-            ? 'PARCIAL'
-            : row.invoice_status;
-
-      const titularCard = row.type_identity_card
-        ? `${row.type_identity_card}-${row.identity_card}`
-        : 'Sin titular';
-
-      portfolioGroups.get(portfolioCode)!.push({
-        paymentDate: String(row.payment_date),
-        paymentDateES,
-        referenceNumber: row.reference_number,
-        paymentMethod: row.payment_method,
-        paymentAmount: Number(row.payment_amount || 0),
-        paymentAmountFormatted: Number(row.payment_amount || 0).toFixed(2),
-        paymentAmountBs: Number(row.payment_amount_bs || 0),
-        paymentAmountBsFormatted: Number(row.payment_amount_bs || 0).toFixed(2),
-        contractCode: row.contract_code,
-        invoiceStatus: row.invoice_status,
-        invoiceStatusLabel,
-        surplusAmount: Number(row.surplus_amount || 0),
-        surplusAmountFormatted: Number(row.surplus_amount || 0).toFixed(2),
-        surplusAmountBs: Number(row.surplus_amount_bs || 0),
-        surplusAmountBsFormatted: Number(row.surplus_amount_bs || 0).toFixed(2),
-        titularCard,
-        titularName: row.titular_name || 'Sin titular',
-      });
+      group.push(this.mapQueryRowToPaymentRow(row));
     }
 
     // 4. Calculate subtotals and grand totals
+    const { sections, grandTotalSurplus, grandTotalSurplusBs, grandTotalBs, grandTotalUsd } =
+      this.buildPortfolioSections(portfolioGroups);
+
+    return {
+      advisorName,
+      billingMonthLabel,
+      sections,
+      grandTotalSurplus,
+      grandTotalSurplusFormatted: grandTotalSurplus.toFixed(2),
+      grandTotalSurplusBs,
+      grandTotalSurplusBsFormatted: grandTotalSurplusBs.toFixed(2),
+      grandTotalBs,
+      grandTotalBsFormatted: grandTotalBs.toFixed(2),
+      grandTotalUsd,
+      grandTotalUsdFormatted: grandTotalUsd.toFixed(2),
+    };
+  }
+
+  /**
+   * Helper to map a raw database query row to an AdvisorPaymentRow.
+   */
+  private mapQueryRowToPaymentRow(row: AdvisorPaymentQueryRow): AdvisorPaymentRow {
+    const pDate = new Date(row.payment_date);
+    const paymentDateES = formatDateES(pDate);
+
+    const invoiceStatusLabel =
+      row.invoice_status === 'PAID'
+        ? 'PAGADA'
+        : row.invoice_status === 'PARTIAL'
+          ? 'PARCIAL'
+          : row.invoice_status;
+
+    const titularCard = row.type_identity_card
+      ? `${row.type_identity_card}-${row.identity_card}`
+      : 'Sin titular';
+
+    return {
+      paymentDate: String(row.payment_date),
+      paymentDateES,
+      referenceNumber: row.reference_number,
+      paymentMethod: row.payment_method,
+      paymentAmount: Number(row.payment_amount || 0),
+      paymentAmountFormatted: Number(row.payment_amount || 0).toFixed(2),
+      paymentAmountBs: Number(row.payment_amount_bs || 0),
+      paymentAmountBsFormatted: Number(row.payment_amount_bs || 0).toFixed(2),
+      contractCode: row.contract_code,
+      invoiceStatus: row.invoice_status,
+      invoiceStatusLabel,
+      surplusAmount: Number(row.surplus_amount || 0),
+      surplusAmountFormatted: Number(row.surplus_amount || 0).toFixed(2),
+      surplusAmountBs: Number(row.surplus_amount_bs || 0),
+      surplusAmountBsFormatted: Number(row.surplus_amount_bs || 0).toFixed(2),
+      titularCard,
+      titularName: row.titular_name || 'Sin titular',
+    };
+  }
+
+  /**
+   * Helper to build and aggregate portfolio sections.
+   */
+  private buildPortfolioSections(portfolioGroups: Map<string, AdvisorPaymentRow[]>) {
     const sections: PortfolioSection[] = [];
     let grandTotalSurplus = 0;
     let grandTotalSurplusBs = 0;
@@ -250,17 +281,11 @@ export class AdvisorPaymentsService {
     sections.sort((a, b) => a.portfolioCode.localeCompare(b.portfolioCode));
 
     return {
-      advisorName,
-      billingMonthLabel,
       sections,
       grandTotalSurplus,
-      grandTotalSurplusFormatted: grandTotalSurplus.toFixed(2),
       grandTotalSurplusBs,
-      grandTotalSurplusBsFormatted: grandTotalSurplusBs.toFixed(2),
       grandTotalBs,
-      grandTotalBsFormatted: grandTotalBs.toFixed(2),
       grandTotalUsd,
-      grandTotalUsdFormatted: grandTotalUsd.toFixed(2),
     };
   }
 
@@ -286,7 +311,7 @@ export class AdvisorPaymentsService {
       name: 'Calibri',
       size: 11,
       bold: true,
-      color: { argb: 'FF' + BRAND.darkText },
+      color: { argb: `FF${BRAND.darkText}` },
     };
     advisorRow.getCell(1).alignment = { horizontal: 'left' };
     advisorRow.height = 20;
@@ -297,7 +322,7 @@ export class AdvisorPaymentsService {
       name: 'Calibri',
       size: 11,
       bold: true,
-      color: { argb: 'FF' + BRAND.darkText },
+      color: { argb: `FF${BRAND.darkText}` },
     };
     billingMonthRow.getCell(1).alignment = { horizontal: 'left' };
     billingMonthRow.height = 20;

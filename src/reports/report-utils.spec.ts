@@ -1,5 +1,5 @@
+import ExcelJS from 'exceljs';
 import { DataSource } from 'typeorm';
-import * as ExcelJS from 'exceljs';
 import {
   applyDataCellStyle,
   applyGrandTotalStyle,
@@ -56,7 +56,7 @@ describe('Report Utils', () => {
       const name = await fetchAdvisorName(mockDataSource as DataSource, 'advisor-123');
       expect(name).toBe('Alberto Basabe');
       expect(mockDataSource.query).toHaveBeenCalledWith(
-        `SELECT name FROM advisors WHERE id = $1 AND deleted_at IS NULL`,
+        'SELECT name FROM advisors WHERE id = $1 AND deleted_at IS NULL',
         ['advisor-123'],
       );
     });
@@ -113,23 +113,23 @@ describe('Report Utils', () => {
       expect(mockCell.font.bold).toBe(true);
       expect((mockCell.fill as ExcelJS.FillPattern).type).toBe('pattern');
       expect((mockCell.fill as ExcelJS.FillPattern).pattern).toBe('solid');
-      expect(mockCell.border.top!.style).toBe('thin');
-      expect(mockCell.border.bottom!.style).toBe('medium');
+      expect(mockCell.border?.top?.style).toBe('thin');
+      expect(mockCell.border?.bottom?.style).toBe('medium');
     });
 
     it('applyDataCellStyle should set Calibri 10 and thin borders', () => {
       applyDataCellStyle(mockCell);
       expect(mockCell.font.name).toBe('Calibri');
       expect(mockCell.font.size).toBe(10);
-      expect(mockCell.border.top.style).toBe('thin');
+      expect(mockCell.border?.top?.style).toBe('thin');
     });
 
     it('applySubtotalCellStyle should set light green background and double bottom border', () => {
       applySubtotalCellStyle(mockCell);
       expect((mockCell.fill as ExcelJS.FillPattern).type).toBe('pattern');
       expect((mockCell.fill as ExcelJS.FillPattern).pattern).toBe('solid');
-      expect(mockCell.border.top!.style).toBe('medium');
-      expect(mockCell.border.bottom!.style).toBe('double');
+      expect(mockCell.border?.top?.style).toBe('medium');
+      expect(mockCell.border?.bottom?.style).toBe('double');
     });
 
     it('applyGrandTotalStyle should set green background and white bold text', () => {
@@ -142,8 +142,8 @@ describe('Report Utils', () => {
 
     it('thinBorder should return correct thin borders object', () => {
       const borders = thinBorder('CCCCCC');
-      expect(borders.top!.style).toBe('thin');
-      expect(borders.top!.color!.argb).toBe('FFCCCCCC');
+      expect(borders.top?.style).toBe('thin');
+      expect(borders.top?.color?.argb).toBe('FFCCCCCC');
     });
   });
 });

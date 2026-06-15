@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import * as ExcelJS from 'exceljs';
+import ExcelJS from 'exceljs';
 import { DateTime } from 'luxon';
 import { DataSource } from 'typeorm';
 import { PdfService } from '../pdf/services/pdf.service';
@@ -87,7 +87,7 @@ export class SipCommissionsService {
     let portfolios: Array<{ code: string }>;
     try {
       portfolios = await this.dataSource.query(
-        `SELECT code FROM portfolios WHERE status = 'ACTIVE' AND deleted_at IS NULL ORDER BY code`,
+        "SELECT code FROM portfolios WHERE status = 'ACTIVE' AND deleted_at IS NULL ORDER BY code",
       );
     } catch (err) {
       this.logger.error('Error querying portfolios:', err);
@@ -98,7 +98,7 @@ export class SipCommissionsService {
     const activePortfolioCodes: string[] = portfolios.map((p) => p.code);
 
     // 2. Determine which contract codes are "convenio inicial" (SIR-002-001 to SIR-002-060)
-    const convenioInicialPattern = `^SIR-002-0[0-5][0-9]$|^SIR-002-060$`;
+    const convenioInicialPattern = '^SIR-002-0[0-5][0-9]$|^SIR-002-060$';
 
     // 3. Fetch all invoice details with related data for the period
     let rawData: SipCommissionQueryRow[];
@@ -154,57 +154,8 @@ export class SipCommissionsService {
     const portfolioCodes = [...activePortfolioCodes, ...extraCodes];
 
     // 4. Classify each record into a section
-    const sectionBuckets: Record<string, Array<(typeof rawData)[0]>> = {
-      nuevos: [],
-      cobranzasNuevoConvenio: [],
-      cobranzasConvenioInicial: [],
-      extemporaneosNuevoConvenio: [],
-      extemporaneosConvenioInicial: [],
-    };
-
     const convenioRe = new RegExp(convenioInicialPattern);
-    const toDateString = (dateVal: Date | string) => {
-      if (!dateVal) return '';
-      const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
-      return d.toISOString().slice(0, 10);
-    };
-
-    for (const row of rawData) {
-      const affiliationDateStr = toDateString(row.affiliation_date);
-      const paymentDateStr = DateTime.fromJSDate(
-        row.payment_date instanceof Date ? row.payment_date : new Date(row.payment_date),
-      )
-        .setZone('America/Caracas')
-        .toFormat('yyyy-MM-dd');
-      const dueDateStr = toDateString(row.due_date);
-      const issueDateStr = toDateString(row.issue_date);
-      const nextIssueDateStr = DateTime.fromJSDate(
-        row.issue_date instanceof Date ? row.issue_date : new Date(row.issue_date),
-      )
-        .setZone('America/Caracas')
-        .plus({ months: 1 })
-        .toFormat('yyyy-MM-dd');
-
-      const isConvenioInicial = convenioRe.test(row.contract_code);
-      const isNew = affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
-      const isExtemporaneo = paymentDateStr > dueDateStr;
-
-      if (isNew) {
-        sectionBuckets.nuevos.push(row);
-      } else if (isExtemporaneo) {
-        if (isConvenioInicial) {
-          sectionBuckets.extemporaneosConvenioInicial.push(row);
-        } else {
-          sectionBuckets.extemporaneosNuevoConvenio.push(row);
-        }
-      } else {
-        if (isConvenioInicial) {
-          sectionBuckets.cobranzasConvenioInicial.push(row);
-        } else {
-          sectionBuckets.cobranzasNuevoConvenio.push(row);
-        }
-      }
-    }
+    const sectionBuckets = this.classifyRowsIntoBuckets(rawData, convenioRe);
 
     // 5. Aggregate each bucket into sections
     const sectionDefs: Array<{ key: string; title: string }> = [
@@ -234,6 +185,76 @@ export class SipCommissionsService {
   }
 
   /**
+   * Helper to classify rows into section buckets.
+   */
+  private classifyRowsIntoBuckets(
+    rawData: SipCommissionQueryRow[],
+    convenioRe: RegExp,
+  ): Record<string, SipCommissionQueryRow[]> {
+    const buckets: Record<string, SipCommissionQueryRow[]> = {
+      nuevos: [],
+      cobranzasNuevoConvenio: [],
+      cobranzasConvenioInicial: [],
+      extemporaneosNuevoConvenio: [],
+      extemporaneosConvenioInicial: [],
+    };
+
+    for (const row of rawData) {
+      const isConvenioInicial = convenioRe.test(row.contract_code);
+      const isNew = this.checkIsNew(row);
+      const isExtemporaneo = this.checkIsExtemporaneo(row);
+
+      if (isNew) {
+        buckets.nuevos.push(row);
+      } else if (isExtemporaneo) {
+        if (isConvenioInicial) {
+          buckets.extemporaneosConvenioInicial.push(row);
+        } else {
+          buckets.extemporaneosNuevoConvenio.push(row);
+        }
+      } else {
+        if (isConvenioInicial) {
+          buckets.cobranzasConvenioInicial.push(row);
+        } else {
+          buckets.cobranzasNuevoConvenio.push(row);
+        }
+      }
+    }
+
+    return buckets;
+  }
+
+  private checkIsNew(row: SipCommissionQueryRow): boolean {
+    const affiliationDateStr = this.formatToDateString(row.affiliation_date);
+    const issueDateStr = this.formatToDateString(row.issue_date);
+    const nextIssueDateStr = DateTime.fromJSDate(
+      row.issue_date instanceof Date ? row.issue_date : new Date(row.issue_date),
+    )
+      .setZone('America/Caracas')
+      .plus({ months: 1 })
+      .toFormat('yyyy-MM-dd');
+
+    return affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
+  }
+
+  private checkIsExtemporaneo(row: SipCommissionQueryRow): boolean {
+    const paymentDateStr = DateTime.fromJSDate(
+      row.payment_date instanceof Date ? row.payment_date : new Date(row.payment_date),
+    )
+      .setZone('America/Caracas')
+      .toFormat('yyyy-MM-dd');
+    const dueDateStr = this.formatToDateString(row.due_date);
+
+    return paymentDateStr > dueDateStr;
+  }
+
+  private formatToDateString(dateVal: Date | string): string {
+    if (!dateVal) return '';
+    const parsedDate = dateVal instanceof Date ? dateVal : new Date(dateVal);
+    return parsedDate.toISOString().slice(0, 10);
+  }
+
+  /**
    * Aggregate raw rows into a report section, grouped by (planName + planAmount).
    */
   private aggregateSection(
@@ -254,15 +275,16 @@ export class SipCommissionsService {
 
     for (const row of rows) {
       const key = `${row.plan_name}|${Number(row.plan_amount).toFixed(2)}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, {
+      let group = grouped.get(key);
+      if (!group) {
+        group = {
           planName: row.plan_name,
           planAmount: Number(row.plan_amount),
           commissionAmount: Number(row.commission_amount),
           affiliatesByPortfolio: {},
-        });
+        };
+        grouped.set(key, group);
       }
-      const group = grouped.get(key)!;
       const code = row.portfolio_code;
       group.affiliatesByPortfolio[code] =
         (group.affiliatesByPortfolio[code] || 0) + Number(row.affiliate_count);
@@ -331,22 +353,66 @@ export class SipCommissionsService {
     ws.columns = colWidths.map((w) => ({ width: w }));
 
     // Load logo
-    let logoId: number | null = null;
     const logoPath = await loadLogoImagePath(this.logger);
-    if (logoPath) {
-      logoId = workbook.addImage({ filename: logoPath, extension: 'png' });
-    }
-
-    // === HEADER SECTION ===
-    if (logoId !== null) {
-      ws.addImage(logoId, {
-        tl: { col: 0, row: 0 },
-        ext: { width: 180, height: 60 },
-      });
-    }
+    this.renderLogo(workbook, ws, logoPath);
 
     // Empty rows for logo space
     let currentRow = 4;
+
+    // Render Title & Subtitle Headers
+    currentRow = this.renderExcelHeaders(ws, report, totalCols, currentRow);
+
+    // === SECTIONS ===
+    for (const section of report.sections) {
+      if (section.rows.length === 0) continue; // Skip empty sections
+
+      currentRow = this.writeSection(ws, section, portfolioCodes, totalCols, currentRow);
+      currentRow += 2; // spacing between sections
+    }
+
+    // === GRAND TOTAL ===
+    currentRow++;
+    currentRow = this.renderExcelGrandTotal(ws, totalCols, report.grandTotalCommission, currentRow);
+
+    // === FOOTER ===
+    currentRow += 3;
+    const footerRow = ws.getRow(currentRow);
+    ws.mergeCells(currentRow, 1, currentRow, totalCols);
+    const footerCell = footerRow.getCell(1);
+    footerCell.value = 'P/Administración SIRCA';
+    footerCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: BRAND.lightText } };
+    footerCell.alignment = { horizontal: 'center' };
+
+    // Generate buffer
+    return finishWorkbook(workbook);
+  }
+
+  /**
+   * Helper to load and render the logo in Excel.
+   */
+  private renderLogo(
+    workbook: ExcelJS.Workbook,
+    ws: ExcelJS.Worksheet,
+    logoPath: string | null,
+  ): void {
+    if (!logoPath) return;
+    const logoId = workbook.addImage({ filename: logoPath, extension: 'png' });
+    ws.addImage(logoId, {
+      tl: { col: 0, row: 0 },
+      ext: { width: 180, height: 60 },
+    });
+  }
+
+  /**
+   * Helper to render Title/Subtitle Excel headers.
+   */
+  private renderExcelHeaders(
+    ws: ExcelJS.Worksheet,
+    report: SipCommissionReport,
+    totalCols: number,
+    startRow: number,
+  ): number {
+    let currentRow = startRow;
 
     // Title: RESUMEN MENSUAL
     const titleRow = ws.getRow(currentRow);
@@ -356,7 +422,6 @@ export class SipCommissionsService {
     titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: BRAND.primaryGreen } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     titleRow.height = 30;
-    // Note: this title uses the brand green as text color (not background) to match original design
     currentRow++;
 
     // Subtitle: Company name
@@ -377,16 +442,18 @@ export class SipCommissionsService {
     corteCell.alignment = { horizontal: 'center', vertical: 'middle' };
     currentRow += 2; // extra blank row
 
-    // === SECTIONS ===
-    for (const section of report.sections) {
-      if (section.rows.length === 0) continue; // Skip empty sections
+    return currentRow;
+  }
 
-      currentRow = this.writeSection(ws, section, portfolioCodes, totalCols, currentRow);
-      currentRow += 2; // spacing between sections
-    }
-
-    // === GRAND TOTAL ===
-    currentRow++;
+  /**
+   * Helper to render Excel grand total row.
+   */
+  private renderExcelGrandTotal(
+    ws: ExcelJS.Worksheet,
+    totalCols: number,
+    grandTotalCommission: number,
+    currentRow: number,
+  ): number {
     const grandRow = ws.getRow(currentRow);
     ws.mergeCells(currentRow, 1, currentRow, totalCols - 1);
     const grandLabelCell = grandRow.getCell(1);
@@ -395,7 +462,7 @@ export class SipCommissionsService {
     grandLabelCell.font = { ...grandLabelCell.font, size: 13 };
 
     const grandValueCell = grandRow.getCell(totalCols);
-    grandValueCell.value = report.grandTotalCommission;
+    grandValueCell.value = grandTotalCommission;
     grandValueCell.numFmt = '$#,##0.00';
     applyGrandTotalStyle(grandValueCell, 'center');
     grandValueCell.font = { ...grandValueCell.font, size: 13 };
@@ -406,17 +473,7 @@ export class SipCommissionsService {
       grandRow.getCell(c).border = this.thinBorder();
     }
 
-    // === FOOTER ===
-    currentRow += 3;
-    const footerRow = ws.getRow(currentRow);
-    ws.mergeCells(currentRow, 1, currentRow, totalCols);
-    const footerCell = footerRow.getCell(1);
-    footerCell.value = 'P/Administración SIRCA';
-    footerCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: BRAND.lightText } };
-    footerCell.alignment = { horizontal: 'center' };
-
-    // Generate buffer
-    return finishWorkbook(workbook);
+    return currentRow;
   }
 
   /**

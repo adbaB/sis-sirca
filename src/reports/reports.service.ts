@@ -1,21 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import ExcelJS from 'exceljs';
 import { Repository } from 'typeorm';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { PaymentStatus } from '../billing/entities/payment.entity';
-import { PdfService } from '../pdf/services/pdf.service';
 import { ContractStatus } from '../contracts/entities/contract.entity';
+import { PdfService } from '../pdf/services/pdf.service';
 import {
-  createWorkbook,
-  finishWorkbook,
-  applyTitleRowStyle,
-  applyTableHeaderStyle,
   applyDataCellStyle,
   applyGrandTotalStyle,
-  loadLogoBase64,
-  getGeneratedAtTimestamp,
-  MONTH_NAMES_ES,
+  applyTableHeaderStyle,
+  applyTitleRowStyle,
   BRAND_COLORS,
+  createWorkbook,
+  finishWorkbook,
+  getGeneratedAtTimestamp,
+  loadLogoBase64,
+  MONTH_NAMES_ES,
 } from './report-utils';
 
 interface ContractReportRow {
@@ -129,7 +130,31 @@ export class ReportsService {
     const { workbook, ws } = createWorkbook('Contratos');
     const totalCols = 9;
 
-    // A. TITLE
+    this.renderTitleAndSubheaders(ws, monthLabel, year, totalCols);
+    this.renderTableHeaders(ws, totalCols);
+    const sums = this.renderDataRows(ws, rows, totalCols);
+    this.renderGrandTotal(ws, sums, totalCols);
+
+    // Set columns widths
+    ws.getColumn(1).width = 18; // Código Contrato
+    ws.getColumn(2).width = 35; // Titular
+    ws.getColumn(3).width = 20; // Monto Mensual
+    ws.getColumn(4).width = 20; // Total Factura
+    ws.getColumn(5).width = 20; // Monto Pagado ($)
+    ws.getColumn(6).width = 20; // Monto Pagado (Bs)
+    ws.getColumn(7).width = 18; // Estado Factura
+    ws.getColumn(8).width = 10; // Pagado
+    ws.getColumn(9).width = 16; // Fecha de Pago
+
+    return finishWorkbook(workbook);
+  }
+
+  private renderTitleAndSubheaders(
+    ws: ExcelJS.Worksheet,
+    monthLabel: string,
+    year: number,
+    totalCols: number,
+  ): void {
     const titleRow = ws.addRow([
       `REPORTE DE DETALLE DE CONTRATOS - ${monthLabel.toUpperCase()} ${year}`,
     ]);
@@ -137,7 +162,6 @@ export class ReportsService {
     applyTitleRowStyle(titleRow.getCell(1));
     titleRow.height = 40;
 
-    // B. SUBHEADERS
     const generatedAt = getGeneratedAtTimestamp();
     const infoRow = ws.addRow([`Generado: ${generatedAt}`]);
     ws.mergeCells(2, 1, 2, totalCols);
@@ -145,13 +169,14 @@ export class ReportsService {
       name: 'Calibri',
       size: 10,
       italic: true,
-      color: { argb: 'FF' + BRAND_COLORS.mediumText },
+      color: { argb: `FF${BRAND_COLORS.mediumText}` },
     };
     infoRow.height = 20;
 
     ws.addRow([]); // Blank row
+  }
 
-    // C. TABLE HEADERS
+  private renderTableHeaders(ws: ExcelJS.Worksheet, totalCols: number): void {
     const headers = [
       'CÓDIGO CONTRATO',
       'TITULAR',
@@ -168,8 +193,18 @@ export class ReportsService {
     for (let c = 1; c <= totalCols; c++) {
       applyTableHeaderStyle(headerRow.getCell(c));
     }
+  }
 
-    // D. DATA ROWS
+  private renderDataRows(
+    ws: ExcelJS.Worksheet,
+    rows: ContractReportRow[],
+    totalCols: number,
+  ): {
+    monthlyAmountSum: number;
+    totalFacturaSum: number;
+    paidAmountUsdSum: number;
+    paidAmountBsSum: number;
+  } {
     let monthlyAmountSum = 0;
     let totalFacturaSum = 0;
     let paidAmountUsdSum = 0;
@@ -214,14 +249,31 @@ export class ReportsService {
       paidAmountBsSum += r.paidAmountBs;
     }
 
-    // E. GRAND TOTAL ROW
-    const grandTotalRow = ws.addRow([
-      'TOTAL GENERAL',
-      '',
+    return {
       monthlyAmountSum,
       totalFacturaSum,
       paidAmountUsdSum,
       paidAmountBsSum,
+    };
+  }
+
+  private renderGrandTotal(
+    ws: ExcelJS.Worksheet,
+    sums: {
+      monthlyAmountSum: number;
+      totalFacturaSum: number;
+      paidAmountUsdSum: number;
+      paidAmountBsSum: number;
+    },
+    totalCols: number,
+  ): void {
+    const grandTotalRow = ws.addRow([
+      'TOTAL GENERAL',
+      '',
+      sums.monthlyAmountSum,
+      sums.totalFacturaSum,
+      sums.paidAmountUsdSum,
+      sums.paidAmountBsSum,
       '',
       '',
       '',
@@ -237,19 +289,6 @@ export class ReportsService {
     grandTotalRow.getCell(4).numFmt = '$#,##0.00';
     grandTotalRow.getCell(5).numFmt = '$#,##0.00';
     grandTotalRow.getCell(6).numFmt = '$#,##0.00';
-
-    // Set columns widths
-    ws.getColumn(1).width = 18; // Código Contrato
-    ws.getColumn(2).width = 35; // Titular
-    ws.getColumn(3).width = 20; // Monto Mensual
-    ws.getColumn(4).width = 20; // Total Factura
-    ws.getColumn(5).width = 20; // Monto Pagado ($)
-    ws.getColumn(6).width = 20; // Monto Pagado (Bs)
-    ws.getColumn(7).width = 18; // Estado Factura
-    ws.getColumn(8).width = 10; // Pagado
-    ws.getColumn(9).width = 16; // Fecha de Pago
-
-    return finishWorkbook(workbook);
   }
 
   async generatePdf(year: number, month: number): Promise<Buffer> {

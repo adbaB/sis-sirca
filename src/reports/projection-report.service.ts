@@ -110,11 +110,11 @@ export class ProjectionReportService {
 
     const params: string[] = [];
     if (advisorId) {
-      sql += ` AND c.advisor_id = $1`;
+      sql += ' AND c.advisor_id = $1';
       params.push(advisorId);
     }
 
-    sql += ` ORDER BY COALESCE(pf.code, 'SIN_CARTERA') ASC, c.code ASC, p.name ASC`;
+    sql += " ORDER BY COALESCE(pf.code, 'SIN_CARTERA') ASC, c.code ASC, p.name ASC";
 
     let rawData: ProjectionQueryRow[];
     try {
@@ -131,13 +131,15 @@ export class ProjectionReportService {
 
     for (const row of rawData) {
       const portfolioCode = row.portfolio_code;
-      if (!portfolioGroups.has(portfolioCode)) {
-        portfolioGroups.set(portfolioCode, []);
+      let group = portfolioGroups.get(portfolioCode);
+      if (!group) {
+        group = [];
+        portfolioGroups.set(portfolioCode, group);
       }
 
       const affiliationDateES = row.affiliation_date ? formatDateES(row.affiliation_date) : 'S/F';
 
-      portfolioGroups.get(portfolioCode)!.push({
+      group.push({
         contractCode: row.contract_code,
         affiliationDate: row.affiliation_date ? String(row.affiliation_date) : '',
         affiliationDateES,
@@ -226,7 +228,7 @@ export class ProjectionReportService {
       name: 'Calibri',
       size: 11,
       bold: true,
-      color: { argb: 'FF' + BRAND_COLORS.darkText },
+      color: { argb: `FF${BRAND_COLORS.darkText}` },
     };
     advisorRow.getCell(1).alignment = { horizontal: 'left' };
     advisorRow.height = 20;
@@ -320,7 +322,7 @@ export class ProjectionReportService {
         name: 'Calibri',
         size: 10,
         bold: true,
-        color: { argb: 'FF' + BRAND_COLORS.mediumText },
+        color: { argb: `FF${BRAND_COLORS.mediumText}` },
       };
       subtotalRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
 
