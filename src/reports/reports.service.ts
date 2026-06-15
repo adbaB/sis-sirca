@@ -1,13 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as XLSX from 'xlsx';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { PaymentStatus } from '../billing/entities/payment.entity';
 import { PdfService } from '../pdf/services/pdf.service';
 import { ContractStatus } from '../contracts/entities/contract.entity';
+import {
+  createWorkbook,
+  finishWorkbook,
+  applyTitleRowStyle,
+  applyTableHeaderStyle,
+  applyDataCellStyle,
+  applyGrandTotalStyle,
+  loadLogoBase64,
+  getGeneratedAtTimestamp,
+  MONTH_NAMES_ES,
+  BRAND_COLORS,
+} from './report-utils';
 
 interface ContractReportRow {
   contractCode: string;
@@ -26,21 +35,6 @@ interface ContractReportRow {
   paidAmountBsFormatted: string;
   statusClass: string;
 }
-
-const MONTH_NAMES_ES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
 
 @Injectable()
 export class ReportsService {
@@ -131,20 +125,58 @@ export class ReportsService {
 
   async generateExcel(year: number, month: number): Promise<Buffer> {
     const rows = await this.getContractDetailReport(year, month);
+    const monthLabel = MONTH_NAMES_ES[month - 1] || '';
+    const { workbook, ws } = createWorkbook('Contratos');
+    const totalCols = 9;
 
-    const wsData = [
-      [
-        'Código Contrato',
-        'Titular',
-        'Monto Mensual ($)',
-        'Total Factura ($)',
-        'Monto Pagado ($)',
-        'Monto Pagado (Bs)',
-        'Estado Factura',
-        'Pagado',
-        'Fecha de Pago',
-      ],
-      ...rows.map((r) => [
+    // A. TITLE
+    const titleRow = ws.addRow([
+      `REPORTE DE DETALLE DE CONTRATOS - ${monthLabel.toUpperCase()} ${year}`,
+    ]);
+    ws.mergeCells(1, 1, 1, totalCols);
+    applyTitleRowStyle(titleRow.getCell(1));
+    titleRow.height = 40;
+
+    // B. SUBHEADERS
+    const generatedAt = getGeneratedAtTimestamp();
+    const infoRow = ws.addRow([`Generado: ${generatedAt}`]);
+    ws.mergeCells(2, 1, 2, totalCols);
+    infoRow.getCell(1).font = {
+      name: 'Calibri',
+      size: 10,
+      italic: true,
+      color: { argb: 'FF' + BRAND_COLORS.mediumText },
+    };
+    infoRow.height = 20;
+
+    ws.addRow([]); // Blank row
+
+    // C. TABLE HEADERS
+    const headers = [
+      'CÓDIGO CONTRATO',
+      'TITULAR',
+      'MONTO MENSUAL ($)',
+      'TOTAL FACTURA ($)',
+      'MONTO PAGADO ($)',
+      'MONTO PAGADO (Bs)',
+      'ESTADO FACTURA',
+      'PAGADO',
+      'FECHA DE PAGO',
+    ];
+    const headerRow = ws.addRow(headers);
+    headerRow.height = 24;
+    for (let c = 1; c <= totalCols; c++) {
+      applyTableHeaderStyle(headerRow.getCell(c));
+    }
+
+    // D. DATA ROWS
+    let monthlyAmountSum = 0;
+    let totalFacturaSum = 0;
+    let paidAmountUsdSum = 0;
+    let paidAmountBsSum = 0;
+
+    for (const r of rows) {
+      const rowData = [
         r.contractCode,
         r.titular,
         r.monthlyAmount,
@@ -154,53 +186,77 @@ export class ReportsService {
         r.invoiceStatus,
         r.isPaid ? 'Sí' : 'No',
         r.paymentDate || '',
-      ]),
-    ];
+      ];
+      const row = ws.addRow(rowData);
+      row.height = 20;
 
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+      row.getCell(1).alignment = { horizontal: 'center' };
+      row.getCell(2).alignment = { horizontal: 'left' };
+      row.getCell(3).alignment = { horizontal: 'right' };
+      row.getCell(3).numFmt = '$#,##0.00';
+      row.getCell(4).alignment = { horizontal: 'right' };
+      row.getCell(4).numFmt = '$#,##0.00';
+      row.getCell(5).alignment = { horizontal: 'right' };
+      row.getCell(5).numFmt = '$#,##0.00';
+      row.getCell(6).alignment = { horizontal: 'right' };
+      row.getCell(6).numFmt = '$#,##0.00';
+      row.getCell(7).alignment = { horizontal: 'center' };
+      row.getCell(8).alignment = { horizontal: 'center' };
+      row.getCell(9).alignment = { horizontal: 'center' };
 
-    // Set column widths
-    worksheet['!cols'] = [
-      { wch: 18 }, // Código Contrato
-      { wch: 35 }, // Titular
-      { wch: 16 }, // Monto Mensual
-      { wch: 16 }, // Total Factura
-      { wch: 16 }, // Monto Pagado ($)
-      { wch: 18 }, // Monto Pagado (Bs)
-      { wch: 16 }, // Estado Factura
-      { wch: 8 }, // Pagado
-      { wch: 16 }, // Fecha de Pago
-    ];
+      for (let c = 1; c <= totalCols; c++) {
+        applyDataCellStyle(row.getCell(c));
+      }
 
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Contratos');
+      monthlyAmountSum += r.monthlyAmount;
+      totalFacturaSum += r.totalAmount;
+      paidAmountUsdSum += r.paidAmountUsd;
+      paidAmountBsSum += r.paidAmountBs;
+    }
 
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-    return Buffer.from(buffer);
+    // E. GRAND TOTAL ROW
+    const grandTotalRow = ws.addRow([
+      'TOTAL GENERAL',
+      '',
+      monthlyAmountSum,
+      totalFacturaSum,
+      paidAmountUsdSum,
+      paidAmountBsSum,
+      '',
+      '',
+      '',
+    ]);
+    ws.mergeCells(grandTotalRow.number, 1, grandTotalRow.number, 2);
+    grandTotalRow.height = 24;
+
+    for (let c = 1; c <= totalCols; c++) {
+      applyGrandTotalStyle(grandTotalRow.getCell(c), c === 1 ? 'left' : 'right');
+    }
+
+    grandTotalRow.getCell(3).numFmt = '$#,##0.00';
+    grandTotalRow.getCell(4).numFmt = '$#,##0.00';
+    grandTotalRow.getCell(5).numFmt = '$#,##0.00';
+    grandTotalRow.getCell(6).numFmt = '$#,##0.00';
+
+    // Set columns widths
+    ws.getColumn(1).width = 18; // Código Contrato
+    ws.getColumn(2).width = 35; // Titular
+    ws.getColumn(3).width = 20; // Monto Mensual
+    ws.getColumn(4).width = 20; // Total Factura
+    ws.getColumn(5).width = 20; // Monto Pagado ($)
+    ws.getColumn(6).width = 20; // Monto Pagado (Bs)
+    ws.getColumn(7).width = 18; // Estado Factura
+    ws.getColumn(8).width = 10; // Pagado
+    ws.getColumn(9).width = 16; // Fecha de Pago
+
+    return finishWorkbook(workbook);
   }
 
   async generatePdf(year: number, month: number): Promise<Buffer> {
     const rows = await this.getContractDetailReport(year, month);
-
     const monthLabel = MONTH_NAMES_ES[month - 1] || '';
-    const generatedAt = new Date().toLocaleString('es-VE', {
-      timeZone: 'America/Caracas',
-    });
-
-    let logoBase64 = '';
-    try {
-      const logoPath = path.join(process.cwd(), 'src', 'assets', 'images', 'logo.png');
-      const logoBuffer = await fs.readFile(logoPath);
-      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-    } catch {
-      try {
-        const logoPath = path.join(process.cwd(), 'dist', 'assets', 'images', 'logo.png');
-        const logoBuffer = await fs.readFile(logoPath);
-        logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-      } catch (err2) {
-        this.logger.error('Could not load logo image for PDF:', err2);
-      }
-    }
+    const generatedAt = getGeneratedAtTimestamp();
+    const logoBase64 = await loadLogoBase64(this.logger);
 
     return this.pdfService.generatePdf(
       'contract-report',
