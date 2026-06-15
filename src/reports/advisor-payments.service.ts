@@ -1,10 +1,38 @@
-import { Injectable, Logger } from '@nestjs/common';
-import * as ExcelJS from 'exceljs';
-import * as fs from 'fs/promises';
-import { DateTime } from 'luxon';
-import * as path from 'path';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PdfService } from '../pdf/services/pdf.service';
+import {
+  applyDataCellStyle,
+  applyGrandTotalStyle,
+  applySectionHeaderStyle,
+  applySubtotalCellStyle,
+  applyTableHeaderStyle,
+  applyTitleRowStyle,
+  BRAND_COLORS,
+  createWorkbook,
+  fetchAdvisorName,
+  finishWorkbook,
+  formatDateES,
+  getGeneratedAtTimestamp,
+  loadLogoBase64,
+  MONTH_NAMES_ES,
+} from './report-utils';
+
+interface AdvisorPaymentQueryRow {
+  payment_date: string | Date;
+  reference_number: string;
+  payment_method: string;
+  payment_amount: number | string;
+  payment_amount_bs: number | string;
+  contract_code: string;
+  invoice_status: string;
+  portfolio_code: string;
+  surplus_amount: number | string;
+  surplus_amount_bs: number | string;
+  type_identity_card: string | null;
+  identity_card: string | null;
+  titular_name: string | null;
+}
 
 interface AdvisorPaymentRow {
   paymentDate: string;
@@ -53,30 +81,8 @@ interface AdvisorPaymentsReport {
   grandTotalUsdFormatted: string;
 }
 
-// Brand colors from SIRCA's design system
-const BRAND = {
-  primaryGreen: '1d9e11',
-  darkText: '333333',
-  mediumText: '666666',
-  lightGrayBg: 'f8fafc',
-  borderColor: 'e2e8f0',
-  subtotalGreen: 'e8f5e9',
-};
-
-const MONTH_NAMES_ES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
+// Use shared constants from report-utils
+const BRAND = BRAND_COLORS;
 
 @Injectable()
 export class AdvisorPaymentsService {
@@ -100,17 +106,12 @@ export class AdvisorPaymentsService {
     const billingMonthLabel = `${MONTH_NAMES_ES[month - 1]} ${year}`;
 
     // 1. Fetch advisor name if provided
-    let advisorName = 'Todos los Asesores';
-    if (advisorId) {
-      const advisorRes = await this.dataSource.query(
-        `SELECT name FROM advisors WHERE id = $1 AND deleted_at IS NULL`,
-        [advisorId],
-      );
-      if (advisorRes && advisorRes.length > 0) {
-        advisorName = advisorRes[0].name;
-      } else {
-        advisorName = 'Asesor No Encontrado';
-      }
+    let advisorName: string;
+    try {
+      advisorName = await fetchAdvisorName(this.dataSource, advisorId);
+    } catch (err) {
+      this.logger.error('Error fetching advisor name:', err);
+      throw new InternalServerErrorException('Error al obtener el nombre del asesor.');
     }
 
     // 2. Fetch completed payments for this billing month
@@ -159,55 +160,92 @@ export class AdvisorPaymentsService {
 
     sql += ` ORDER BY COALESCE(pf.code, 'SIN_CARTERA') ASC, pay.payment_date ASC, c.code ASC`;
 
-    const rawData = await this.dataSource.query(sql, params);
+    let rawData: AdvisorPaymentQueryRow[];
+    try {
+      rawData = await this.dataSource.query(sql, params);
+    } catch (err) {
+      this.logger.error('Error querying advisor payments:', err);
+      throw new InternalServerErrorException(
+        'Error al obtener los datos de pagos para el reporte.',
+      );
+    }
 
     // 3. Group by portfolio code
     const portfolioGroups = new Map<string, AdvisorPaymentRow[]>();
 
     for (const row of rawData) {
       const portfolioCode = row.portfolio_code;
-      if (!portfolioGroups.has(portfolioCode)) {
-        portfolioGroups.set(portfolioCode, []);
+      let group = portfolioGroups.get(portfolioCode);
+      if (!group) {
+        group = [];
+        portfolioGroups.set(portfolioCode, group);
       }
 
-      const pDate = new Date(row.payment_date);
-      const paymentDateES = DateTime.fromJSDate(pDate)
-        .setZone('America/Caracas')
-        .toFormat('dd-MM-yyyy');
-
-      const invoiceStatusLabel =
-        row.invoice_status === 'PAID'
-          ? 'PAGADA'
-          : row.invoice_status === 'PARTIAL'
-            ? 'PARCIAL'
-            : row.invoice_status;
-
-      const titularCard = row.type_identity_card
-        ? `${row.type_identity_card}-${row.identity_card}`
-        : 'Sin titular';
-
-      portfolioGroups.get(portfolioCode)!.push({
-        paymentDate: row.payment_date,
-        paymentDateES,
-        referenceNumber: row.reference_number,
-        paymentMethod: row.payment_method,
-        paymentAmount: Number(row.payment_amount || 0),
-        paymentAmountFormatted: Number(row.payment_amount || 0).toFixed(2),
-        paymentAmountBs: Number(row.payment_amount_bs || 0),
-        paymentAmountBsFormatted: Number(row.payment_amount_bs || 0).toFixed(2),
-        contractCode: row.contract_code,
-        invoiceStatus: row.invoice_status,
-        invoiceStatusLabel,
-        surplusAmount: Number(row.surplus_amount || 0),
-        surplusAmountFormatted: Number(row.surplus_amount || 0).toFixed(2),
-        surplusAmountBs: Number(row.surplus_amount_bs || 0),
-        surplusAmountBsFormatted: Number(row.surplus_amount_bs || 0).toFixed(2),
-        titularCard,
-        titularName: row.titular_name || 'Sin titular',
-      });
+      group.push(this.mapQueryRowToPaymentRow(row));
     }
 
     // 4. Calculate subtotals and grand totals
+    const { sections, grandTotalSurplus, grandTotalSurplusBs, grandTotalBs, grandTotalUsd } =
+      this.buildPortfolioSections(portfolioGroups);
+
+    return {
+      advisorName,
+      billingMonthLabel,
+      sections,
+      grandTotalSurplus,
+      grandTotalSurplusFormatted: grandTotalSurplus.toFixed(2),
+      grandTotalSurplusBs,
+      grandTotalSurplusBsFormatted: grandTotalSurplusBs.toFixed(2),
+      grandTotalBs,
+      grandTotalBsFormatted: grandTotalBs.toFixed(2),
+      grandTotalUsd,
+      grandTotalUsdFormatted: grandTotalUsd.toFixed(2),
+    };
+  }
+
+  /**
+   * Helper to map a raw database query row to an AdvisorPaymentRow.
+   */
+  private mapQueryRowToPaymentRow(row: AdvisorPaymentQueryRow): AdvisorPaymentRow {
+    const pDate = new Date(row.payment_date);
+    const paymentDateES = formatDateES(pDate);
+
+    const invoiceStatusLabel =
+      row.invoice_status === 'PAID'
+        ? 'PAGADA'
+        : row.invoice_status === 'PARTIAL'
+          ? 'PARCIAL'
+          : row.invoice_status;
+
+    const titularCard = row.type_identity_card
+      ? `${row.type_identity_card}-${row.identity_card}`
+      : 'Sin titular';
+
+    return {
+      paymentDate: String(row.payment_date),
+      paymentDateES,
+      referenceNumber: row.reference_number,
+      paymentMethod: row.payment_method,
+      paymentAmount: Number(row.payment_amount || 0),
+      paymentAmountFormatted: Number(row.payment_amount || 0).toFixed(2),
+      paymentAmountBs: Number(row.payment_amount_bs || 0),
+      paymentAmountBsFormatted: Number(row.payment_amount_bs || 0).toFixed(2),
+      contractCode: row.contract_code,
+      invoiceStatus: row.invoice_status,
+      invoiceStatusLabel,
+      surplusAmount: Number(row.surplus_amount || 0),
+      surplusAmountFormatted: Number(row.surplus_amount || 0).toFixed(2),
+      surplusAmountBs: Number(row.surplus_amount_bs || 0),
+      surplusAmountBsFormatted: Number(row.surplus_amount_bs || 0).toFixed(2),
+      titularCard,
+      titularName: row.titular_name || 'Sin titular',
+    };
+  }
+
+  /**
+   * Helper to build and aggregate portfolio sections.
+   */
+  private buildPortfolioSections(portfolioGroups: Map<string, AdvisorPaymentRow[]>) {
     const sections: PortfolioSection[] = [];
     let grandTotalSurplus = 0;
     let grandTotalSurplusBs = 0;
@@ -243,17 +281,11 @@ export class AdvisorPaymentsService {
     sections.sort((a, b) => a.portfolioCode.localeCompare(b.portfolioCode));
 
     return {
-      advisorName,
-      billingMonthLabel,
       sections,
       grandTotalSurplus,
-      grandTotalSurplusFormatted: grandTotalSurplus.toFixed(2),
       grandTotalSurplusBs,
-      grandTotalSurplusBsFormatted: grandTotalSurplusBs.toFixed(2),
       grandTotalBs,
-      grandTotalBsFormatted: grandTotalBs.toFixed(2),
       grandTotalUsd,
-      grandTotalUsdFormatted: grandTotalUsd.toFixed(2),
     };
   }
 
@@ -262,32 +294,14 @@ export class AdvisorPaymentsService {
    */
   async generateExcel(year: number, month: number, advisorId?: string): Promise<Buffer> {
     const report = await this.buildReportData(year, month, advisorId);
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'SIRCA - Sistema Integral';
-    workbook.created = new Date();
-
-    const ws = workbook.addWorksheet('RELACIÓN DE PAGOS', {
-      properties: { defaultColWidth: 15 },
-      pageSetup: { orientation: 'landscape', fitToPage: true },
-    });
+    const { workbook, ws } = createWorkbook('RELACIÓN DE PAGOS');
 
     const totalCols = 10;
 
     // A. TITLE
     const titleRow = ws.addRow(['RELACIÓN DE PAGOS POR ASESOR']);
     ws.mergeCells(1, 1, 1, totalCols);
-    titleRow.getCell(1).font = {
-      name: 'Calibri',
-      size: 16,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-    titleRow.getCell(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyTitleRowStyle(titleRow.getCell(1));
     titleRow.height = 40;
 
     // B. SUBHEADERS
@@ -297,7 +311,7 @@ export class AdvisorPaymentsService {
       name: 'Calibri',
       size: 11,
       bold: true,
-      color: { argb: 'FF' + BRAND.darkText },
+      color: { argb: `FF${BRAND.darkText}` },
     };
     advisorRow.getCell(1).alignment = { horizontal: 'left' };
     advisorRow.height = 20;
@@ -308,7 +322,7 @@ export class AdvisorPaymentsService {
       name: 'Calibri',
       size: 11,
       bold: true,
-      color: { argb: 'FF' + BRAND.darkText },
+      color: { argb: `FF${BRAND.darkText}` },
     };
     billingMonthRow.getCell(1).alignment = { horizontal: 'left' };
     billingMonthRow.height = 20;
@@ -324,17 +338,7 @@ export class AdvisorPaymentsService {
       // Section Header (Portfolio Title)
       const secHeaderRow = ws.addRow([`CARTERA: ${section.portfolioCode}`]);
       ws.mergeCells(currentRowIdx, 1, currentRowIdx, totalCols);
-      secHeaderRow.getCell(1).font = {
-        name: 'Calibri',
-        size: 12,
-        bold: true,
-        color: { argb: 'FFFFFFFF' },
-      };
-      secHeaderRow.getCell(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF' + BRAND.primaryGreen },
-      };
+      applySectionHeaderStyle(secHeaderRow.getCell(1));
       secHeaderRow.height = 25;
       currentRowIdx++;
 
@@ -354,16 +358,7 @@ export class AdvisorPaymentsService {
       const headerRow = ws.addRow(headers);
       headerRow.height = 22;
       for (let c = 1; c <= totalCols; c++) {
-        const cell = headerRow.getCell(c);
-        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF334155' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-          bottom: { style: 'medium', color: { argb: 'FF' + BRAND.borderColor } },
-          left: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-          right: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-        };
+        applyTableHeaderStyle(headerRow.getCell(c));
       }
       currentRowIdx++;
 
@@ -402,13 +397,7 @@ export class AdvisorPaymentsService {
         row.getCell(10).alignment = { horizontal: 'right' };
 
         for (let c = 1; c <= totalCols; c++) {
-          row.getCell(c).border = {
-            top: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-            bottom: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-            left: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-            right: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-          };
-          row.getCell(c).font = { name: 'Calibri', size: 10 };
+          applyDataCellStyle(row.getCell(c));
         }
         currentRowIdx++;
       }
@@ -450,17 +439,7 @@ export class AdvisorPaymentsService {
 
       for (let c = 1; c <= totalCols; c++) {
         const cell = subtotalRow.getCell(c);
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FF' + BRAND.subtotalGreen },
-        };
-        cell.border = {
-          top: { style: 'medium', color: { argb: 'FF' + BRAND.borderColor } },
-          bottom: { style: 'double', color: { argb: 'FF' + BRAND.borderColor } },
-          left: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-          right: { style: 'thin', color: { argb: 'FF' + BRAND.borderColor } },
-        };
+        applySubtotalCellStyle(cell);
       }
       currentRowIdx++;
 
@@ -486,31 +465,9 @@ export class AdvisorPaymentsService {
     ]);
     ws.mergeCells(blankRowIdx + 1, 1, blankRowIdx + 1, 9);
     gtSurplusRow.height = 24;
-    gtSurplusRow.getCell(1).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtSurplusRow.getCell(1).alignment = { horizontal: 'right', vertical: 'middle' };
-    gtSurplusRow.getCell(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtSurplusRow.getCell(1), 'right');
     gtSurplusRow.getCell(10).numFmt = '$#,##0.00';
-    gtSurplusRow.getCell(10).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtSurplusRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtSurplusRow.getCell(10).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtSurplusRow.getCell(10), 'center');
 
     const gtSurplusBsRow = ws.addRow([
       'MONTO TOTAL EXCEDENTES BS. (Bs.):',
@@ -526,31 +483,9 @@ export class AdvisorPaymentsService {
     ]);
     ws.mergeCells(blankRowIdx + 2, 1, blankRowIdx + 2, 9);
     gtSurplusBsRow.height = 24;
-    gtSurplusBsRow.getCell(1).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtSurplusBsRow.getCell(1).alignment = { horizontal: 'right', vertical: 'middle' };
-    gtSurplusBsRow.getCell(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtSurplusBsRow.getCell(1), 'right');
     gtSurplusBsRow.getCell(10).numFmt = '"Bs. "#,##0.00';
-    gtSurplusBsRow.getCell(10).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtSurplusBsRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtSurplusBsRow.getCell(10).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtSurplusBsRow.getCell(10), 'center');
 
     const gtBsRow = ws.addRow([
       'MONTO TOTAL PAGOS BS. (Bs.):',
@@ -566,31 +501,9 @@ export class AdvisorPaymentsService {
     ]);
     ws.mergeCells(blankRowIdx + 3, 1, blankRowIdx + 3, 9);
     gtBsRow.height = 24;
-    gtBsRow.getCell(1).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtBsRow.getCell(1).alignment = { horizontal: 'right', vertical: 'middle' };
-    gtBsRow.getCell(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtBsRow.getCell(1), 'right');
     gtBsRow.getCell(10).numFmt = '"Bs. "#,##0.00';
-    gtBsRow.getCell(10).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtBsRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtBsRow.getCell(10).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtBsRow.getCell(10), 'center');
 
     const gtUsdRow = ws.addRow([
       'MONTO TOTAL PAGOS USD ($):',
@@ -606,31 +519,9 @@ export class AdvisorPaymentsService {
     ]);
     ws.mergeCells(blankRowIdx + 4, 1, blankRowIdx + 4, 9);
     gtUsdRow.height = 24;
-    gtUsdRow.getCell(1).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtUsdRow.getCell(1).alignment = { horizontal: 'right', vertical: 'middle' };
-    gtUsdRow.getCell(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtUsdRow.getCell(1), 'right');
     gtUsdRow.getCell(10).numFmt = '$#,##0.00';
-    gtUsdRow.getCell(10).font = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FFFFFFFF' },
-    };
-    gtUsdRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
-    gtUsdRow.getCell(10).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF' + BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(gtUsdRow.getCell(10), 'center');
 
     // Set precise columns width
     ws.getColumn(1).width = 15; // Contract code
@@ -644,8 +535,7 @@ export class AdvisorPaymentsService {
     ws.getColumn(9).width = 18; // Amount Bs
     ws.getColumn(10).width = 18; // Amount USD
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    return finishWorkbook(workbook);
   }
 
   /**
@@ -654,24 +544,8 @@ export class AdvisorPaymentsService {
   async generatePdf(year: number, month: number, advisorId?: string): Promise<Buffer> {
     const report = await this.buildReportData(year, month, advisorId);
 
-    const generatedAt = new Date().toLocaleString('es-VE', {
-      timeZone: 'America/Caracas',
-    });
-
-    let logoBase64 = '';
-    try {
-      const logoPath = path.join(process.cwd(), 'src', 'assets', 'images', 'logo.png');
-      const logoBuffer = await fs.readFile(logoPath);
-      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-    } catch {
-      try {
-        const logoPath = path.join(process.cwd(), 'dist', 'assets', 'images', 'logo.png');
-        const logoBuffer = await fs.readFile(logoPath);
-        logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-      } catch (err) {
-        this.logger.warn('Company logo.png not found. PDF will render without it.', err);
-      }
-    }
+    const generatedAt = getGeneratedAtTimestamp();
+    const logoBase64 = await loadLogoBase64(this.logger);
 
     const templateData = {
       logo: logoBase64 || null,

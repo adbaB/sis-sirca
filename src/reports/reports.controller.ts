@@ -1,9 +1,10 @@
 import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { RequirePermissions } from '../auth/decorators';
+import { AdvisorPaymentsService } from './advisor-payments.service';
+import { ProjectionReportService } from './projection-report.service';
 import { ReportsService } from './reports.service';
 import { SipCommissionsService } from './sip-commissions.service';
-import { AdvisorPaymentsService } from './advisor-payments.service';
 
 @Controller('reports')
 export class ReportsController {
@@ -11,7 +12,14 @@ export class ReportsController {
     private readonly reportsService: ReportsService,
     private readonly sipCommissionsService: SipCommissionsService,
     private readonly advisorPaymentsService: AdvisorPaymentsService,
+    private readonly projectionReportService: ProjectionReportService,
   ) {}
+
+  private validatePeriod(year: number, month: number): void {
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      throw new BadRequestException('Año o mes inválidos.');
+    }
+  }
 
   @Get('contracts/excel')
   @RequirePermissions('read:reports')
@@ -20,6 +28,8 @@ export class ReportsController {
     @Query('month') month: number,
     @Res() res: Response,
   ) {
+    this.validatePeriod(year, month);
+
     const buffer = await this.reportsService.generateExcel(Number(year), Number(month));
     const monthStr = String(month).padStart(2, '0');
     res.set({
@@ -37,6 +47,8 @@ export class ReportsController {
     @Query('month') month: number,
     @Res() res: Response,
   ) {
+    this.validatePeriod(year, month);
+
     const buffer = await this.reportsService.generatePdf(Number(year), Number(month));
     const monthStr = String(month).padStart(2, '0');
     res.set({
@@ -54,9 +66,7 @@ export class ReportsController {
     @Query('month') month: number,
     @Res() res: Response,
   ) {
-    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-      throw new BadRequestException('Año o mes inválidos.');
-    }
+    this.validatePeriod(year, month);
 
     const buffer = await this.sipCommissionsService.generateExcel(Number(year), Number(month));
     const monthStr = String(month).padStart(2, '0');
@@ -75,9 +85,7 @@ export class ReportsController {
     @Query('month') month: number,
     @Res() res: Response,
   ) {
-    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-      throw new BadRequestException('Año o mes inválidos.');
-    }
+    this.validatePeriod(year, month);
 
     const buffer = await this.sipCommissionsService.generatePdf(Number(year), Number(month));
     const monthStr = String(month).padStart(2, '0');
@@ -97,9 +105,7 @@ export class ReportsController {
     @Query('advisorId') advisorId: string,
     @Res() res: Response,
   ) {
-    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-      throw new BadRequestException('Año o mes inválidos.');
-    }
+    this.validatePeriod(year, month);
 
     const buffer = await this.advisorPaymentsService.generateExcel(
       Number(year),
@@ -123,9 +129,7 @@ export class ReportsController {
     @Query('advisorId') advisorId: string,
     @Res() res: Response,
   ) {
-    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-      throw new BadRequestException('Año o mes inválidos.');
-    }
+    this.validatePeriod(year, month);
 
     const buffer = await this.advisorPaymentsService.generatePdf(
       Number(year),
@@ -136,6 +140,30 @@ export class ReportsController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="pagos-asesor-${year}-${monthStr}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('projection/excel')
+  @RequirePermissions('read:reports')
+  async downloadProjectionExcel(@Query('advisorId') advisorId: string, @Res() res: Response) {
+    const buffer = await this.projectionReportService.generateExcel(advisorId || undefined);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="proyeccion-ingresos.xlsx"',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('projection/pdf')
+  @RequirePermissions('read:reports')
+  async downloadProjectionPdf(@Query('advisorId') advisorId: string, @Res() res: Response) {
+    const buffer = await this.projectionReportService.generatePdf(advisorId || undefined);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="proyeccion-ingresos.pdf"',
       'Content-Length': buffer.length,
     });
     res.end(buffer);

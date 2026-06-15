@@ -1,10 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
-import * as ExcelJS from 'exceljs';
-import * as fs from 'fs/promises';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { DateTime } from 'luxon';
-import * as path from 'path';
 import { DataSource } from 'typeorm';
 import { PdfService } from '../pdf/services/pdf.service';
+import {
+  applyGrandTotalStyle,
+  BRAND_COLORS,
+  createWorkbook,
+  finishWorkbook,
+  formatDateES,
+  getGeneratedAtTimestamp,
+  loadLogoBase64,
+  loadLogoImagePath,
+  thinBorder,
+} from './report-utils';
 
 /** One row in the commission report grid */
 interface CommissionRow {
@@ -34,15 +43,24 @@ interface SipCommissionReport {
   portfolioCodes: string[];
 }
 
-// Brand colors from SIRCA's design system
+interface SipCommissionQueryRow {
+  plan_name: string;
+  plan_amount: string | number;
+  commission_amount: string | number;
+  portfolio_code: string;
+  contract_code: string;
+  affiliation_date: string | Date;
+  payment_date: string | Date;
+  due_date: string | Date;
+  issue_date: string | Date;
+  affiliate_count: string | number;
+}
+
+// Use BRAND_COLORS from shared report-utils
 const BRAND = {
-  primaryGreen: '1d9e11',
-  darkText: '333333',
-  mediumText: '666666',
-  lightText: '999999',
-  border: 'e2e8f0',
-  altBackground: 'f8fafc',
-  white: 'FFFFFF',
+  ...BRAND_COLORS,
+  border: BRAND_COLORS.borderColor,
+  altBackground: BRAND_COLORS.lightGrayBg,
 };
 
 @Injectable()
@@ -66,47 +84,63 @@ export class SipCommissionsService {
     const endDate = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
 
     // 1. Get all active portfolio codes for column headers
-    const portfolios = await this.dataSource.query(
-      `SELECT code FROM portfolios WHERE status = 'ACTIVE' AND deleted_at IS NULL ORDER BY code`,
-    );
-    const activePortfolioCodes: string[] = portfolios.map((p: { code: string }) => p.code);
+    let portfolios: Array<{ code: string }>;
+    try {
+      portfolios = await this.dataSource.query(
+        "SELECT code FROM portfolios WHERE status = 'ACTIVE' AND deleted_at IS NULL ORDER BY code",
+      );
+    } catch (err) {
+      this.logger.error('Error querying portfolios:', err);
+      throw new InternalServerErrorException(
+        'Error al obtener las carteras para el reporte de comisiones.',
+      );
+    }
+    const activePortfolioCodes: string[] = portfolios.map((p) => p.code);
 
     // 2. Determine which contract codes are "convenio inicial" (SIR-002-001 to SIR-002-060)
-    const convenioInicialPattern = `^SIR-002-0[0-5][0-9]$|^SIR-002-060$`;
+    const convenioInicialPattern = '^SIR-002-0[0-5][0-9]$|^SIR-002-060$';
 
     // 3. Fetch all invoice details with related data for the period
-    const rawData = await this.dataSource.query(
-      `
-      SELECT
-        p.name       AS plan_name,
-        p.amount     AS plan_amount,
-        p.commission_amount,
-        COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
-        c.code       AS contract_code,
-        c.affiliation_date,
-        pay.payment_date,
-        inv.due_date,
-        inv.issue_date,
-        COUNT(DISTINCT id_detail.id) AS affiliate_count
-      FROM invoice_details id_detail
-      JOIN invoices inv    ON id_detail.invoice_id = inv.id AND inv.deleted_at IS NULL
-      JOIN contracts c     ON inv.contract_id = c.id        AND c.deleted_at IS NULL
-      JOIN plans p         ON id_detail.plan_id = p.id
-      LEFT JOIN portfolios pf ON c.portfolio_id = pf.id
-      JOIN (
-        SELECT invoice_id, MAX(payment_date) AS payment_date
-        FROM payments
-        WHERE status = 'COMPLETED' AND deleted_at IS NULL
-        GROUP BY invoice_id
-      ) pay ON pay.invoice_id = inv.id
-      WHERE inv.billing_month = $1
-        AND c.status = 'ACTIVE'
-        AND id_detail.deleted_at IS NULL
-      GROUP BY p.name, p.amount, p.commission_amount, pf.code,
-               c.code, c.affiliation_date, pay.payment_date, inv.due_date, inv.issue_date
-      `,
-      [billingMonth],
-    );
+    let rawData: SipCommissionQueryRow[];
+    try {
+      rawData = await this.dataSource.query(
+        `
+        SELECT
+          p.name       AS plan_name,
+          p.amount     AS plan_amount,
+          p.commission_amount,
+          COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
+          c.code       AS contract_code,
+          c.affiliation_date,
+          pay.payment_date,
+          inv.due_date,
+          inv.issue_date,
+          COUNT(DISTINCT id_detail.id) AS affiliate_count
+        FROM invoice_details id_detail
+        JOIN invoices inv    ON id_detail.invoice_id = inv.id AND inv.deleted_at IS NULL
+        JOIN contracts c     ON inv.contract_id = c.id        AND c.deleted_at IS NULL
+        JOIN plans p         ON id_detail.plan_id = p.id
+        LEFT JOIN portfolios pf ON c.portfolio_id = pf.id
+        JOIN (
+          SELECT invoice_id, MAX(payment_date) AS payment_date
+          FROM payments
+          WHERE status = 'COMPLETED' AND deleted_at IS NULL
+          GROUP BY invoice_id
+        ) pay ON pay.invoice_id = inv.id
+        WHERE inv.billing_month = $1
+          AND c.status = 'ACTIVE'
+          AND id_detail.deleted_at IS NULL
+        GROUP BY p.name, p.amount, p.commission_amount, pf.code,
+                 c.code, c.affiliation_date, pay.payment_date, inv.due_date, inv.issue_date
+        `,
+        [billingMonth],
+      );
+    } catch (err) {
+      this.logger.error('Error querying invoice details for SIP commissions:', err);
+      throw new InternalServerErrorException(
+        'Error al obtener los datos de facturación para el reporte de comisiones.',
+      );
+    }
 
     // Collect all unique portfolio codes from rawData
     const foundCodes = new Set<string>();
@@ -120,57 +154,8 @@ export class SipCommissionsService {
     const portfolioCodes = [...activePortfolioCodes, ...extraCodes];
 
     // 4. Classify each record into a section
-    const sectionBuckets: Record<string, Array<(typeof rawData)[0]>> = {
-      nuevos: [],
-      cobranzasNuevoConvenio: [],
-      cobranzasConvenioInicial: [],
-      extemporaneosNuevoConvenio: [],
-      extemporaneosConvenioInicial: [],
-    };
-
     const convenioRe = new RegExp(convenioInicialPattern);
-    const toDateString = (dateVal: Date | string) => {
-      if (!dateVal) return '';
-      const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
-      return d.toISOString().slice(0, 10);
-    };
-
-    for (const row of rawData) {
-      const affiliationDateStr = toDateString(row.affiliation_date);
-      const paymentDateStr = DateTime.fromJSDate(
-        row.payment_date instanceof Date ? row.payment_date : new Date(row.payment_date),
-      )
-        .setZone('America/Caracas')
-        .toFormat('yyyy-MM-dd');
-      const dueDateStr = toDateString(row.due_date);
-      const issueDateStr = toDateString(row.issue_date);
-      const nextIssueDateStr = DateTime.fromJSDate(
-        row.issue_date instanceof Date ? row.issue_date : new Date(row.issue_date),
-      )
-        .setZone('America/Caracas')
-        .plus({ months: 1 })
-        .toFormat('yyyy-MM-dd');
-
-      const isConvenioInicial = convenioRe.test(row.contract_code);
-      const isNew = affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
-      const isExtemporaneo = paymentDateStr > dueDateStr;
-
-      if (isNew) {
-        sectionBuckets.nuevos.push(row);
-      } else if (isExtemporaneo) {
-        if (isConvenioInicial) {
-          sectionBuckets.extemporaneosConvenioInicial.push(row);
-        } else {
-          sectionBuckets.extemporaneosNuevoConvenio.push(row);
-        }
-      } else {
-        if (isConvenioInicial) {
-          sectionBuckets.cobranzasConvenioInicial.push(row);
-        } else {
-          sectionBuckets.cobranzasNuevoConvenio.push(row);
-        }
-      }
-    }
+    const sectionBuckets = this.classifyRowsIntoBuckets(rawData, convenioRe);
 
     // 5. Aggregate each bucket into sections
     const sectionDefs: Array<{ key: string; title: string }> = [
@@ -200,17 +185,81 @@ export class SipCommissionsService {
   }
 
   /**
+   * Helper to classify rows into section buckets.
+   */
+  private classifyRowsIntoBuckets(
+    rawData: SipCommissionQueryRow[],
+    convenioRe: RegExp,
+  ): Record<string, SipCommissionQueryRow[]> {
+    const buckets: Record<string, SipCommissionQueryRow[]> = {
+      nuevos: [],
+      cobranzasNuevoConvenio: [],
+      cobranzasConvenioInicial: [],
+      extemporaneosNuevoConvenio: [],
+      extemporaneosConvenioInicial: [],
+    };
+
+    for (const row of rawData) {
+      const isConvenioInicial = convenioRe.test(row.contract_code);
+      const isNew = this.checkIsNew(row);
+      const isExtemporaneo = this.checkIsExtemporaneo(row);
+
+      if (isNew) {
+        buckets.nuevos.push(row);
+      } else if (isExtemporaneo) {
+        if (isConvenioInicial) {
+          buckets.extemporaneosConvenioInicial.push(row);
+        } else {
+          buckets.extemporaneosNuevoConvenio.push(row);
+        }
+      } else {
+        if (isConvenioInicial) {
+          buckets.cobranzasConvenioInicial.push(row);
+        } else {
+          buckets.cobranzasNuevoConvenio.push(row);
+        }
+      }
+    }
+
+    return buckets;
+  }
+
+  private checkIsNew(row: SipCommissionQueryRow): boolean {
+    const affiliationDateStr = this.formatToDateString(row.affiliation_date);
+    const issueDateStr = this.formatToDateString(row.issue_date);
+    const nextIssueDateStr = DateTime.fromJSDate(
+      row.issue_date instanceof Date ? row.issue_date : new Date(row.issue_date),
+    )
+      .setZone('America/Caracas')
+      .plus({ months: 1 })
+      .toFormat('yyyy-MM-dd');
+
+    return affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
+  }
+
+  private checkIsExtemporaneo(row: SipCommissionQueryRow): boolean {
+    const paymentDateStr = DateTime.fromJSDate(
+      row.payment_date instanceof Date ? row.payment_date : new Date(row.payment_date),
+    )
+      .setZone('America/Caracas')
+      .toFormat('yyyy-MM-dd');
+    const dueDateStr = this.formatToDateString(row.due_date);
+
+    return paymentDateStr > dueDateStr;
+  }
+
+  private formatToDateString(dateVal: Date | string): string {
+    if (!dateVal) return '';
+    const parsedDate = dateVal instanceof Date ? dateVal : new Date(dateVal);
+    return parsedDate.toISOString().slice(0, 10);
+  }
+
+  /**
    * Aggregate raw rows into a report section, grouped by (planName + planAmount).
    */
   private aggregateSection(
     title: string,
-    rows: Array<{
-      plan_name: string;
-      plan_amount: string;
-      commission_amount: string;
-      portfolio_code: string;
-      affiliate_count: string;
-    }>,
+    rows: SipCommissionQueryRow[],
     portfolioCodes: string[],
   ): ReportSection {
     // Group by plan_name + plan_amount key
@@ -226,15 +275,16 @@ export class SipCommissionsService {
 
     for (const row of rows) {
       const key = `${row.plan_name}|${Number(row.plan_amount).toFixed(2)}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, {
+      let group = grouped.get(key);
+      if (!group) {
+        group = {
           planName: row.plan_name,
           planAmount: Number(row.plan_amount),
           commissionAmount: Number(row.commission_amount),
           affiliatesByPortfolio: {},
-        });
+        };
+        grouped.set(key, group);
       }
-      const group = grouped.get(key)!;
       const code = row.portfolio_code;
       group.affiliatesByPortfolio[code] =
         (group.affiliatesByPortfolio[code] || 0) + Number(row.affiliate_count);
@@ -284,14 +334,7 @@ export class SipCommissionsService {
    */
   async generateExcel(year: number, month: number): Promise<Buffer> {
     const report = await this.buildReportData(year, month);
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'SIRCA - Sistema Integral';
-    workbook.created = new Date();
-
-    const ws = workbook.addWorksheet('CUADRO DE COMISIONES MES', {
-      properties: { defaultColWidth: 15 },
-      pageSetup: { orientation: 'landscape', fitToPage: true },
-    });
+    const { workbook, ws } = createWorkbook('CUADRO DE COMISIONES MES');
 
     // Determine portfolio columns dynamically
     const portfolioCodes = report.portfolioCodes;
@@ -310,31 +353,66 @@ export class SipCommissionsService {
     ws.columns = colWidths.map((w) => ({ width: w }));
 
     // Load logo
-    let logoId: number | null = null;
-    try {
-      const logoPath = path.join(process.cwd(), 'src', 'assets', 'images', 'logo.png');
-      await fs.access(logoPath);
-      logoId = workbook.addImage({ filename: logoPath, extension: 'png' });
-    } catch {
-      try {
-        const logoPath = path.join(process.cwd(), 'dist', 'assets', 'images', 'logo.png');
-        await fs.access(logoPath);
-        logoId = workbook.addImage({ filename: logoPath, extension: 'png' });
-      } catch {
-        this.logger.warn('Logo not found, skipping logo in report');
-      }
-    }
-
-    // === HEADER SECTION ===
-    if (logoId !== null) {
-      ws.addImage(logoId, {
-        tl: { col: 0, row: 0 },
-        ext: { width: 180, height: 60 },
-      });
-    }
+    const logoPath = await loadLogoImagePath(this.logger);
+    this.renderLogo(workbook, ws, logoPath);
 
     // Empty rows for logo space
     let currentRow = 4;
+
+    // Render Title & Subtitle Headers
+    currentRow = this.renderExcelHeaders(ws, report, totalCols, currentRow);
+
+    // === SECTIONS ===
+    for (const section of report.sections) {
+      if (section.rows.length === 0) continue; // Skip empty sections
+
+      currentRow = this.writeSection(ws, section, portfolioCodes, totalCols, currentRow);
+      currentRow += 2; // spacing between sections
+    }
+
+    // === GRAND TOTAL ===
+    currentRow++;
+    currentRow = this.renderExcelGrandTotal(ws, totalCols, report.grandTotalCommission, currentRow);
+
+    // === FOOTER ===
+    currentRow += 3;
+    const footerRow = ws.getRow(currentRow);
+    ws.mergeCells(currentRow, 1, currentRow, totalCols);
+    const footerCell = footerRow.getCell(1);
+    footerCell.value = 'P/Administración SIRCA';
+    footerCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: BRAND.lightText } };
+    footerCell.alignment = { horizontal: 'center' };
+
+    // Generate buffer
+    return finishWorkbook(workbook);
+  }
+
+  /**
+   * Helper to load and render the logo in Excel.
+   */
+  private renderLogo(
+    workbook: ExcelJS.Workbook,
+    ws: ExcelJS.Worksheet,
+    logoPath: string | null,
+  ): void {
+    if (!logoPath) return;
+    const logoId = workbook.addImage({ filename: logoPath, extension: 'png' });
+    ws.addImage(logoId, {
+      tl: { col: 0, row: 0 },
+      ext: { width: 180, height: 60 },
+    });
+  }
+
+  /**
+   * Helper to render Title/Subtitle Excel headers.
+   */
+  private renderExcelHeaders(
+    ws: ExcelJS.Worksheet,
+    report: SipCommissionReport,
+    totalCols: number,
+    startRow: number,
+  ): number {
+    let currentRow = startRow;
 
     // Title: RESUMEN MENSUAL
     const titleRow = ws.getRow(currentRow);
@@ -359,43 +437,35 @@ export class SipCommissionsService {
     const corteRow = ws.getRow(currentRow);
     ws.mergeCells(currentRow, 1, currentRow, totalCols);
     const corteCell = corteRow.getCell(1);
-    corteCell.value = `Corte: Del ${this.formatDateES(report.startDate)} Al ${this.formatDateES(report.endDate)}`;
+    corteCell.value = `Corte: Del ${formatDateES(report.startDate)} Al ${formatDateES(report.endDate)}`;
     corteCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BRAND.darkText } };
     corteCell.alignment = { horizontal: 'center', vertical: 'middle' };
     currentRow += 2; // extra blank row
 
-    // === SECTIONS ===
-    for (const section of report.sections) {
-      if (section.rows.length === 0) continue; // Skip empty sections
+    return currentRow;
+  }
 
-      currentRow = this.writeSection(ws, section, portfolioCodes, totalCols, currentRow);
-      currentRow += 2; // spacing between sections
-    }
-
-    // === GRAND TOTAL ===
-    currentRow++;
+  /**
+   * Helper to render Excel grand total row.
+   */
+  private renderExcelGrandTotal(
+    ws: ExcelJS.Worksheet,
+    totalCols: number,
+    grandTotalCommission: number,
+    currentRow: number,
+  ): number {
     const grandRow = ws.getRow(currentRow);
     ws.mergeCells(currentRow, 1, currentRow, totalCols - 1);
     const grandLabelCell = grandRow.getCell(1);
     grandLabelCell.value = 'TOTAL MONTO A PAGAR POR COMISIONES AL CORTE';
-    grandLabelCell.font = { name: 'Calibri', size: 13, bold: true, color: { argb: BRAND.white } };
-    grandLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
-    grandLabelCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(grandLabelCell, 'right');
+    grandLabelCell.font = { ...grandLabelCell.font, size: 13 };
 
     const grandValueCell = grandRow.getCell(totalCols);
-    grandValueCell.value = report.grandTotalCommission;
+    grandValueCell.value = grandTotalCommission;
     grandValueCell.numFmt = '$#,##0.00';
-    grandValueCell.font = { name: 'Calibri', size: 13, bold: true, color: { argb: BRAND.white } };
-    grandValueCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    grandValueCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: BRAND.primaryGreen },
-    };
+    applyGrandTotalStyle(grandValueCell, 'center');
+    grandValueCell.font = { ...grandValueCell.font, size: 13 };
     grandRow.height = 28;
 
     // Apply border to grand total
@@ -403,18 +473,7 @@ export class SipCommissionsService {
       grandRow.getCell(c).border = this.thinBorder();
     }
 
-    // === FOOTER ===
-    currentRow += 3;
-    const footerRow = ws.getRow(currentRow);
-    ws.mergeCells(currentRow, 1, currentRow, totalCols);
-    const footerCell = footerRow.getCell(1);
-    footerCell.value = 'P/Administración SIRCA';
-    footerCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: BRAND.lightText } };
-    footerCell.alignment = { horizontal: 'center' };
-
-    // Generate buffer
-    const arrayBuffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(arrayBuffer);
+    return currentRow;
   }
 
   /**
@@ -601,19 +660,9 @@ export class SipCommissionsService {
     return currentRow;
   }
 
-  /** Helper: Create a thin border style */
+  /** Helper: Create a thin border style (delegates to shared utility) */
   private thinBorder(): Partial<ExcelJS.Borders> {
-    const side: Partial<ExcelJS.Border> = { style: 'thin', color: { argb: BRAND.border } };
-    return { top: side, left: side, bottom: side, right: side };
-  }
-
-  /** Helper: Format a date string as DD-MM-YYYY */
-  private formatDateES(dateStr: string): string {
-    const d = new Date(dateStr + 'T00:00:00');
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}-${month}-${year}`;
+    return thinBorder();
   }
 
   /**
@@ -622,24 +671,8 @@ export class SipCommissionsService {
   async generatePdf(year: number, month: number): Promise<Buffer> {
     const report = await this.buildReportData(year, month);
 
-    const generatedAt = new Date().toLocaleString('es-VE', {
-      timeZone: 'America/Caracas',
-    });
-
-    let logoBase64 = '';
-    try {
-      const logoPath = path.join(process.cwd(), 'src', 'assets', 'images', 'logo.png');
-      const logoBuffer = await fs.readFile(logoPath);
-      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-    } catch {
-      try {
-        const logoPath = path.join(process.cwd(), 'dist', 'assets', 'images', 'logo.png');
-        const logoBuffer = await fs.readFile(logoPath);
-        logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-      } catch (err2) {
-        this.logger.error('Could not load logo image for PDF:', err2);
-      }
-    }
+    const generatedAt = getGeneratedAtTimestamp();
+    const logoBase64 = await loadLogoBase64(this.logger);
 
     // Format fields for handlebars rendering
     const formattedSections = report.sections.map((section) => ({
@@ -666,8 +699,8 @@ export class SipCommissionsService {
     const templateData = {
       logo: logoBase64,
       generatedAt,
-      startDateES: this.formatDateES(report.startDate),
-      endDateES: this.formatDateES(report.endDate),
+      startDateES: formatDateES(report.startDate),
+      endDateES: formatDateES(report.endDate),
       sections: formattedSections,
       portfolioCodes: report.portfolioCodes,
       colspan: 4 + report.portfolioCodes.length,

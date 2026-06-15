@@ -4,12 +4,14 @@ import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
 import { SipCommissionsService } from './sip-commissions.service';
 import { AdvisorPaymentsService } from './advisor-payments.service';
+import { ProjectionReportService } from './projection-report.service';
 
 describe('ReportsController', () => {
   let controller: ReportsController;
   let reportsService: ReportsService;
   let sipCommissionsService: SipCommissionsService;
   let advisorPaymentsService: AdvisorPaymentsService;
+  let projectionReportService: ProjectionReportService;
 
   const mockResponse = () => {
     const res: Partial<Response> = {};
@@ -43,6 +45,13 @@ describe('ReportsController', () => {
             generatePdf: jest.fn().mockResolvedValue(Buffer.from('advisor-payments-pdf')),
           },
         },
+        {
+          provide: ProjectionReportService,
+          useValue: {
+            generateExcel: jest.fn().mockResolvedValue(Buffer.from('projection-excel')),
+            generatePdf: jest.fn().mockResolvedValue(Buffer.from('projection-pdf')),
+          },
+        },
       ],
     }).compile();
 
@@ -50,6 +59,7 @@ describe('ReportsController', () => {
     reportsService = module.get<ReportsService>(ReportsService);
     sipCommissionsService = module.get<SipCommissionsService>(SipCommissionsService);
     advisorPaymentsService = module.get<AdvisorPaymentsService>(AdvisorPaymentsService);
+    projectionReportService = module.get<ProjectionReportService>(ProjectionReportService);
   });
 
   it('should be defined', () => {
@@ -169,6 +179,38 @@ describe('ReportsController', () => {
       await expect(
         controller.downloadAdvisorPaymentsPdf(2026, 13, 'advisor-uuid', res),
       ).rejects.toThrow('Año o mes inválidos.');
+    });
+  });
+
+  describe('downloadProjectionExcel', () => {
+    it('should generate and return projection Excel file with headers', async () => {
+      const res = mockResponse();
+      await controller.downloadProjectionExcel('advisor-uuid', res);
+
+      expect(projectionReportService.generateExcel).toHaveBeenCalledWith('advisor-uuid');
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': 'attachment; filename="proyeccion-ingresos.xlsx"',
+        }),
+      );
+      expect(res.end).toHaveBeenCalledWith(Buffer.from('projection-excel'));
+    });
+  });
+
+  describe('downloadProjectionPdf', () => {
+    it('should generate and return projection PDF file with headers', async () => {
+      const res = mockResponse();
+      await controller.downloadProjectionPdf('advisor-uuid', res);
+
+      expect(projectionReportService.generatePdf).toHaveBeenCalledWith('advisor-uuid');
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="proyeccion-ingresos.pdf"',
+        }),
+      );
+      expect(res.end).toHaveBeenCalledWith(Buffer.from('projection-pdf'));
     });
   });
 });

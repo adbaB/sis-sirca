@@ -162,6 +162,7 @@ export class PaymentPdfCronService {
       members,
       today,
       paymentMethod: payment.paymentMethod,
+      referenceNumber: payment.referenceNumber,
       ...financialInfo,
       date: today,
       advisor,
