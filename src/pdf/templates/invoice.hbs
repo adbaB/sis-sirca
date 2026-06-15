@@ -177,6 +177,9 @@
         <p><strong>Mes de Pago:</strong> {{ billingMonth }}</p>
         <p><strong>Titular:</strong> {{ personName }}</p>
         <p><strong>Documento:</strong> {{ identityCard }}</p>
+        {{#if referenceNumber}}
+        <p><strong>Referencia:</strong> {{ referenceNumber }}</p>
+        {{/if}}
       </div>
       <div class="info-box">
         <h3>Miembros</h3>
