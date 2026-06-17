@@ -129,6 +129,59 @@ describe('ProjectionReportService', () => {
       expect(querySpy).toHaveBeenCalledTimes(1);
       expect(result.advisorName).toBe('Todos los Asesores');
     });
+
+    it('should handle titular role correctly by setting plan amount to 0, not summing in total, and appending suffix to name', async () => {
+      const mockRawWithTitular = [
+        {
+          contract_code: 'SIR-001-001',
+          affiliation_date: '2026-01-15',
+          person_name: 'Juan Perez (titular)',
+          type_identity_card: 'V',
+          identity_card: '11111111',
+          plan_name: 'PLAN CLASICO',
+          plan_amount: '0.00',
+          contract_total_amount: '50.00',
+          portfolio_code: 'APF',
+          advisor_name: 'Carlos Asesor',
+        },
+        {
+          contract_code: 'SIR-001-001',
+          affiliation_date: '2026-01-15',
+          person_name: 'Maria Perez',
+          type_identity_card: 'V',
+          identity_card: '22222222',
+          plan_name: 'PLAN GOLD',
+          plan_amount: '50.00',
+          contract_total_amount: '50.00',
+          portfolio_code: 'APF',
+          advisor_name: 'Carlos Asesor',
+        },
+      ];
+
+      jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce(mockAdvisor)
+        .mockResolvedValueOnce(mockRawWithTitular);
+
+      const result = await service.buildReportData('advisor-uuid');
+
+      expect(result.sections).toHaveLength(1);
+      const section = result.sections[0];
+      expect(section.rows).toHaveLength(2);
+
+      // Titular
+      expect(section.rows[0].personName).toBe('Juan Perez (titular)');
+      expect(section.rows[0].planAmount).toBe(0);
+      expect(section.rows[0].contractTotalAmount).toBeNull();
+
+      // Affiliate
+      expect(section.rows[1].personName).toBe('Maria Perez');
+      expect(section.rows[1].planAmount).toBe(50);
+      expect(section.rows[1].contractTotalAmount).toBe(50); // should only sum affiliate(s)
+
+      expect(section.subtotalAmount).toBe(50);
+      expect(result.grandTotalAmount).toBe(50);
+    });
   });
 
   describe('generateExcel', () => {

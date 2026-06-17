@@ -23,7 +23,8 @@ interface ProjectionQueryRow {
   person_name: string;
   type_identity_card: string | null;
   identity_card: string | null;
-  plan_name: string;
+  plan_name: string | null;
+  person_role: string;
   plan_amount: number | string;
   contract_total_amount: number | string;
   portfolio_code: string;
@@ -90,19 +91,20 @@ export class ProjectionReportService {
       SELECT
         c.code AS contract_code,
         c.affiliation_date,
-        p.name AS person_name,
+        CASE WHEN cp.role = 'TITULAR' THEN p.name || ' (titular)' ELSE p.name END AS person_name,
         p.type_identity_card,
         p.identity_card,
         pl.name AS plan_name,
-        pl.amount AS plan_amount,
-        SUM(pl.amount) OVER(PARTITION BY c.id) AS contract_total_amount,
+        CASE WHEN cp.role = 'TITULAR' THEN 0 ELSE COALESCE(pl.amount, 0) END AS plan_amount,
+        cp.role AS person_role,
+        SUM(CASE WHEN cp.role = 'AFILIADO' THEN COALESCE(pl.amount, 0) ELSE 0 END) OVER(PARTITION BY c.id) AS contract_total_amount,
         COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
         COALESCE(adv.name, 'Sin asesor') AS advisor_name
       FROM contracts c
       JOIN contract_persons cp ON cp.contract_id = c.id AND cp.deleted_at IS NULL
       JOIN persons p ON cp.person_id = p.id AND p.deleted_at IS NULL
-      JOIN plans pl ON p.plan_id = pl.id AND pl.deleted_at IS NULL
-      LEFT JOIN portfolios pf ON c.portfolio_id = pf.id
+      LEFT JOIN plans pl ON p.plan_id = pl.id AND pl.deleted_at IS NULL
+      LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
       LEFT JOIN advisors adv ON c.advisor_id = adv.id AND adv.deleted_at IS NULL
       WHERE c.status = 'ACTIVE'
         AND c.deleted_at IS NULL
@@ -146,7 +148,7 @@ export class ProjectionReportService {
         personName: row.person_name,
         typeIdentityCard: row.type_identity_card || 'V',
         identityCard: row.identity_card || '',
-        planName: row.plan_name,
+        planName: row.plan_name || '',
         planAmount: Number(row.plan_amount || 0),
         planAmountFormatted: Number(row.plan_amount || 0).toFixed(2),
         contractTotalRaw: Number(row.contract_total_amount || 0),
