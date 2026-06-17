@@ -100,7 +100,7 @@ export class SipCommissionsService {
     // 2. Determine which contract codes are "convenio inicial" (SIR-002-001 to SIR-002-060)
     const convenioInicialPattern = '^SIR-002-0[0-5][0-9]$|^SIR-002-060$';
 
-    // 3. Fetch all invoice details with related data for the period
+    // 3. Fetch all invoice lines (MENSUALIDAD only) with related data for the period
     let rawData: SipCommissionQueryRow[];
     try {
       rawData = await this.dataSource.query(
@@ -115,12 +115,12 @@ export class SipCommissionsService {
           pay.payment_date,
           inv.due_date,
           inv.issue_date,
-          COUNT(DISTINCT id_detail.id) AS affiliate_count
-        FROM invoice_details id_detail
-        JOIN invoices inv    ON id_detail.invoice_id = inv.id AND inv.deleted_at IS NULL
-        JOIN contracts c     ON inv.contract_id = c.id        AND c.deleted_at IS NULL
-        JOIN plans p         ON id_detail.plan_id = p.id
-        LEFT JOIN portfolios pf ON c.portfolio_id = pf.id
+          COUNT(DISTINCT il.id) AS affiliate_count
+        FROM invoice_lines il
+        JOIN invoices inv    ON il.invoice_id = inv.id AND inv.deleted_at IS NULL
+        JOIN contracts c     ON inv.contract_id = c.id AND c.deleted_at IS NULL
+        JOIN plans p         ON il.plan_id = p.id AND p.deleted_at IS NULL
+        LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
         JOIN (
           SELECT invoice_id, MAX(payment_date) AS payment_date
           FROM payments
@@ -129,14 +129,15 @@ export class SipCommissionsService {
         ) pay ON pay.invoice_id = inv.id
         WHERE inv.billing_month = $1
           AND c.status = 'ACTIVE'
-          AND id_detail.deleted_at IS NULL
+          AND il.category = 'MENSUALIDAD'
+          AND il.deleted_at IS NULL
         GROUP BY p.name, p.amount, p.commission_amount, pf.code,
                  c.code, c.affiliation_date, pay.payment_date, inv.due_date, inv.issue_date
         `,
         [billingMonth],
       );
     } catch (err) {
-      this.logger.error('Error querying invoice details for SIP commissions:', err);
+      this.logger.error('Error querying invoice lines for SIP commissions:', err);
       throw new InternalServerErrorException(
         'Error al obtener los datos de facturación para el reporte de comisiones.',
       );

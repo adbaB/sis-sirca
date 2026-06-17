@@ -6,7 +6,8 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { IsNull, Repository, SelectQueryBuilder } from 'typeorm';
+import { AffiliationHistory } from '../entities/affiliation-history.entity';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
@@ -20,8 +21,10 @@ import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
+import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
+import { BillingService } from '../../billing/services/billing.service';
 
 export interface PipelineTotals {
   totalPipeline: number;
@@ -43,8 +46,12 @@ export class ContractsService {
     private contractsRepository: Repository<Contract>,
     @InjectRepository(ContractPerson)
     private contractPersonsRepository: Repository<ContractPerson>,
+    @InjectRepository(AffiliationHistory)
+    private affiliationHistoryRepository: Repository<AffiliationHistory>,
     @Inject(forwardRef(() => PersonsService))
     private personsService: PersonsService,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
@@ -363,7 +370,7 @@ export class ContractsService {
     const targetInvoice = contract.invoices?.find((inv) => inv.billingMonth === targetBillingMonth);
     if (!targetInvoice) return;
 
-    totals.totalPipeline += Number(targetInvoice.totalAmount);
+    totals.totalPipeline += Number(targetInvoice.baseAmount ?? targetInvoice.totalAmount);
 
     const hasRejection = targetInvoice.payments?.some((p) => p.status === 'REJECTED');
     if (
@@ -421,16 +428,16 @@ export class ContractsService {
    * Adds a single invoice's financial contribution to the running totals.
    */
   private accumulateInvoiceStats(
-    inv: { status: string; totalAmount: number; paidAmount: number },
+    inv: { status: string; totalAmount: number; paidAmount: number; baseAmount?: number },
     totals: PipelineTotals,
   ): void {
     if (inv.status === 'PAID') {
       totals.totalCollected += Number(inv.paidAmount);
     } else if (inv.status === 'PARTIAL') {
       totals.totalCollected += Number(inv.paidAmount);
-      totals.totalPending += Number(inv.totalAmount - inv.paidAmount);
+      totals.totalPending += Number((inv.baseAmount ?? inv.totalAmount) - inv.paidAmount);
     } else if (inv.status === 'PENDING') {
-      totals.totalPending += Number(inv.totalAmount);
+      totals.totalPending += Number(inv.baseAmount ?? inv.totalAmount);
     }
   }
 
@@ -497,13 +504,8 @@ export class ContractsService {
   async removeAffiliate(contractPersonId: string): Promise<void> {
     const contractPerson = await this.contractPersonsRepository.findOne({
       where: { id: contractPersonId },
-      relations: ['contract'],
+      relations: ['contract', 'person', 'person.plan'],
     });
-    const contract = await this.findOne(contractPerson.contract.id);
-
-    if (!contract) {
-      throw new NotFoundException(`Contract with ID "${contractPerson.contract.id}" not found`);
-    }
 
     if (!contractPerson) {
       throw new NotFoundException(`Contract person with ID "${contractPersonId}" not found`);
@@ -517,9 +519,29 @@ export class ContractsService {
       throw new BadRequestException('Debe existir un responsable de facturación');
     }
 
-    await this.contractPersonsRepository.remove(contractPerson);
-    // Re-calculate the monthly amount
-    await this.recalculateMonthlyAmount(contract.id);
+    // Registrar en historial ANTES de eliminar
+    await this.affiliationHistoryRepository.save(
+      this.affiliationHistoryRepository.create({
+        contract: contractPerson.contract,
+        person: contractPerson.person,
+        plan: contractPerson.person?.plan ?? null,
+        action: AffiliationAction.DESAFILIACION,
+        amount: Number(contractPerson.person?.plan?.amount ?? 0),
+        reason: null,
+      }),
+    );
+
+    // Soft delete (no hard delete) para mantener trazabilidad
+    await this.contractPersonsRepository.softRemove(contractPerson);
+
+    // Billing es responsable de limpiar la línea MENSUALIDAD de la factura activa
+    await this.billingService.removeAffiliateLineFromActiveInvoice(
+      contractPerson.contract.id,
+      contractPerson.person.id,
+    );
+
+    // Recalcular el monto mensual
+    await this.recalculateMonthlyAmount(contractPerson.contract.id);
   }
 
   /**
@@ -570,7 +592,7 @@ export class ContractsService {
       // Revertir a todos los demás titulares actuales a afiliados (AFILIADO)
       await entityManager.update(
         ContractPerson,
-        { contract: { id: contractId } },
+        { contract: { id: contractId }, deletedAt: IsNull() },
         { role: PersonRole.AFILIADO },
       );
 
@@ -599,7 +621,7 @@ export class ContractsService {
       // Desmarcar a todos los demás responsables de cobro en este contrato
       await entityManager.update(
         ContractPerson,
-        { contract: { id: contractId } },
+        { contract: { id: contractId }, deletedAt: IsNull() },
         { isBillingOwner: false },
       );
 
@@ -607,5 +629,30 @@ export class ContractsService {
       target.isBillingOwner = true;
       await entityManager.save(ContractPerson, target);
     });
+  }
+
+  async getAffiliationStats(month: number, year: number) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    const stats = await this.affiliationHistoryRepository
+      .createQueryBuilder('h')
+      .select([
+        `SUM(CASE WHEN h.action = 'AFILIACION' THEN 1 ELSE 0 END) AS new_affiliations`,
+        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN 1 ELSE 0 END) AS disaffiliations`,
+        `SUM(CASE WHEN h.action = 'AFILIACION' THEN h.amount ELSE 0 END) AS revenue_gained`,
+        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN h.amount ELSE 0 END) AS revenue_lost`,
+      ])
+      .where('h.action_date BETWEEN :startDate AND :endDate', { startDate, endDate })
+      .getRawOne();
+
+    return {
+      newAffiliations: Number(stats?.new_affiliations ?? 0),
+      disaffiliations: Number(stats?.disaffiliations ?? 0),
+      revenueGained: Number(stats?.revenue_gained ?? 0),
+      revenueLost: Number(stats?.revenue_lost ?? 0),
+      netChange: Number(stats?.new_affiliations ?? 0) - Number(stats?.disaffiliations ?? 0),
+      netRevenueChange: Number(stats?.revenue_gained ?? 0) - Number(stats?.revenue_lost ?? 0),
+    };
   }
 }

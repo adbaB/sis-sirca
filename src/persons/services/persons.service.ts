@@ -6,7 +6,8 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
+import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
 
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
@@ -14,6 +15,12 @@ import { Person, TypeIdentityCard } from '../entities/person.entity';
 
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
+import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
+import { Invoice, InvoiceStatus } from '../../billing/entities/invoice.entity';
+import { InvoiceLine } from '../../billing/entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../../billing/enums/invoice-line-category.enum';
+import { BillingService } from '../../billing/services/billing.service';
+import { getBillingMonth } from '../../billing/utils/billing-month.util';
 import { PlansService } from '../../plans/services/plans.service';
 
 @Injectable()
@@ -23,9 +30,17 @@ export class PersonsService {
     private personsRepository: Repository<Person>,
     @InjectRepository(ContractPerson)
     private contractPersonRepository: Repository<ContractPerson>,
+    @InjectRepository(AffiliationHistory)
+    private affiliationHistoryRepository: Repository<AffiliationHistory>,
+    @InjectRepository(Invoice)
+    private invoiceRepository: Repository<Invoice>,
+    @InjectRepository(InvoiceLine)
+    private invoiceLineRepository: Repository<InvoiceLine>,
     private plansService: PlansService,
     @Inject(forwardRef(() => ContractsService))
     private contractsService: ContractsService,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
@@ -52,40 +67,53 @@ export class PersonsService {
         });
 
         if (!existingJunction) {
-          // Wrap in transaction: delete old junctions + create new one atomically
-          await this.contractPersonRepository.manager.transaction(async (em) => {
-            // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
-            if (resolvedRole === PersonRole.AFILIADO) {
-              const affiliateJunctions = await em.find(ContractPerson, {
-                where: { person: { id: person.id }, role: PersonRole.AFILIADO },
-                relations: ['contract'],
-              });
-
-              const contractsToRecalc: string[] = [];
-              for (const cp of affiliateJunctions) {
-                if (cp.contract.id !== contractId) {
-                  await em.remove(cp);
-                  contractsToRecalc.push(cp.contract.id);
-                }
-              }
-
-              // Recalculate old contracts after removal
-              for (const cid of contractsToRecalc) {
-                await this.contractsService.recalculateMonthlyAmount(cid);
-              }
-            }
-
-            // Create junction table entry
-            const contractPerson = em.create(ContractPerson, {
-              contract,
-              person,
-              role: resolvedRole,
-              isBillingOwner: isBillingOwner ?? false,
+          // BLOQUEAR si el afiliado ya está en otro contrato
+          if (resolvedRole === PersonRole.AFILIADO) {
+            const existingAffiliations = await this.contractPersonRepository.find({
+              where: { person: { id: person.id }, role: PersonRole.AFILIADO },
+              relations: ['contract'],
             });
-            await em.save(contractPerson);
 
-            await this.contractsService.recalculateMonthlyAmount(contractId);
+            const otherContractAffiliations = existingAffiliations.filter(
+              (cp) => cp.contract.id !== contractId,
+            );
+
+            if (otherContractAffiliations.length > 0) {
+              const contractCodes = otherContractAffiliations
+                .map((cp) => cp.contract.code)
+                .join(', ');
+              throw new BadRequestException(
+                `El afiliado ${person.name} (${person.typeIdentityCard}-${person.identityCard}) ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero antes de asignarlo a otro contrato.`,
+              );
+            }
+          }
+
+          // Create junction table entry
+          const contractPerson = this.contractPersonRepository.create({
+            contract,
+            person,
+            role: resolvedRole,
+            isBillingOwner: isBillingOwner ?? false,
           });
+          await this.contractPersonRepository.save(contractPerson);
+
+          // Registrar en historial
+          await this.affiliationHistoryRepository.save(
+            this.affiliationHistoryRepository.create({
+              contract: { id: contractId },
+              person,
+              plan: person.plan ?? null,
+              action: AffiliationAction.AFILIACION,
+              amount: Number(person.plan?.amount ?? 0),
+            }),
+          );
+
+          await this.contractsService.recalculateMonthlyAmount(contractId);
+
+          // Auto-generar cargo INCLUSION en la factura activa del mes
+          if (resolvedRole === PersonRole.AFILIADO) {
+            await this.autoAddInclusionCharge(contractId, person);
+          }
         } else {
           throw new BadRequestException('La persona ya está afiliada a este contrato.');
         }
@@ -129,6 +157,22 @@ export class PersonsService {
       await this.contractPersonRepository.save(contractPerson);
 
       await this.contractsService.recalculateMonthlyAmount(contractId);
+
+      // Registrar en historial
+      if (resolvedRole === PersonRole.AFILIADO) {
+        await this.affiliationHistoryRepository.save(
+          this.affiliationHistoryRepository.create({
+            contract: { id: contractId },
+            person: savedPerson,
+            plan: plan ?? null,
+            action: AffiliationAction.AFILIACION,
+            amount: Number(plan?.amount ?? 0),
+          }),
+        );
+
+        // Auto-generar cargo INCLUSION en la factura activa del mes
+        await this.autoAddInclusionCharge(contractId, savedPerson);
+      }
     }
 
     return savedPerson;
@@ -220,27 +264,38 @@ export class PersonsService {
     }
 
     // ── 5. Guardar persona ───────────────────────────────────────────────────
+    const oldPlanId = person.plan?.id;
     const updatedPerson = Object.assign(person, { ...updateData, plan });
     const savedPerson = await this.personsRepository.save(updatedPerson);
+
+    // ── 5.1. Si el plan cambió, actualizar la línea en la factura activa ────
+    if (planId && plan && plan.id !== oldPlanId) {
+      await this.billingService.updatePlanLineOnActiveInvoice(
+        contractId,
+        savedPerson.id,
+        plan.id,
+        Number(plan.amount),
+        plan.name,
+      );
+    }
 
     // ── 6. Gestionar junction (crear / actualizar) ───────────────────────────
     const contractsToRecalculate = new Set<string>();
 
     if (resolvedRole === PersonRole.AFILIADO) {
-      // Un AFILIADO solo puede pertenecer a un contrato; eliminar los demás vínculos.
-      await this.contractPersonRepository.manager.transaction(async (em) => {
-        const afiliadoJunctions = await em.find(ContractPerson, {
-          where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
-          relations: ['contract'],
-        });
-
-        for (const cp of afiliadoJunctions) {
-          if (cp.contract.id !== contractId) {
-            await em.remove(cp);
-            contractsToRecalculate.add(cp.contract.id);
-          }
-        }
+      // BLOQUEAR si el afiliado ya está en otro contrato
+      const afiliadoJunctions = await this.contractPersonRepository.find({
+        where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
+        relations: ['contract'],
       });
+
+      const otherContracts = afiliadoJunctions.filter((cp) => cp.contract.id !== contractId);
+      if (otherContracts.length > 0) {
+        const contractCodes = otherContracts.map((cp) => cp.contract.code).join(', ');
+        throw new BadRequestException(
+          `El afiliado ${savedPerson.name} ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero.`,
+        );
+      }
     }
 
     if (existingJunction) {
@@ -253,7 +308,7 @@ export class PersonsService {
         if (role !== undefined) {
           if (role === PersonRole.TITULAR && existingJunction.role !== PersonRole.TITULAR) {
             await this.contractPersonRepository.update(
-              { contract: { id: contractId } },
+              { contract: { id: contractId }, deletedAt: IsNull() },
               { role: PersonRole.AFILIADO },
             );
           }
@@ -294,7 +349,7 @@ export class PersonsService {
 
     // Clean up junction tables to prevent orphaned records.
     if (person.contractPersons && person.contractPersons.length > 0) {
-      await this.contractPersonRepository.remove(person.contractPersons);
+      await this.contractPersonRepository.softRemove(person.contractPersons);
     }
 
     await this.personsRepository.softRemove(person);
@@ -302,5 +357,78 @@ export class PersonsService {
     for (const contractId of contractIds) {
       await this.contractsService.recalculateMonthlyAmount(contractId);
     }
+  }
+
+  /**
+   * Si ya existe una factura PENDING o PARTIAL para el mes en curso,
+   * agrega automáticamente una línea INCLUSION para el afiliado recién agregado,
+   * siempre que este no tenga ya una línea MENSUALIDAD en esa factura.
+   *
+   * Esto cubre el caso donde la factura ya fue generada por el cron (día 25)
+   * y el afiliado se incorpora después de esa fecha.
+   */
+  private async autoAddInclusionCharge(contractId: string, person: Person): Promise<void> {
+    const billingMonth = getBillingMonth();
+
+    // Buscar factura activa del mes actual para este contrato
+    const invoice = await this.invoiceRepository.findOne({
+      where: {
+        contract: { id: contractId },
+        billingMonth,
+        status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.PAID]),
+      },
+    });
+
+    // Si no hay factura aún, el cron la creará con el afiliado incluido
+    if (!invoice) return;
+
+    // Verificar si ya tiene línea MENSUALIDAD para esta persona
+    const existingMensualidad = await this.invoiceLineRepository.findOne({
+      where: {
+        invoice: { id: invoice.id },
+        person: { id: person.id },
+        category: InvoiceLineCategory.MENSUALIDAD,
+        deletedAt: IsNull(),
+      },
+    });
+
+    // Ya tiene mensualidad — la factura estaba actualizada, no hace falta INCLUSION
+    if (existingMensualidad) return;
+
+    const planAmount = Number(person.plan?.amount ?? 0);
+    if (planAmount <= 0) return;
+
+    // Crear línea INCLUSION (no proyectable — cargo puntual por incorporación)
+    const line = this.invoiceLineRepository.create({
+      invoice,
+      category: InvoiceLineCategory.INCLUSION,
+      description: `Inclusión: ${person.name} - ${person.plan?.name ?? 'Plan'}`,
+      amount: planAmount,
+      quantity: 1,
+      person,
+      plan: person.plan ?? null,
+      isProjectable: false,
+    });
+
+    await this.invoiceLineRepository.save(line);
+
+    // Recalcular totalAmount = baseAmount + SUM(líneas no proyectables activas)
+    const result = await this.invoiceLineRepository
+      .createQueryBuilder('line')
+      .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
+      .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
+      .andWhere('line.is_projectable = false')
+      .andWhere('line.deleted_at IS NULL')
+      .getRawOne<{ total: string }>();
+
+    const additionalAmount = Number(result?.total ?? 0);
+    invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
+
+    // Ajustar status si corresponde
+    if (invoice.paidAmount < invoice.totalAmount && invoice.status === InvoiceStatus.PAID) {
+      invoice.status = InvoiceStatus.PARTIAL;
+    }
+
+    await this.invoiceRepository.save(invoice);
   }
 }

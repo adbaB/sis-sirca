@@ -4,7 +4,8 @@ import { DataSource } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { Plan } from '../../plans/entities/plan.entity';
-import { InvoiceDetail } from '../entities/invoice-detail.entity';
+import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { BillingCronService } from './billing-cron.service';
 import { SurplusService } from './surplus.service';
@@ -23,6 +24,8 @@ describe('BillingCronService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
+      update: jest.fn().mockResolvedValue(undefined),
     },
   };
 
@@ -153,25 +156,27 @@ describe('BillingCronService', () => {
         }),
       );
 
-      // Verify InvoiceDetail creation
+      // Verify InvoiceLine creation
       expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
-        InvoiceDetail,
+        InvoiceLine,
         expect.objectContaining({
           person: mockPersons[0],
           plan: mockPersons[0].plan,
-          chargedAmount: 50,
+          amount: 50,
+          category: InvoiceLineCategory.MENSUALIDAD,
         }),
       );
       expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
-        InvoiceDetail,
+        InvoiceLine,
         expect.objectContaining({
           person: mockPersons[1],
           plan: mockPersons[1].plan,
-          chargedAmount: 75,
+          amount: 75,
+          category: InvoiceLineCategory.MENSUALIDAD,
         }),
       );
 
-      expect(mockQueryRunner.manager.save).toHaveBeenCalledTimes(2); // Once for Invoice, once for array of InvoiceDetails
+      expect(mockQueryRunner.manager.save).toHaveBeenCalledTimes(2); // Once for Invoice, once for array of InvoiceLines
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.rollbackTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
@@ -255,6 +260,30 @@ describe('BillingCronService', () => {
       expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
       expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+
+    it('should inactivate contract and not generate invoice if 2 or more unpaid invoices exist', async () => {
+      // Arrange
+      const mockPersons = [createMockPerson('person-1', 50)];
+      const mockContract = createMockContract('contract-1', mockPersons);
+
+      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
+      mockQueryRunner.manager.findOne.mockResolvedValue(null);
+      mockQueryRunner.manager.count.mockResolvedValueOnce(2); // 2 unpaid invoices
+
+      // Act
+      await service.generateMonthlyInvoices();
+
+      // Assert
+      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(Contract, 'contract-1', {
+        status: ContractStatus.INACTIVE,
+      });
+      // Invoice was not created or saved
+      expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
+      expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });
   });

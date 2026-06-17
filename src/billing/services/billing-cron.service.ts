@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
-import { InvoiceDetail } from '../entities/invoice-detail.entity';
+import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import { SurplusService } from './surplus.service';
 
@@ -99,6 +100,25 @@ export class BillingCronService {
         return; // Skip this contract as it already has an invoice for this month
       }
 
+      // Check de inactivación por morosidad: 2+ facturas no pagadas
+      const unpaidInvoiceCount = await queryRunner.manager.count(Invoice, {
+        where: {
+          contract: { id: contract.id },
+          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+        },
+      });
+
+      if (unpaidInvoiceCount >= 2) {
+        await queryRunner.manager.update(Contract, contract.id, {
+          status: ContractStatus.INACTIVE,
+        });
+        await queryRunner.commitTransaction();
+        this.logger.warn(
+          `Contract ${contract.code} inactivated: ${unpaidInvoiceCount} unpaid invoices`,
+        );
+        return; // NO genera factura nueva
+      }
+
       const activeAfiliados =
         contract.contractPersons
           ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
@@ -143,6 +163,7 @@ export class BillingCronService {
         billingMonth: billingMonth,
         issueDate: new Date(),
         dueDate: dueDate,
+        baseAmount: totalAmount,
         totalAmount: totalAmount,
         paidAmount: 0,
         status: InvoiceStatus.PENDING,
@@ -150,15 +171,21 @@ export class BillingCronService {
 
       const savedInvoice = await queryRunner.manager.save(invoice);
 
-      // Create Invoice Details
-      const invoiceDetails = invoiceDetailsData.map((data) => {
-        return queryRunner.manager.create(InvoiceDetail, {
-          ...data,
+      // Create Invoice Lines
+      const invoiceLines = invoiceDetailsData.map((data) => {
+        return queryRunner.manager.create(InvoiceLine, {
           invoice: savedInvoice,
+          category: InvoiceLineCategory.MENSUALIDAD,
+          description: `${data.person.name} - ${data.plan.name}`,
+          amount: data.chargedAmount,
+          quantity: 1,
+          person: data.person,
+          plan: data.plan,
+          isProjectable: true,
         });
       });
 
-      await queryRunner.manager.save(invoiceDetails);
+      await queryRunner.manager.save(invoiceLines);
 
       await queryRunner.commitTransaction();
       this.logger.log(`Created invoice ${savedInvoice.id} for contract ${contract.id}`);

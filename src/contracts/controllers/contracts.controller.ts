@@ -34,6 +34,12 @@ export class ContractsController {
     return this.contractsService.getPipelineStats(advisorId, month, year);
   }
 
+  @Get('affiliation-stats')
+  @RequirePermissions('read:contracts')
+  getAffiliationStats(@Query('month') month: number, @Query('year') year: number) {
+    return this.contractsService.getAffiliationStats(Number(month), Number(year));
+  }
+
   @Get(':id')
   @RequirePermissions('read:contracts', 'read:pipeline')
   findOne(@Param('id') id: string) {

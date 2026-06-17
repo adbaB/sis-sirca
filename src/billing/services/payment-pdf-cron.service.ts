@@ -12,7 +12,8 @@ import { ContractPerson } from '../../contracts/entities/contract-person.entity'
 import { Contract } from '../../contracts/entities/contract.entity';
 import { EmailService } from '../../email/email.service';
 import { PdfService } from '../../pdf/services/pdf.service';
-import { InvoiceDetail } from '../entities/invoice-detail.entity';
+import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 
 export class PaymentPdfCronService {
@@ -49,9 +50,9 @@ export class PaymentPdfCronService {
         'invoice.contract.contractPersons',
         'invoice.contract.contractPersons.person',
         'invoice.contract.contractPersons.person.plan',
-        'invoice.details',
-        'invoice.details.person',
-        'invoice.details.plan',
+        'invoice.lines',
+        'invoice.lines.person',
+        'invoice.lines.plan',
       ],
     });
 
@@ -96,15 +97,35 @@ export class PaymentPdfCronService {
     };
   }
 
-  private extractMembersInfo(details: InvoiceDetail[]): Record<string, string>[] {
-    return (details ?? []).map((detail) => ({
-      name: detail.person?.name ?? 'N/A',
-      identityCard: detail.person
-        ? `${detail.person.typeIdentityCard}-${detail.person.identityCard}`
-        : 'N/A',
-      plan: detail.plan?.name ?? 'N/A',
-      amountUsd: `$${Number(detail.chargedAmount).toFixed(2)}`,
-    }));
+  private extractMembersInfo(lines: InvoiceLine[]): Record<string, string>[] {
+    return (lines ?? [])
+      .filter((line) => line.category === InvoiceLineCategory.MENSUALIDAD)
+      .map((line) => ({
+        name: line.person?.name ?? 'N/A',
+        identityCard: line.person
+          ? `${line.person.typeIdentityCard}-${line.person.identityCard}`
+          : 'N/A',
+        plan: line.plan?.name ?? 'N/A',
+        amountUsd: `$${Number(line.amount).toFixed(2)}`,
+      }));
+  }
+
+  private extractChargesInfo(lines: InvoiceLine[]): Record<string, string>[] {
+    const CATEGORY_LABELS: Record<string, string> = {
+      INCLUSION: 'Inclusión',
+      COMISION: 'Comisión',
+      RECOBRO: 'Recobro',
+      IMPUESTO: 'Impuesto',
+    };
+    return (lines ?? [])
+      .filter((line) => line.category !== InvoiceLineCategory.MENSUALIDAD)
+      .map((line) => ({
+        category: CATEGORY_LABELS[line.category] ?? line.category,
+        description: line.description,
+        quantity: String(line.quantity ?? 1),
+        unitAmount: `$${Number(line.amount).toFixed(2)}`,
+        totalLine: `$${(Number(line.amount) * Number(line.quantity ?? 1)).toFixed(2)}`,
+      }));
   }
 
   private calculateFinancialInfo(payment: Payment): {
@@ -148,7 +169,9 @@ export class PaymentPdfCronService {
     }
 
     const { personName, identityCard } = this.extractTitularInfo(contract);
-    const members = this.extractMembersInfo(invoice.details as InvoiceDetail[]);
+    const allLines = invoice.lines as InvoiceLine[];
+    const members = this.extractMembersInfo(allLines);
+    const additionalCharges = this.extractChargesInfo(allLines);
     const financialInfo = this.calculateFinancialInfo(payment);
 
     const advisor = contract.advisor?.name ?? 'Sin asesor';
@@ -160,6 +183,8 @@ export class PaymentPdfCronService {
       personName,
       identityCard,
       members,
+      additionalCharges,
+      hasAdditionalCharges: additionalCharges.length > 0,
       today,
       paymentMethod: payment.paymentMethod,
       referenceNumber: payment.referenceNumber,

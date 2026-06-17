@@ -10,6 +10,7 @@ import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { SurplusStatus } from '../entities/surplus.entity';
 import { BillingService } from './billing.service';
 import { SurplusService } from './surplus.service';
+import { InvoiceLine } from '../entities/invoice-line.entity';
 
 describe('BillingService', () => {
   let service: BillingService;
@@ -57,6 +58,15 @@ describe('BillingService', () => {
         {
           provide: getRepositoryToken(Invoice),
           useValue: mockInvoiceRepository,
+        },
+        {
+          provide: getRepositoryToken(InvoiceLine),
+          useValue: {
+            findOne: jest.fn(),
+            save: jest.fn(),
+            create: jest.fn(),
+            find: jest.fn(),
+          },
         },
         {
           provide: DataSource,

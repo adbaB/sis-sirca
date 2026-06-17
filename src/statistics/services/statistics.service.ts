@@ -145,7 +145,7 @@ export class StatisticsService {
             AND p.deleted_at IS NULL
         ) THEN 1 ELSE 0 END) AS invoices_pending,
         SUM(CASE WHEN i.status = 'PENDING' THEN i.total_amount ELSE 0 END) AS total_pending,
-        COALESCE(SUM(i.total_amount), 0)                                    AS grand_total_amount,
+        COALESCE(SUM(i.base_amount), 0)                                     AS grand_total_amount,
         COALESCE(SUM(CASE WHEN i.status IN ('PAID', 'PARTIAL') THEN i.paid_amount ELSE 0 END), 0) AS total_collected
       FROM invoices i
       INNER JOIN contracts c ON c.id = i.contract_id
@@ -187,6 +187,8 @@ export class StatisticsService {
       INNER JOIN contracts c ON c.id = i.contract_id
       WHERE c.status         = 'ACTIVE'
         AND i.billing_month IS NOT NULL
+        AND i.deleted_at IS NULL
+        AND c.deleted_at IS NULL
         ${advisorFilter}
       GROUP BY i.billing_month
       ORDER BY i.billing_month DESC
