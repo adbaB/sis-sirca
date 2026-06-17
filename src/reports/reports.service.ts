@@ -29,6 +29,7 @@ interface ContractReportRow {
   invoiceStatus: string;
   isPaid: boolean;
   paymentDate: string | null;
+  advisorName: string;
   // Pre-processed fields for the PDF template
   monthlyAmountFormatted: string;
   totalAmountFormatted: string;
@@ -59,6 +60,7 @@ export class ReportsService {
       },
       relations: [
         'contract',
+        'contract.advisor',
         'contract.contractPersons',
         'contract.contractPersons.person',
         'payments',
@@ -120,6 +122,7 @@ export class ReportsService {
         paidAmountUsdFormatted: paidAmountUsd.toFixed(2),
         paidAmountBsFormatted: paidAmountBs.toFixed(2),
         statusClass: statusMap[invoice.status] || 'pending',
+        advisorName: contract.advisor?.name || 'Sin asesor',
       };
     });
   }
@@ -128,7 +131,7 @@ export class ReportsService {
     const rows = await this.getContractDetailReport(year, month);
     const monthLabel = MONTH_NAMES_ES[month - 1] || '';
     const { workbook, ws } = createWorkbook('Contratos');
-    const totalCols = 9;
+    const totalCols = 10;
 
     this.renderTitleAndSubheaders(ws, monthLabel, year, totalCols);
     this.renderTableHeaders(ws, totalCols);
@@ -145,6 +148,7 @@ export class ReportsService {
     ws.getColumn(7).width = 18; // Estado Factura
     ws.getColumn(8).width = 10; // Pagado
     ws.getColumn(9).width = 16; // Fecha de Pago
+    ws.getColumn(10).width = 35; // Nombre del Asesor
 
     return finishWorkbook(workbook);
   }
@@ -187,6 +191,7 @@ export class ReportsService {
       'ESTADO FACTURA',
       'PAGADO',
       'FECHA DE PAGO',
+      'NOMBRE DEL ASESOR',
     ];
     const headerRow = ws.addRow(headers);
     headerRow.height = 24;
@@ -221,6 +226,7 @@ export class ReportsService {
         r.invoiceStatus,
         r.isPaid ? 'Sí' : 'No',
         r.paymentDate || '',
+        r.advisorName,
       ];
       const row = ws.addRow(rowData);
       row.height = 20;
