@@ -905,12 +905,12 @@ export class BillingService {
         .getRawOne<{ total: string }>();
 
       const additionalAmount = Number(additionalResult?.total ?? 0);
-      const newTotalAmount = newBaseAmount + additionalAmount;
-      invoice.totalAmount = newTotalAmount;
+      const calculatedTotal = newBaseAmount + additionalAmount;
+      invoice.totalAmount = calculatedTotal;
 
       // Adjust paidAmount if it exceeds totalAmount to avoid DB check constraint violations
-      if (invoice.paidAmount > newTotalAmount) {
-        invoice.paidAmount = newTotalAmount;
+      if (invoice.paidAmount > calculatedTotal) {
+        invoice.paidAmount = calculatedTotal;
       }
 
       // Save intermediate state in transaction
@@ -1185,7 +1185,7 @@ export class BillingService {
 
     const baseAmount = Number(baseResult?.base ?? 0);
     invoice.baseAmount = baseAmount;
-    const newTotalAmount = baseAmount + Number(addlResult?.total ?? 0);
+    const calculatedTotal = baseAmount + Number(addlResult?.total ?? 0);
 
     // Gap 6: Check de surplus si queda excedente
     const paymentResult = await paymentRepo
@@ -1197,9 +1197,9 @@ export class BillingService {
       })
       .getRawOne<{ total: string }>();
 
-    const sumOfPayments = Number(paymentResult?.total ?? 0);
-    if (sumOfPayments > newTotalAmount && newTotalAmount >= 0) {
-      const excessUsd = sumOfPayments - newTotalAmount;
+    const totalPaymentsSum = Number(paymentResult?.total ?? 0);
+    if (totalPaymentsSum > calculatedTotal && calculatedTotal >= 0) {
+      const excessUsd = totalPaymentsSum - calculatedTotal;
       await surplusRepo.save(
         surplusRepo.create({
           amountUsd: excessUsd,
@@ -1217,8 +1217,8 @@ export class BillingService {
       );
     }
 
-    invoice.totalAmount = newTotalAmount;
-    // Cap paidAmount to newTotalAmount to prevent DB constraint violation on save
+    invoice.totalAmount = calculatedTotal;
+    // Cap paidAmount to calculatedTotal to prevent DB constraint violation on save
     if (invoice.paidAmount > invoice.totalAmount) {
       invoice.paidAmount = invoice.totalAmount;
     }
@@ -1455,14 +1455,8 @@ function isTrustedUrl(urlStr: string): boolean {
       return false;
     }
     const hostname = parsed.hostname.toLowerCase();
-    const trustedHosts = ['s3.aws.com', 'amazonaws.com', 's3.amazonaws.com'];
-    if (trustedHosts.includes(hostname)) {
-      return true;
-    }
-    if (hostname.endsWith('.amazonaws.com')) {
-      return true;
-    }
-    return false;
+    const trustedHosts = ['amazonaws.com', 's3.amazonaws.com'];
+    return trustedHosts.includes(hostname) || hostname.endsWith('.amazonaws.com');
   } catch {
     return false;
   }

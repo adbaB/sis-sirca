@@ -364,14 +364,8 @@ function isTrustedUrl(urlStr: string): boolean {
       return false;
     }
     const hostname = parsed.hostname.toLowerCase();
-    const trustedHosts = ['s3.aws.com', 'amazonaws.com', 's3.amazonaws.com'];
-    if (trustedHosts.includes(hostname)) {
-      return true;
-    }
-    if (hostname.endsWith('.amazonaws.com')) {
-      return true;
-    }
-    return false;
+    const trustedHosts = ['amazonaws.com', 's3.amazonaws.com'];
+    return trustedHosts.includes(hostname) || hostname.endsWith('.amazonaws.com');
   } catch {
     return false;
   }
