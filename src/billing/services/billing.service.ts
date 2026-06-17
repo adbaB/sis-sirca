@@ -9,7 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { DateTime } from 'luxon';
-import { DataSource, In, IsNull, QueryRunner, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, QueryRunner, Repository } from 'typeorm';
 
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
@@ -1071,6 +1071,10 @@ export class BillingService {
       const additionalAmount = Number(additionalResult?.total ?? 0);
       invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
 
+      if (invoice.paidAmount > invoice.totalAmount) {
+        invoice.paidAmount = invoice.totalAmount;
+      }
+
       // Recalcular status
       if (invoice.paidAmount >= invoice.totalAmount && invoice.totalAmount > 0) {
         invoice.status = InvoiceStatus.PAID;
@@ -1102,12 +1106,25 @@ export class BillingService {
    * en la factura activa del mes en curso y recalcula montos + status.
    * Si queda excedente (paidAmount > totalAmount), genera surplus.
    */
-  async removeAffiliateLineFromActiveInvoice(contractId: string, personId: string): Promise<void> {
+  async removeAffiliateLineFromActiveInvoice(
+    contractId: string,
+    personId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const invoiceRepo = manager ? manager.getRepository(Invoice) : this.invoiceRepository;
+    const invoiceLineRepo = manager
+      ? manager.getRepository(InvoiceLine)
+      : this.invoiceLineRepository;
+    const paymentRepo = manager ? manager.getRepository(Payment) : this.paymentRepository;
+    const surplusRepo = manager
+      ? manager.getRepository(Surplus)
+      : this.dataSource.getRepository(Surplus);
+
     const billingMonth = getBillingMonth();
 
     // Buscar la factura activa más reciente (no filtra por mes calendario
     // porque el ciclo de facturación empieza el 25 y la factura puede ser del mes siguiente)
-    const invoice = await this.invoiceRepository.findOne({
+    const invoice = await invoiceRepo.findOne({
       where: {
         contract: { id: contractId },
         billingMonth,
@@ -1119,7 +1136,7 @@ export class BillingService {
     if (!invoice) return;
 
     // Buscar y soft-delete la línea MENSUALIDAD
-    const mensualidadLine = await this.invoiceLineRepository.findOne({
+    const mensualidadLine = await invoiceLineRepo.findOne({
       where: {
         invoice: { id: invoice.id },
         person: { id: personId },
@@ -1129,11 +1146,11 @@ export class BillingService {
     });
 
     if (mensualidadLine) {
-      await this.invoiceLineRepository.softRemove(mensualidadLine);
+      await invoiceLineRepo.softRemove(mensualidadLine);
     }
 
     // Gap 5: Buscar y soft-delete la línea INCLUSION del mismo mes
-    const inclusionLine = await this.invoiceLineRepository.findOne({
+    const inclusionLine = await invoiceLineRepo.findOne({
       where: {
         invoice: { id: invoice.id },
         person: { id: personId },
@@ -1143,13 +1160,13 @@ export class BillingService {
     });
 
     if (inclusionLine) {
-      await this.invoiceLineRepository.softRemove(inclusionLine);
+      await invoiceLineRepo.softRemove(inclusionLine);
     }
 
     if (!mensualidadLine && !inclusionLine) return;
 
     // Recalcular baseAmount (mensualidades activas)
-    const baseResult = await this.invoiceLineRepository
+    const baseResult = await invoiceLineRepo
       .createQueryBuilder('il')
       .select('COALESCE(SUM(il.amount * il.quantity), 0)', 'base')
       .where('il.invoice_id = :invoiceId', { invoiceId: invoice.id })
@@ -1158,7 +1175,7 @@ export class BillingService {
       .getRawOne<{ base: string }>();
 
     // Recalcular cargos adicionales no-proyectables
-    const addlResult = await this.invoiceLineRepository
+    const addlResult = await invoiceLineRepo
       .createQueryBuilder('il')
       .select('COALESCE(SUM(il.amount * il.quantity), 0)', 'total')
       .where('il.invoice_id = :invoiceId', { invoiceId: invoice.id })
@@ -1168,46 +1185,47 @@ export class BillingService {
 
     const baseAmount = Number(baseResult?.base ?? 0);
     invoice.baseAmount = baseAmount;
-    invoice.totalAmount = baseAmount + Number(addlResult?.total ?? 0);
-    await this.invoiceRepository.save(invoice);
-
-    // Gap 6: Recalcular status (PENDING/PARTIAL/PAID)
-    await this.recalculateInvoicePaidAmount(invoice.id);
+    const newTotalAmount = baseAmount + Number(addlResult?.total ?? 0);
 
     // Gap 6: Check de surplus si queda excedente
-    const refreshed = await this.invoiceRepository.findOne({
-      where: { id: invoice.id },
-      relations: ['contract'],
-    });
+    const paymentResult = await paymentRepo
+      .createQueryBuilder('payment')
+      .select('COALESCE(SUM(payment.amount), 0)', 'total')
+      .where('payment.invoice_id = :invoiceId', { invoiceId: invoice.id })
+      .andWhere('payment.status IN (:...statuses)', {
+        statuses: [PaymentStatus.PROCESSING, PaymentStatus.COMPLETED],
+      })
+      .getRawOne<{ total: string }>();
 
-    if (refreshed) {
-      const paidAmount = Number(refreshed.paidAmount);
-      const totalAmount = Number(refreshed.totalAmount);
+    const sumOfPayments = Number(paymentResult?.total ?? 0);
+    if (sumOfPayments > newTotalAmount && newTotalAmount >= 0) {
+      const excessUsd = sumOfPayments - newTotalAmount;
+      await surplusRepo.save(
+        surplusRepo.create({
+          amountUsd: excessUsd,
+          amountBs: null,
+          date: new Date(),
+          payment: null,
+          invoice: null,
+          contract: invoice.contract,
+          status: SurplusStatus.PENDING,
+        }),
+      );
 
-      if (paidAmount > totalAmount && totalAmount >= 0) {
-        const excessUsd = paidAmount - totalAmount;
-        const surplusRepo = this.dataSource.getRepository(Surplus);
-        await surplusRepo.save(
-          surplusRepo.create({
-            amountUsd: excessUsd,
-            amountBs: null,
-            date: new Date(),
-            payment: null,
-            invoice: null,
-            contract: refreshed.contract,
-            status: SurplusStatus.PENDING,
-          }),
-        );
-
-        // Ajustar paidAmount al totalAmount para cumplir constraint
-        refreshed.paidAmount = totalAmount;
-        await this.invoiceRepository.save(refreshed);
-
-        this.logger.log(
-          `[billing] Surplus de $${excessUsd.toFixed(2)} generado por desafiliación en factura ${invoice.id}`,
-        );
-      }
+      this.logger.log(
+        `[billing] Surplus de $${excessUsd.toFixed(2)} generado por desafiliación en factura ${invoice.id}`,
+      );
     }
+
+    invoice.totalAmount = newTotalAmount;
+    // Cap paidAmount to newTotalAmount to prevent DB constraint violation on save
+    if (invoice.paidAmount > invoice.totalAmount) {
+      invoice.paidAmount = invoice.totalAmount;
+    }
+    await invoiceRepo.save(invoice);
+
+    // Gap 6: Recalcular status (PENDING/PARTIAL/PAID) y ajustar paidAmount
+    await this.recalculateInvoicePaidAmount(invoice.id, manager?.queryRunner);
 
     this.logger.log(`[billing] Líneas removidas para persona ${personId} en factura ${invoice.id}`);
   }
@@ -1273,6 +1291,10 @@ export class BillingService {
     const baseAmount = Number(baseResult?.base ?? 0);
     invoice.baseAmount = baseAmount;
     invoice.totalAmount = baseAmount + Number(addlResult?.total ?? 0);
+
+    if (invoice.paidAmount > invoice.totalAmount) {
+      invoice.paidAmount = invoice.totalAmount;
+    }
     await this.invoiceRepository.save(invoice);
 
     // Recalcular status
@@ -1420,16 +1442,77 @@ export class BillingService {
    * Returns null on failure so the template renders without the image.
    */
   private async fetchReceiptAsBase64(url: string): Promise<string | null> {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      const contentType = response.headers.get('content-type') ?? 'image/jpeg';
-      const arrayBuffer = await response.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
-      return `data:${contentType};base64,${base64}`;
-    } catch {
-      this.logger.warn(`[buildInvoicePdf] No se pudo descargar imagen: ${url}`);
-      return null;
+    const result = await fetchSafeImage(url, this.logger);
+    if (!result) return null;
+    return `data:${result.contentType};base64,${result.base64}`;
+  }
+}
+
+function isTrustedUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
     }
+    const hostname = parsed.hostname.toLowerCase();
+    const trustedHosts = ['s3.aws.com', 'amazonaws.com', 's3.amazonaws.com'];
+    if (trustedHosts.includes(hostname)) {
+      return true;
+    }
+    if (hostname.endsWith('.amazonaws.com')) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchSafeImage(
+  url: string,
+  logger: { warn(msg: string): void },
+): Promise<{ contentType: string; base64: string } | null> {
+  if (!isTrustedUrl(url)) {
+    logger.warn(`[SSRF Blocked] Attempted outbound request to untrusted URL: ${url}`);
+    return null;
+  }
+
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(5000), // 5 seconds timeout
+    });
+
+    if (!response.ok) return null;
+
+    const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+
+    if (!response.body) return null;
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalSize += value.length;
+        if (totalSize > MAX_SIZE) {
+          await reader.cancel();
+          logger.warn(`[Resource Exhaustion Blocked] Image size exceeded limit of 10MB: ${url}`);
+          return null;
+        }
+        chunks.push(Buffer.from(value));
+      }
+    }
+
+    const buffer = Buffer.concat(chunks);
+    const base64 = buffer.toString('base64');
+    return { contentType, base64 };
+  } catch (err) {
+    logger.warn(
+      `[fetchSafeImage] Error fetching image: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
   }
 }

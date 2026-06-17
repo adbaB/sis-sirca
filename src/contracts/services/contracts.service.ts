@@ -6,7 +6,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository, SelectQueryBuilder } from 'typeorm';
+import { EntityManager, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
@@ -435,7 +435,10 @@ export class ContractsService {
       totals.totalCollected += Number(inv.paidAmount);
     } else if (inv.status === 'PARTIAL') {
       totals.totalCollected += Number(inv.paidAmount);
-      totals.totalPending += Number((inv.baseAmount ?? inv.totalAmount) - inv.paidAmount);
+      totals.totalPending += Math.max(
+        0,
+        Number((inv.baseAmount ?? inv.totalAmount) - inv.paidAmount),
+      );
     } else if (inv.status === 'PENDING') {
       totals.totalPending += Number(inv.baseAmount ?? inv.totalAmount);
     }
@@ -519,37 +522,46 @@ export class ContractsService {
       throw new BadRequestException('Debe existir un responsable de facturación');
     }
 
-    // Registrar en historial ANTES de eliminar
-    await this.affiliationHistoryRepository.save(
-      this.affiliationHistoryRepository.create({
-        contract: contractPerson.contract,
-        person: contractPerson.person,
-        plan: contractPerson.person?.plan ?? null,
-        action: AffiliationAction.DESAFILIACION,
-        amount: Number(contractPerson.person?.plan?.amount ?? 0),
-        reason: null,
-      }),
-    );
+    await this.contractsRepository.manager.transaction(async (manager) => {
+      const historyRepo = manager.getRepository(AffiliationHistory);
+      const cpRepo = manager.getRepository(ContractPerson);
 
-    // Soft delete (no hard delete) para mantener trazabilidad
-    await this.contractPersonsRepository.softRemove(contractPerson);
+      // Registrar en historial ANTES de eliminar
+      await historyRepo.save(
+        historyRepo.create({
+          contract: contractPerson.contract,
+          person: contractPerson.person,
+          plan: contractPerson.person?.plan ?? null,
+          action: AffiliationAction.DESAFILIACION,
+          amount: Number(contractPerson.person?.plan?.amount ?? 0),
+          reason: null,
+        }),
+      );
 
-    // Billing es responsable de limpiar la línea MENSUALIDAD de la factura activa
-    await this.billingService.removeAffiliateLineFromActiveInvoice(
-      contractPerson.contract.id,
-      contractPerson.person.id,
-    );
+      // Soft delete (no hard delete) para mantener trazabilidad
+      await cpRepo.softRemove(contractPerson);
 
-    // Recalcular el monto mensual
-    await this.recalculateMonthlyAmount(contractPerson.contract.id);
+      // Billing es responsable de limpiar la línea MENSUALIDAD de la factura activa
+      await this.billingService.removeAffiliateLineFromActiveInvoice(
+        contractPerson.contract.id,
+        contractPerson.person.id,
+        manager,
+      );
+
+      // Recalcular el monto mensual
+      await this.recalculateMonthlyAmount(contractPerson.contract.id, manager);
+    });
   }
 
   /**
    * Recalculates the monthly amount for a given contract ID
    * by summing the amount of all plans associated to its persons (only AFILIADOS have plans).
    */
-  async recalculateMonthlyAmount(contractId: string): Promise<void> {
-    const affiliates = await this.contractPersonsRepository.find({
+  async recalculateMonthlyAmount(contractId: string, manager?: EntityManager): Promise<void> {
+    const cpRepo = manager ? manager.getRepository(ContractPerson) : this.contractPersonsRepository;
+    const contractRepo = manager ? manager.getRepository(Contract) : this.contractsRepository;
+
+    const affiliates = await cpRepo.find({
       where: {
         contract: { id: contractId },
         person: { status: PersonStatus.ACTIVE },
@@ -565,7 +577,7 @@ export class ContractsService {
       return sum;
     }, 0);
 
-    await this.contractsRepository.update(contractId, { monthlyAmount: totalAmount });
+    await contractRepo.update(contractId, { monthlyAmount: totalAmount });
   }
 
   async addBeneficiary(contractId: string, dto: CreateBeneficiaryDto): Promise<Person> {

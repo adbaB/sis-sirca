@@ -19,7 +19,7 @@ import type { Plan } from '../../plans/entities/plan.entity';
  * compatibilidad con datos históricos. No deben usarse para nueva lógica de
  * negocio ni en nuevos reportes.
  *
- * Migración: `1782500000000-add-invoice-lines-and-affiliation-history`
+ * Migración: `1781400000000-add-invoice-lines-and-affiliation-history`
  * - Los datos existentes fueron copiados a `invoice_lines` con `category = 'MENSUALIDAD'`.
  * - La relación `invoice.lines` reemplaza a `invoice.details`.
  */

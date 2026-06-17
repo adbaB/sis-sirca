@@ -23,6 +23,7 @@ describe('PersonsService', () => {
   let cpRepository: Repository<ContractPerson>;
   let plansService: PlansService;
   let contractsService: ContractsService;
+  let billingService: BillingService;
 
   const mockPlan: Plan = { id: 'plan-1', name: 'Basic', amount: 10 } as Plan;
   const mockContract: Contract = {
@@ -153,6 +154,7 @@ describe('PersonsService', () => {
     cpRepository = module.get<Repository<ContractPerson>>(CP_REPOSITORY_TOKEN);
     plansService = module.get<PlansService>(PlansService);
     contractsService = module.get<ContractsService>(ContractsService);
+    billingService = module.get<BillingService>(BillingService);
   });
 
   it('should be defined', () => {
@@ -298,6 +300,11 @@ describe('PersonsService', () => {
       jest.spyOn(cpRepository, 'find').mockResolvedValue([oldJunction]); // In the old contract
 
       await expect(service.update('1', updatePersonDto)).rejects.toThrow(BadRequestException);
+
+      // Verify that no write mutations occurred
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(cpRepository.save).not.toHaveBeenCalled();
+      expect(billingService.updatePlanLineOnActiveInvoice).not.toHaveBeenCalled();
     });
 
     it('should not wipe global plan when adding a TITULAR to a new contract', async () => {

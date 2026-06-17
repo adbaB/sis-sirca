@@ -28,6 +28,7 @@ export class AddInvoiceLinesAndAffiliationHistory1781400000000 implements Migrat
         CONSTRAINT "FK_invoice_lines_plan" FOREIGN KEY ("plan_id")
           REFERENCES "plans"("id"),
         CONSTRAINT "CHK_invoice_lines_amount" CHECK ("amount" >= 0),
+        CONSTRAINT "CHK_invoice_lines_quantity" CHECK ("quantity" > 0),
         CONSTRAINT "CHK_invoice_lines_category" CHECK (
           "category" IN ('MENSUALIDAD','COMISION','INCLUSION','RECOBRO','IMPUESTO')
         )
@@ -48,7 +49,7 @@ export class AddInvoiceLinesAndAffiliationHistory1781400000000 implements Migrat
     // STEP 2: Agregar base_amount a invoices
     // ═══════════════════════════════════════════════════════════════
     await queryRunner.query(
-      `ALTER TABLE "invoices" ADD COLUMN "base_amount" decimal(10,2) NOT NULL DEFAULT 0`,
+      `ALTER TABLE "invoices" ADD COLUMN "base_amount" decimal(10,2) NOT NULL DEFAULT 0, ADD CONSTRAINT "CHK_invoices_base_amount" CHECK ("base_amount" >= 0)`,
     );
     await queryRunner.query(`UPDATE "invoices" SET "base_amount" = "total_amount"`);
 
@@ -113,8 +114,16 @@ export class AddInvoiceLinesAndAffiliationHistory1781400000000 implements Migrat
     // STEP 5: Fix unique constraint en contract_persons para soft delete
     // ═══════════════════════════════════════════════════════════════
     const constraints = await queryRunner.query(`
-      SELECT constraint_name FROM information_schema.table_constraints
-      WHERE table_name = 'contract_persons' AND constraint_type = 'UNIQUE'
+      SELECT tc.constraint_name 
+      FROM information_schema.table_constraints tc 
+      JOIN information_schema.key_column_usage kcu 
+        ON tc.constraint_name = kcu.constraint_name 
+        AND tc.table_schema = kcu.table_schema
+      WHERE tc.table_name = 'contract_persons' 
+        AND tc.constraint_type = 'UNIQUE'
+        AND kcu.column_name IN ('contract_id', 'person_id')
+      GROUP BY tc.constraint_name
+      HAVING COUNT(DISTINCT kcu.column_name) = 2
     `);
     for (const c of constraints) {
       await queryRunner.query(
@@ -130,6 +139,23 @@ export class AddInvoiceLinesAndAffiliationHistory1781400000000 implements Migrat
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS "UQ_contract_person_active"`);
+
+    // Clean up duplicate (contract_id, person_id) rows before restoring global unique constraint
+    await queryRunner.query(`
+      WITH duplicates AS (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY "contract_id", "person_id" 
+                 ORDER BY ("deleted_at" IS NULL) DESC, "created_at" DESC
+               ) as rn
+        FROM "contract_persons"
+      )
+      DELETE FROM "contract_persons"
+      WHERE id IN (
+        SELECT id FROM duplicates WHERE rn > 1
+      )
+    `);
+
     await queryRunner.query(`
       ALTER TABLE "contract_persons" ADD CONSTRAINT "UQ_contract_person"
       UNIQUE ("contract_id", "person_id")

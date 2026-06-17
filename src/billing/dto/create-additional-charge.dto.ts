@@ -7,6 +7,7 @@ import {
   IsString,
   IsUUID,
   Min,
+  MaxLength,
 } from 'class-validator';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 
@@ -17,6 +18,7 @@ export class CreateAdditionalChargeDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(255)
   description: string;
 
   @IsNumber()

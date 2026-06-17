@@ -97,23 +97,23 @@ export class PersonsService {
           });
           await this.contractPersonRepository.save(contractPerson);
 
-          // Registrar en historial
-          await this.affiliationHistoryRepository.save(
-            this.affiliationHistoryRepository.create({
-              contract: { id: contractId },
-              person,
-              plan: person.plan ?? null,
-              action: AffiliationAction.AFILIACION,
-              amount: Number(person.plan?.amount ?? 0),
-            }),
-          );
-
-          await this.contractsService.recalculateMonthlyAmount(contractId);
-
-          // Auto-generar cargo INCLUSION en la factura activa del mes
           if (resolvedRole === PersonRole.AFILIADO) {
+            // Registrar en historial
+            await this.affiliationHistoryRepository.save(
+              this.affiliationHistoryRepository.create({
+                contract: { id: contractId },
+                person,
+                plan: person.plan ?? null,
+                action: AffiliationAction.AFILIACION,
+                amount: Number(person.plan?.amount ?? 0),
+              }),
+            );
+
+            // Auto-generar cargo INCLUSION en la factura activa del mes
             await this.autoAddInclusionCharge(contractId, person);
           }
+
+          await this.contractsService.recalculateMonthlyAmount(contractId);
         } else {
           throw new BadRequestException('La persona ya está afiliada a este contrato.');
         }
@@ -263,6 +263,24 @@ export class PersonsService {
       plan = newPlan;
     }
 
+    // ── 4.5. Validar restricción de afiliado en otro contrato ───────────────
+    if (resolvedRole === PersonRole.AFILIADO) {
+      // BLOQUEAR si el afiliado ya está en otro contrato
+      const afiliadoJunctions = await this.contractPersonRepository.find({
+        where: { person: { id: person.id }, role: PersonRole.AFILIADO },
+        relations: ['contract'],
+      });
+
+      const otherContracts = afiliadoJunctions.filter((cp) => cp.contract.id !== contractId);
+      if (otherContracts.length > 0) {
+        const contractCodes = otherContracts.map((cp) => cp.contract.code).join(', ');
+        const nameToUse = updateData.name ?? person.name;
+        throw new BadRequestException(
+          `El afiliado ${nameToUse} ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero.`,
+        );
+      }
+    }
+
     // ── 5. Guardar persona ───────────────────────────────────────────────────
     const oldPlanId = person.plan?.id;
     const updatedPerson = Object.assign(person, { ...updateData, plan });
@@ -281,22 +299,6 @@ export class PersonsService {
 
     // ── 6. Gestionar junction (crear / actualizar) ───────────────────────────
     const contractsToRecalculate = new Set<string>();
-
-    if (resolvedRole === PersonRole.AFILIADO) {
-      // BLOQUEAR si el afiliado ya está en otro contrato
-      const afiliadoJunctions = await this.contractPersonRepository.find({
-        where: { person: { id: savedPerson.id }, role: PersonRole.AFILIADO },
-        relations: ['contract'],
-      });
-
-      const otherContracts = afiliadoJunctions.filter((cp) => cp.contract.id !== contractId);
-      if (otherContracts.length > 0) {
-        const contractCodes = otherContracts.map((cp) => cp.contract.code).join(', ');
-        throw new BadRequestException(
-          `El afiliado ${savedPerson.name} ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero.`,
-        );
-      }
-    }
 
     if (existingJunction) {
       // Actualizar role e isBillingOwner solo si alguno cambió.
