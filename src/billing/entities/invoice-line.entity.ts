@@ -11,40 +11,45 @@ import {
 import type { Invoice } from './invoice.entity';
 import type { Person } from '../../persons/entities/person.entity';
 import type { Plan } from '../../plans/entities/plan.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 
-/**
- * @deprecated Usar {@link InvoiceLine} (tabla `invoice_lines`) en su lugar.
- *
- * Esta entidad y la tabla `invoice_details` se mantienen exclusivamente para
- * compatibilidad con datos históricos. No deben usarse para nueva lógica de
- * negocio ni en nuevos reportes.
- *
- * Migración: `1781400000000-add-invoice-lines-and-affiliation-history`
- * - Los datos existentes fueron copiados a `invoice_lines` con `category = 'MENSUALIDAD'`.
- * - La relación `invoice.lines` reemplaza a `invoice.details`.
- */
-@Entity('invoice_details')
-export class InvoiceDetail {
+@Entity('invoice_lines')
+export class InvoiceLine {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne('Invoice', (invoice: Invoice) => invoice.details, {
+  @ManyToOne('Invoice', (invoice: Invoice) => invoice.lines, {
     onDelete: 'CASCADE',
     nullable: false,
   })
   @JoinColumn({ name: 'invoice_id' })
   invoice: Invoice;
 
-  @ManyToOne('Person', { nullable: false })
+  @Column({ type: 'varchar', length: 30, default: InvoiceLineCategory.MENSUALIDAD })
+  category: InvoiceLineCategory;
+
+  @Column({ type: 'varchar', length: 255 })
+  description: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  amount: number;
+
+  @Column({ type: 'int', default: 1 })
+  quantity: number;
+
+  @ManyToOne('Person', { nullable: true })
   @JoinColumn({ name: 'person_id' })
   person: Person;
 
-  @ManyToOne('Plan', { nullable: false })
+  @ManyToOne('Plan', { nullable: true })
   @JoinColumn({ name: 'plan_id' })
   plan: Plan;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, name: 'charged_amount' })
-  chargedAmount: number;
+  @Column({ type: 'boolean', default: false, name: 'is_projectable' })
+  isProjectable: boolean;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown>;
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;

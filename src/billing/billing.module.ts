@@ -1,27 +1,28 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Invoice } from './entities/invoice.entity';
-import { InvoiceDetail } from './entities/invoice-detail.entity';
-import { Payment } from './entities/payment.entity';
 import { Contract } from '../contracts/entities/contract.entity';
-import { Surplus } from './entities/surplus.entity';
-import { BillingService } from './services/billing.service';
-import { BillingCronService } from './services/billing-cron.service';
+import { EmailModule } from '../email/email.module';
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 import { GoogleModule } from '../google/google.module';
+import { PdfModule } from '../pdf/pdf.module';
+import { InvoiceDetail } from './entities/invoice-detail.entity';
+import { InvoiceLine } from './entities/invoice-line.entity';
+import { Invoice } from './entities/invoice.entity';
+import { Payment } from './entities/payment.entity';
+import { Surplus } from './entities/surplus.entity';
+import { BillingCronService } from './services/billing-cron.service';
+import { BillingService } from './services/billing.service';
 import { PaymentCronService } from './services/payment-cron.service';
 import { PaymentPdfCronService } from './services/payment-pdf-cron.service';
-import { SurplusService } from './services/surplus.service';
 import { SurplusCronService } from './services/surplus-cron.service';
-import { EmailModule } from '../email/email.module';
-import { PdfModule } from '../pdf/pdf.module';
+import { SurplusService } from './services/surplus.service';
 
-import { BillingController } from './billing.controller';
 import { AwsModule } from '../aws/aws.module';
+import { BillingController } from './billing.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Invoice, InvoiceDetail, Payment, Contract, Surplus]),
+    TypeOrmModule.forFeature([Invoice, InvoiceDetail, InvoiceLine, Payment, Contract, Surplus]),
     ExchangeRateModule,
     GoogleModule,
     EmailModule,

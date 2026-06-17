@@ -187,6 +187,8 @@ export class StatisticsService {
       INNER JOIN contracts c ON c.id = i.contract_id
       WHERE c.status         = 'ACTIVE'
         AND i.billing_month IS NOT NULL
+        AND i.deleted_at IS NULL
+        AND c.deleted_at IS NULL
         ${advisorFilter}
       GROUP BY i.billing_month
       ORDER BY i.billing_month DESC

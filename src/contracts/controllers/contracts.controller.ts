@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { RequirePermissions } from '../../auth/decorators';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractDto } from '../dto/create-contract.dto';
@@ -32,6 +42,22 @@ export class ContractsController {
     @Query('year') year?: string,
   ) {
     return this.contractsService.getPipelineStats(advisorId, month, year);
+  }
+
+  @Get('affiliation-stats')
+  @RequirePermissions('read:contracts')
+  getAffiliationStats(@Query('month') month: string, @Query('year') year: string) {
+    const parsedMonth = Number(month);
+    const parsedYear = Number(year);
+
+    if (isNaN(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
+      throw new BadRequestException('El parámetro month debe ser un número entre 1 y 12.');
+    }
+    if (isNaN(parsedYear) || parsedYear < 1900 || parsedYear > 2100) {
+      throw new BadRequestException('El parámetro year debe ser un año de 4 dígitos válido.');
+    }
+
+    return this.contractsService.getAffiliationStats(parsedMonth, parsedYear);
   }
 
   @Get(':id')

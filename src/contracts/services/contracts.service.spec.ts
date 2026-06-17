@@ -11,6 +11,8 @@ import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractPerson } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractsService } from './contracts.service';
+import { AffiliationHistory } from '../entities/affiliation-history.entity';
+import { BillingService } from '../../billing/services/billing.service';
 
 describe('ContractsService', () => {
   let service: ContractsService;
@@ -31,6 +33,7 @@ describe('ContractsService', () => {
 
   const CONTRACTS_REPOSITORY_TOKEN = getRepositoryToken(Contract);
   const CONTRACT_PERSONS_REPOSITORY_TOKEN = getRepositoryToken(ContractPerson);
+  const AFFILIATION_HISTORY_REPOSITORY_TOKEN = getRepositoryToken(AffiliationHistory);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -44,6 +47,12 @@ describe('ContractsService', () => {
             findOne: jest.fn(),
             update: jest.fn(),
             remove: jest.fn(),
+          },
+        },
+        {
+          provide: BillingService,
+          useValue: {
+            removeAffiliateLineFromActiveInvoice: jest.fn(),
           },
         },
         {
@@ -66,6 +75,13 @@ describe('ContractsService', () => {
             save: jest.fn(),
             findOne: jest.fn(),
             find: jest.fn(),
+          },
+        },
+        {
+          provide: AFFILIATION_HISTORY_REPOSITORY_TOKEN,
+          useValue: {
+            create: jest.fn(),
+            save: jest.fn(),
           },
         },
       ],

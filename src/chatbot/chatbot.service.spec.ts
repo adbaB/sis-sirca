@@ -460,7 +460,9 @@ describe('ChatbotService', () => {
         .mockResolvedValueOnce({ data: { url: 'https://media.url/123' } }) // First get for URL
         .mockResolvedValueOnce({ data: Buffer.from('test') }); // Second get for Buffer
 
-      mockAwsService.uploadFile.mockResolvedValue('http://s3.aws.com/comprobante.jpg');
+      mockAwsService.uploadFile.mockResolvedValue(
+        'https://test-bucket.s3.amazonaws.com/comprobante.jpg',
+      );
       mockOcrService.extractReceiptData.mockResolvedValue({
         referencia: '123456',
         monto: 100,

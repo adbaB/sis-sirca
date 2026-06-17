@@ -6,6 +6,7 @@
   <style>
     :root {
       --primary-color: #1d9e11;
+      --accent-color: #0369a1;
       --text-color: #333333;
       --border-color: #e2e8f0;
     }
@@ -24,11 +25,9 @@
       box-sizing: border-box;
       page-break-after: always;
     }
-    .page-container:last-child {
-      page-break-after: auto;
-    }
+    .page-container:last-child { page-break-after: auto; }
 
-    /* ── Header ───────────────────────────────────────────── */
+    /* ── Header ── */
     .header {
       display: flex;
       justify-content: space-between;
@@ -37,18 +36,11 @@
       padding-bottom: 12px;
       margin-bottom: 14px;
     }
-    .header h1 {
-      color: var(--primary-color);
-      margin: 0;
-      font-size: 22px;
-    }
-    .header-logo {
-      max-height: 50px;
-      margin-bottom: 4px;
-    }
+    .header h1 { color: var(--primary-color); margin: 0; font-size: 22px; }
+    .header-logo { max-height: 50px; margin-bottom: 4px; }
     .header p { margin: 3px 0 0 0; color: #666; font-size: 12px; }
 
-    /* ── Info section ─────────────────────────────────────── */
+    /* ── Info section ── */
     .info-section {
       display: flex;
       justify-content: space-between;
@@ -72,23 +64,17 @@
     }
     .info-box p { margin: 4px 0; font-size: 12px; }
 
-    /* ── Two-column body: table + receipt ─────────────────── */
+    /* ── Two-column body ── */
     .body-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       gap: 16px;
     }
-    .body-left {
-      flex: 1 1 0;
-      min-width: 0;
-    }
-    .body-right {
-      flex: 0 0 220px;
-      max-width: 220px;
-    }
+    .body-left { flex: 1 1 0; min-width: 0; }
+    .body-right { flex: 0 0 220px; max-width: 220px; }
 
-    /* ── Details table ────────────────────────────────────── */
+    /* ── Details table ── */
     .details-table {
       width: 100%;
       border-collapse: collapse;
@@ -105,11 +91,41 @@
       color: white;
       font-weight: 600;
     }
+    /* Section sub-headers */
+    .section-header td {
+      background-color: #f0fdf4;
+      color: var(--primary-color);
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 5px 10px;
+    }
+    .section-header-charges td {
+      background-color: #eff6ff;
+      color: var(--accent-color);
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 5px 10px;
+    }
+    .charge-row td {
+      background-color: #fafcff;
+      color: #1e40af;
+    }
+    .subtotal-row td {
+      font-weight: 600;
+      border-top: 2px solid var(--border-color);
+      background-color: #f8fafc;
+    }
+
+    /* ── Totals ── */
     .total-section {
       display: flex;
-      align-content: space-between;
       align-items: center;
       font-size: 15px;
+      gap: 16px;
     }
     .total-amount {
       font-size: 20px;
@@ -117,10 +133,8 @@
       color: var(--primary-color);
     }
 
-    /* ── Receipt image (right column) ─────────────────────── */
-    .receipt-section {
-      text-align: center;
-    }
+    /* ── Receipt image ── */
+    .receipt-section { text-align: center; }
     .receipt-section h3 {
       color: var(--primary-color);
       font-size: 13px;
@@ -138,7 +152,7 @@
       box-sizing: border-box;
     }
 
-    /* ── Footer ───────────────────────────────────────────── */
+    /* ── Footer ── */
     .footer {
       margin-top: 16px;
       text-align: center;
@@ -152,6 +166,7 @@
 <body>
   {{#each invoices}}
   <div class="page-container">
+
     <!-- Header -->
     <div class="header">
       <div>
@@ -181,53 +196,90 @@
         <p><strong>Referencia:</strong> {{ referenceNumber }}</p>
         {{/if}}
       </div>
-      <div class="info-box">
-        <h3>Miembros</h3>
-        {{#each members}}
-        <p><strong>{{ this.name }}</strong> - {{ this.identityCard }} - {{ this.plan }} - {{ this.amountUsd }}</p>
-        {{/each}}
-      </div>
     </div>
 
-    <!-- Two-column: table left, receipt right -->
+    <!-- Two-column: detail table left, receipt right -->
     <div class="body-row">
       <div class="body-left">
         <table class="details-table">
           <thead>
             <tr>
               <th>Descripción</th>
-              <th style="text-align: right;">Monto</th>
+              <th style="text-align:center; width:50px;">Cant.</th>
+              <th style="text-align:right; width:100px;">Monto</th>
             </tr>
           </thead>
           <tbody>
+
+            <!-- ── Mensualidad ── -->
+            <tr class="section-header">
+              <td colspan="3">Mensualidad</td>
+            </tr>
+            {{#each members}}
             <tr>
-              <td>Abono a contrato {{ contractCode }} ({{ paymentMethod }})</td>
-              <td style="text-align: right;">${{ amountUsd }}</td>
+              <td>{{ this.name }} &nbsp;—&nbsp; {{ this.plan }}</td>
+              <td style="text-align:center;">1</td>
+              <td style="text-align:right;">{{ this.amountUsd }}</td>
+            </tr>
+            {{/each}}
+
+            <!-- ── Cargos adicionales (INCLUSION, COMISION, etc.) ── -->
+            {{#if hasAdditionalCharges}}
+            <tr class="section-header-charges">
+              <td colspan="3">Cargos Adicionales</td>
+            </tr>
+            {{#each additionalCharges}}
+            <tr class="charge-row">
+              <td>
+                <span style="font-weight:600;">[{{ this.category }}]</span>
+                &nbsp;{{ this.description }}
+              </td>
+              <td style="text-align:center;">{{ this.quantity }}</td>
+              <td style="text-align:right;">{{ this.totalLine }}</td>
+            </tr>
+            {{/each}}
+            {{/if}}
+
+            <!-- ── Resumen financiero ── -->
+            <tr class="subtotal-row">
+              <td>Total Factura (USD)</td>
+              <td></td>
+              <td style="text-align:right;"><strong>${{ totalAmount }}</strong></td>
+            </tr>
+            <tr>
+              <td>Abono recibido ({{ paymentMethod }})</td>
+              <td></td>
+              <td style="text-align:right;">${{ amountUsd }}</td>
             </tr>
             {{#if amountBs}}
             <tr>
-              <td>Monto equivalente en Bolívares</td>
-              <td style="text-align: right;"> {{ amountBs }} Bs.</td>
+              <td>Equivalente en Bolívares</td>
+              <td></td>
+              <td style="text-align:right;">{{ amountBs }} Bs.</td>
             </tr>
             <tr>
               <td>Tasa BCV ({{ date }})</td>
-              <td style="text-align: right;"> {{ exchangeRateUsdToBs }} Bs.</td>
+              <td></td>
+              <td style="text-align:right;">{{ exchangeRateUsdToBs }} Bs.</td>
             </tr>
             {{/if}}
             <tr>
               <td>Asesor</td>
-              <td style="text-align: right;">{{ advisor }}</td>
+              <td></td>
+              <td style="text-align:right;">{{ advisor }}</td>
             </tr>
             <tr>
               <td>Saldo pendiente (USD)</td>
-              <td style="text-align: right;">{{ amountUnpaid }}</td>
+              <td></td>
+              <td style="text-align:right;">{{ amountUnpaid }}</td>
             </tr>
+
           </tbody>
         </table>
 
         <div class="total-section">
-          <p>Total a pagar (USD):<span class="total-amount">${{ totalAmount }}</span></p>
-          <p>Total Pagado (USD): <span class="total-amount">${{ amountUsd }}</span></p>
+          <p>Total a pagar (USD):&nbsp;<span class="total-amount">${{ totalAmount }}</span></p>
+          <p>Total Pagado (USD):&nbsp;<span class="total-amount">${{ amountUsd }}</span></p>
         </div>
       </div>
 
@@ -243,7 +295,7 @@
 
     <div class="footer">
       <p>Este documento es un comprobante digital de pago</p>
-      <p>Salud Integral El Rosario C.A. - Gracias por confiar en nosotros.</p>
+      <p>Salud Integral El Rosario C.A. — Gracias por confiar en nosotros.</p>
     </div>
   </div>
   {{/each}}

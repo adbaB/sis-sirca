@@ -144,9 +144,9 @@ export class AdvisorPaymentsService {
       FROM payments pay
       JOIN invoices inv ON pay.invoice_id = inv.id AND inv.deleted_at IS NULL
       JOIN contracts c ON inv.contract_id = c.id AND c.deleted_at IS NULL
-      LEFT JOIN portfolios pf ON c.portfolio_id = pf.id
+      LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
       LEFT JOIN contract_persons cp ON cp.contract_id = c.id AND cp.is_billing_owner = true AND cp.deleted_at IS NULL
-      LEFT JOIN persons pers ON cp.person_id = pers.id
+      LEFT JOIN persons pers ON cp.person_id = pers.id AND pers.deleted_at IS NULL
       WHERE inv.billing_month = $1
         AND pay.status = 'COMPLETED'
         AND pay.deleted_at IS NULL

@@ -3,11 +3,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { InvoiceLine } from '../../billing/entities/invoice-line.entity';
+import { Invoice } from '../../billing/entities/invoice.entity';
+import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
+import { BillingService } from '../../billing/services/billing.service';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';
@@ -19,6 +23,7 @@ describe('PersonsService', () => {
   let cpRepository: Repository<ContractPerson>;
   let plansService: PlansService;
   let contractsService: ContractsService;
+  let billingService: BillingService;
 
   const mockPlan: Plan = { id: 'plan-1', name: 'Basic', amount: 10 } as Plan;
   const mockContract: Contract = {
@@ -51,6 +56,9 @@ describe('PersonsService', () => {
 
   const PERSONS_REPOSITORY_TOKEN = getRepositoryToken(Person);
   const CP_REPOSITORY_TOKEN = getRepositoryToken(ContractPerson);
+  const AFH_REPOSITORY_TOKEN = getRepositoryToken(AffiliationHistory);
+  const INVOICE_REPOSITORY_TOKEN = getRepositoryToken(Invoice);
+  const INVOICE_LINE_REPOSITORY_TOKEN = getRepositoryToken(InvoiceLine);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -75,6 +83,7 @@ describe('PersonsService', () => {
               findOne: jest.fn(),
               find: jest.fn(),
               remove: jest.fn(),
+              softRemove: jest.fn(),
               update: jest.fn(),
               manager: {
                 transaction: null as unknown,
@@ -94,6 +103,31 @@ describe('PersonsService', () => {
           },
         },
         {
+          provide: AFH_REPOSITORY_TOKEN,
+          useValue: {
+            find: jest.fn(),
+            create: jest.fn().mockImplementation((dto) => dto),
+            save: jest.fn().mockImplementation(async (entity) => entity),
+          },
+        },
+        {
+          provide: INVOICE_REPOSITORY_TOKEN,
+          useValue: {
+            find: jest.fn(),
+            findOne: jest.fn().mockResolvedValue(null),
+            save: jest.fn(),
+          },
+        },
+        {
+          provide: INVOICE_LINE_REPOSITORY_TOKEN,
+          useValue: {
+            find: jest.fn(),
+            findOne: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation((dto) => dto),
+            save: jest.fn().mockImplementation(async (entity) => entity),
+          },
+        },
+        {
           provide: PlansService,
           useValue: {
             findOne: jest.fn(),
@@ -106,6 +140,12 @@ describe('PersonsService', () => {
             recalculateMonthlyAmount: jest.fn(),
           },
         },
+        {
+          provide: BillingService,
+          useValue: {
+            updatePlanLineOnActiveInvoice: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -114,6 +154,7 @@ describe('PersonsService', () => {
     cpRepository = module.get<Repository<ContractPerson>>(CP_REPOSITORY_TOKEN);
     plansService = module.get<PlansService>(PlansService);
     contractsService = module.get<ContractsService>(ContractsService);
+    billingService = module.get<BillingService>(BillingService);
   });
 
   it('should be defined', () => {
@@ -240,30 +281,30 @@ describe('PersonsService', () => {
       expect(result.name).toEqual('Jane Doe');
     });
 
-    it('should handle removing an AFILIADO from their old contract when added to a new one', async () => {
+    it('should throw BadRequestException if an AFILIADO is updated to a new contract without being disaffiliated first', async () => {
       const updatePersonDto: UpdatePersonDto = {
         contractId: 'contract-2',
         role: PersonRole.AFILIADO,
       };
 
-      const newContract: Contract = { id: 'contract-2' } as Contract;
-      const oldJunction: ContractPerson = { ...mockContractPerson, contract: mockContract };
+      const newContract: Contract = { id: 'contract-2', code: 'SIR-002' } as Contract;
+      const oldJunction: ContractPerson = {
+        ...mockContractPerson,
+        contract: { id: 'contract-1', code: 'SIR-001' } as Contract,
+      };
 
       jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
       jest.spyOn(contractsService, 'findOne').mockResolvedValue(newContract);
       jest.spyOn(repository, 'save').mockResolvedValue(mockPerson as Person);
       jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null); // Not in the new contract yet
       jest.spyOn(cpRepository, 'find').mockResolvedValue([oldJunction]); // In the old contract
-      jest.spyOn(cpRepository, 'remove').mockResolvedValue(oldJunction);
 
-      await service.update('1', updatePersonDto);
+      await expect(service.update('1', updatePersonDto)).rejects.toThrow(BadRequestException);
 
-      // Verify the old junction was removed
-      expect(cpRepository.remove).toHaveBeenCalledWith(oldJunction);
-
-      // Verify both the new and old contracts are recalculated
-      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
-      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-2');
+      // Verify that no write mutations occurred
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(cpRepository.save).not.toHaveBeenCalled();
+      expect(billingService.updatePlanLineOnActiveInvoice).not.toHaveBeenCalled();
     });
 
     it('should not wipe global plan when adding a TITULAR to a new contract', async () => {

@@ -1,0 +1,7 @@
+export enum InvoiceLineCategory {
+  MENSUALIDAD = 'MENSUALIDAD',
+  COMISION = 'COMISION',
+  INCLUSION = 'INCLUSION',
+  RECOBRO = 'RECOBRO',
+  IMPUESTO = 'IMPUESTO',
+}
