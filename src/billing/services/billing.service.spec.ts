@@ -5,15 +5,29 @@ import { DataSource } from 'typeorm';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
-import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { SurplusStatus } from '../entities/surplus.entity';
+import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
+import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
 import { BillingService } from './billing.service';
 import { SurplusService } from './surplus.service';
-import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceService } from '../invoices/services/invoice.service';
+import { PaymentService } from '../payment/services/payment.service';
 
 describe('BillingService', () => {
   let service: BillingService;
+
+  const mockQueryBuilder = {
+    setQueryRunner: jest.fn().mockReturnThis(),
+    innerJoinAndSelect: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    setLock: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
+    getRawOne: jest.fn().mockResolvedValue({}),
+    select: jest.fn().mockReturnThis(),
+  };
 
   const mockQueryRunner = {
     connect: jest.fn(),
@@ -25,24 +39,35 @@ describe('BillingService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
-      createQueryBuilder: jest.fn(),
-      getRepository: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+      getRepository: jest.fn().mockImplementation((entity) => {
+        if (entity === Payment) return mockPaymentRepository;
+        if (entity === Invoice) return mockInvoiceRepository;
+        return {};
+      }),
     },
   };
 
   const mockDataSource = {
     createQueryRunner: jest.fn().mockReturnValue(mockQueryRunner),
+    getRepository: jest.fn().mockImplementation((entity) => {
+      if (entity === Payment) return mockPaymentRepository;
+      if (entity === Invoice) return mockInvoiceRepository;
+      return {};
+    }),
   };
 
   const mockPaymentRepository = {
-    createQueryBuilder: jest.fn(),
+    createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     findOne: jest.fn(),
+    save: jest.fn(),
     manager: {
       findOne: jest.fn(),
     },
   };
 
   const mockInvoiceRepository = {
+    createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     findOne: jest.fn(),
     save: jest.fn(),
   };
@@ -51,6 +76,8 @@ describe('BillingService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BillingService,
+        InvoiceService,
+        PaymentService,
         {
           provide: getRepositoryToken(Payment),
           useValue: mockPaymentRepository,
@@ -124,9 +151,12 @@ describe('BillingService', () => {
     const qb = {
       setQueryRunner: jest.fn().mockReturnThis(),
       innerJoinAndSelect: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       setLock: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(result),
+      getMany: jest.fn().mockResolvedValue(result ? [result] : []),
     };
     (mockQueryRunner.manager.createQueryBuilder as jest.Mock).mockReturnValue(qb);
     return qb;
@@ -289,7 +319,9 @@ describe('BillingService', () => {
 
     it('should do nothing and log a warning if the invoice is not found', async () => {
       mockInvoiceRepository.findOne.mockResolvedValue(null);
-      const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => {});
+      const warnSpy = jest
+        .spyOn(service['invoiceService']['logger'], 'warn')
+        .mockImplementation(() => {});
 
       await service.recalculateInvoicePaidAmount('nonexistent');
 

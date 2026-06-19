@@ -5,20 +5,24 @@ import { EmailModule } from '../email/email.module';
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 import { GoogleModule } from '../google/google.module';
 import { PdfModule } from '../pdf/pdf.module';
-import { InvoiceDetail } from './entities/invoice-detail.entity';
-import { InvoiceLine } from './entities/invoice-line.entity';
-import { Invoice } from './entities/invoice.entity';
+import { BillingCronService } from './crons/billing-cron.service';
+import { PaymentCronService } from './crons/payment-cron.service';
+import { PaymentPdfCronService } from './crons/payment-pdf-cron.service';
+import { SurplusCronService } from './crons/surplus-cron.service';
 import { Payment } from './entities/payment.entity';
 import { Surplus } from './entities/surplus.entity';
-import { BillingCronService } from './services/billing-cron.service';
+import { InvoiceDetail } from './invoices/entities/invoice-detail.entity';
+import { InvoiceLine } from './invoices/entities/invoice-line.entity';
+import { Invoice } from './invoices/entities/invoice.entity';
 import { BillingService } from './services/billing.service';
-import { PaymentCronService } from './services/payment-cron.service';
-import { PaymentPdfCronService } from './services/payment-pdf-cron.service';
-import { SurplusCronService } from './services/surplus-cron.service';
 import { SurplusService } from './services/surplus.service';
+import { InvoiceService } from './invoices/services/invoice.service';
+import { PaymentService } from './payment/services/payment.service';
 
 import { AwsModule } from '../aws/aws.module';
-import { BillingController } from './billing.controller';
+import { OcrModule } from '../ocr/ocr.module';
+import { BillingController } from './controllers/billing.controller';
+import { InvoiceController } from './invoices/controllers/invoice.controller';
 
 @Module({
   imports: [
@@ -28,8 +32,9 @@ import { BillingController } from './billing.controller';
     EmailModule,
     PdfModule,
     AwsModule,
+    OcrModule,
   ],
-  controllers: [BillingController],
+  controllers: [BillingController, InvoiceController],
   providers: [
     BillingService,
     BillingCronService,
@@ -37,7 +42,9 @@ import { BillingController } from './billing.controller';
     PaymentPdfCronService,
     SurplusService,
     SurplusCronService,
+    InvoiceService,
+    PaymentService,
   ],
-  exports: [BillingService, SurplusService],
+  exports: [BillingService, SurplusService, InvoiceService, PaymentService],
 })
 export class BillingModule {}

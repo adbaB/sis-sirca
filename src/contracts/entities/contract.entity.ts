@@ -3,17 +3,17 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
-  OneToMany,
-  ManyToOne,
   JoinColumn,
+  ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { ContractPerson } from './contract-person.entity';
-import type { Invoice } from '../../billing/entities/invoice.entity';
 import type { Advisor } from '../../advisors/entities/advisor.entity';
 import type { Surplus } from '../../billing/entities/surplus.entity';
+import type { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import type { Portfolio } from '../../portfolios/entities/portfolio.entity';
+import type { ContractPerson } from './contract-person.entity';
 
 export enum ContractStatus {
   ACTIVE = 'ACTIVE',

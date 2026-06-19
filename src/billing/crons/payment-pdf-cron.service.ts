@@ -12,9 +12,10 @@ import { ContractPerson } from '../../contracts/entities/contract-person.entity'
 import { Contract } from '../../contracts/entities/contract.entity';
 import { EmailService } from '../../email/email.service';
 import { PdfService } from '../../pdf/services/pdf.service';
-import { InvoiceLine } from '../entities/invoice-line.entity';
-import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
+import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
+import { fetchReceiptAsBase64 } from '../utils/image-fetcher.util';
 
 export class PaymentPdfCronService {
   private readonly logger = new Logger(PaymentPdfCronService.name);
@@ -175,7 +176,9 @@ export class PaymentPdfCronService {
     const financialInfo = this.calculateFinancialInfo(payment);
 
     const advisor = contract.advisor?.name ?? 'Sin asesor';
-    const receiptDataUri = payment.url ? await this.fetchImageAsBase64(payment.url) : null;
+    const receiptDataUri = payment.url
+      ? await fetchReceiptAsBase64(payment.url, this.logger)
+      : null;
 
     return {
       contractCode: contract.code,
@@ -343,79 +346,5 @@ export class PaymentPdfCronService {
       );
       return null;
     }
-  }
-
-  /**
-   * Downloads an image from a URL (e.g. S3 presigned URL) and returns it as a
-   * data URI so Puppeteer can render it without making outbound HTTP requests.
-   * Returns null if the download fails — the template will simply omit the image.
-   */
-  private async fetchImageAsBase64(url: string): Promise<string | null> {
-    const result = await fetchSafeImage(url, this.logger);
-    if (!result) return null;
-    return `data:${result.contentType};base64,${result.base64}`;
-  }
-}
-
-function isTrustedUrl(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return false;
-    }
-    const hostname = parsed.hostname.toLowerCase();
-    const trustedHosts = ['amazonaws.com', 's3.amazonaws.com'];
-    return trustedHosts.includes(hostname) || hostname.endsWith('.amazonaws.com');
-  } catch {
-    return false;
-  }
-}
-
-async function fetchSafeImage(
-  url: string,
-  logger: { warn(msg: string): void },
-): Promise<{ contentType: string; base64: string } | null> {
-  if (!isTrustedUrl(url)) {
-    logger.warn(`[SSRF Blocked] Attempted outbound request to untrusted URL: ${url}`);
-    return null;
-  }
-
-  try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(5000), // 5 seconds timeout
-    });
-
-    if (!response.ok) return null;
-
-    const contentType = response.headers.get('content-type') ?? 'image/jpeg';
-
-    if (!response.body) return null;
-    const reader = response.body.getReader();
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        totalSize += value.length;
-        if (totalSize > MAX_SIZE) {
-          await reader.cancel();
-          logger.warn(`[Resource Exhaustion Blocked] Image size exceeded limit of 10MB: ${url}`);
-          return null;
-        }
-        chunks.push(Buffer.from(value));
-      }
-    }
-
-    const buffer = Buffer.concat(chunks);
-    const base64 = buffer.toString('base64');
-    return { contentType, base64 };
-  } catch (err) {
-    logger.warn(
-      `[fetchSafeImage] Error fetching image: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return null;
   }
 }

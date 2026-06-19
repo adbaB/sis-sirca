@@ -1,14 +1,14 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, IsNull, In } from 'typeorm';
-import { Surplus, SurplusStatus } from '../entities/surplus.entity';
-import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
-import { Payment, PaymentStatus } from '../entities/payment.entity';
-import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
-import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
 import { DateTime } from 'luxon';
-import { BillingService } from './billing.service';
+import { DataSource, In, IsNull, QueryRunner, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
+import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
+import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { Surplus, SurplusStatus } from '../entities/surplus.entity';
+import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
+import { InvoiceService } from '../invoices/services/invoice.service';
 
 @Injectable()
 export class SurplusService {
@@ -19,8 +19,8 @@ export class SurplusService {
     private readonly surplusRepository: Repository<Surplus>,
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
-    @Inject(forwardRef(() => BillingService))
-    private readonly billingService: BillingService,
+    @Inject(forwardRef(() => InvoiceService))
+    private readonly invoiceService: InvoiceService,
   ) {}
 
   /**
@@ -168,7 +168,7 @@ export class SurplusService {
       }
 
       // We recalculate INSIDE the transaction to rollback everything if it fails
-      await this.billingService.recalculateInvoicePaidAmount(invoiceId, queryRunner);
+      await this.invoiceService.recalculateInvoicePaidAmount(invoiceId, queryRunner);
 
       await queryRunner.commitTransaction();
     } catch (error) {
@@ -222,5 +222,33 @@ export class SurplusService {
     }
 
     this.logger.log('Bulk pending surplus application completed.');
+  }
+  /**
+   * Persists a Surplus record when the payment exceeds the invoice balance.
+   * Returns the saved surplus ID, or null when no surplus exists.
+   */
+  async persistSurplus(
+    queryRunner: QueryRunner,
+    invoice: Invoice,
+    savedPayment: Payment,
+    paymentDate: Date,
+    surplusAmountUsd: number | null,
+    surplusAmountBs: number | null,
+  ): Promise<string | null> {
+    if (surplusAmountUsd === null && surplusAmountBs === null) {
+      return null;
+    }
+    const saved = await queryRunner.manager.save(
+      queryRunner.manager.create(Surplus, {
+        amountBs: surplusAmountBs,
+        amountUsd: surplusAmountUsd,
+        date: paymentDate,
+        payment: savedPayment,
+        invoice: null,
+        contract: invoice.contract,
+        status: SurplusStatus.PENDING,
+      }),
+    );
+    return saved.id;
   }
 }

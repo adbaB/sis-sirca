@@ -1,10 +1,10 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
-import { PaymentCronService } from './payment-cron.service';
-import { BillingService } from './billing.service';
+import { PaymentCronService } from '../crons/payment-cron.service';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { BillingService } from '../services/billing.service';
 
 describe('PaymentCronService', () => {
   let service: PaymentCronService;

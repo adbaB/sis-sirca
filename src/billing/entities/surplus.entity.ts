@@ -7,9 +7,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Payment } from './payment.entity';
-import { Invoice } from './invoice.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
+import { Invoice } from '../invoices/entities/invoice.entity';
+import { Payment } from './payment.entity';
 
 export enum SurplusStatus {
   PENDING = 'pending',

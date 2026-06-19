@@ -3,15 +3,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { InvoiceLine } from '../../billing/entities/invoice-line.entity';
-import { Invoice } from '../../billing/entities/invoice.entity';
+import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
+import { Invoice } from '../../billing/invoices/entities/invoice.entity';
+import { BillingService } from '../../billing/services/billing.service';
 import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
-import { BillingService } from '../../billing/services/billing.service';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';

@@ -5,11 +5,13 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Invoice } from './invoice.entity';
 import type { Person } from '../../persons/entities/person.entity';
+import type { Invoice } from '../invoices/entities/invoice.entity';
+import { Surplus } from './surplus.entity';
 
 export enum PaymentStatus {
   PROCESSING = 'PROCESSING',
@@ -56,6 +58,9 @@ export class Payment {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
+
+  @OneToMany('Surplus', (surplus: Surplus) => surplus.payment)
+  surpluses: Surplus[];
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;

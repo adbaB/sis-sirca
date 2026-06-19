@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SubmitPaymentDto } from './dto/submit-payment.dto';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { BillingService } from '../billing/services/billing.service';
 
 describe('PaymentsController', () => {
   let controller: PaymentsController;
@@ -19,6 +20,10 @@ describe('PaymentsController', () => {
         {
           provide: PaymentsService,
           useValue: mockPaymentsService,
+        },
+        {
+          provide: BillingService,
+          useValue: {},
         },
       ],
     }).compile();

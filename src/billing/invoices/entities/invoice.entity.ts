@@ -11,10 +11,10 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Contract } from '../../contracts/entities/contract.entity';
+import type { Contract } from '../../../contracts/entities/contract.entity';
+import type { Payment } from '../../entities/payment.entity';
 import type { InvoiceDetail } from './invoice-detail.entity';
 import type { InvoiceLine } from './invoice-line.entity';
-import type { Payment } from './payment.entity';
 
 export enum InvoiceStatus {
   PENDING = 'PENDING',
