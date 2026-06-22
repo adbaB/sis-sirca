@@ -28,7 +28,7 @@ export class AffiliationHistory {
   @JoinColumn({ name: 'plan_id' })
   plan: Plan;
 
-  @Column({ type: 'varchar', length: 20 })
+  @Column({ type: 'varchar', length: 30 })
   action: AffiliationAction;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })

@@ -13,6 +13,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractsService } from './contracts.service';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { BillingService } from '../../billing/services/billing.service';
+import { PlansService } from '../../plans/services/plans.service';
 
 describe('ContractsService', () => {
   let service: ContractsService;
@@ -29,6 +30,7 @@ describe('ContractsService', () => {
     updatedAt: new Date(),
     deletedAt: null,
     status: ContractStatus.ACTIVE,
+    inactivationReason: null,
   };
 
   const CONTRACTS_REPOSITORY_TOKEN = getRepositoryToken(Contract);
@@ -53,6 +55,12 @@ describe('ContractsService', () => {
           provide: BillingService,
           useValue: {
             removeAffiliateLineFromActiveInvoice: jest.fn(),
+          },
+        },
+        {
+          provide: PlansService,
+          useValue: {
+            findOne: jest.fn(),
           },
         },
         {

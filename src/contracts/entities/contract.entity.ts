@@ -60,6 +60,9 @@ export class Contract {
   @Column({ type: 'enum', enum: ContractStatus, default: ContractStatus.ACTIVE })
   status: ContractStatus;
 
+  @Column({ type: 'varchar', length: 500, nullable: true, name: 'inactivation_reason' })
+  inactivationReason: string;
+
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt: Date;
 

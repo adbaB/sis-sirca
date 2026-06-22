@@ -14,17 +14,21 @@ import { paginateQueryBuilder } from '../../common/utils/pagination.util';
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { CreateContractDto } from '../dto/create-contract.dto';
+import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
-import { Contract } from '../entities/contract.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { BillingService } from '../../billing/services/billing.service';
+import { PlansService } from '../../plans/services/plans.service';
+import { Plan } from '../../plans/entities/plan.entity';
 
 export interface PipelineTotals {
   totalPipeline: number;
@@ -52,6 +56,7 @@ export class ContractsService {
     private personsService: PersonsService,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private plansService: PlansService,
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
@@ -62,6 +67,238 @@ export class ContractsService {
       ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
     });
     return this.contractsRepository.save(contract);
+  }
+
+  /**
+   * Creates a contract with all its affiliated persons in a single transactional operation.
+   *
+   * Validations:
+   * - At most one TITULAR (optional — a contract can have only AFILIADOs)
+   * - At most one isBillingOwner (defaults to TITULAR if present and none specified)
+   * - AFILIADOs must have a planId
+   * - If a person's document already exists as AFILIADO in another active contract → rejected
+   */
+  async createFull(dto: CreateContractFullDto): Promise<Contract> {
+    const { advisorId, portfolioId, affiliates, ...contractData } = dto;
+
+    // ── 1. Validate TITULAR count (optional, but at most one) ──────────────
+    const titulars = affiliates.filter((a) => a.role === PersonRole.TITULAR);
+    if (titulars.length > 1) {
+      throw new BadRequestException('Solo puede haber un TITULAR por contrato.');
+    }
+
+    // ── 2. Validate billing owner count ────────────────────────────────────
+    const billingOwners = affiliates.filter((a) => a.isBillingOwner === true);
+    if (billingOwners.length > 1) {
+      throw new BadRequestException('Solo puede haber un responsable de facturación por contrato.');
+    }
+
+    // If no billing owner specified, default to TITULAR (if present)
+    const hasBillingOwner = billingOwners.length === 1;
+
+    // ── 3. Validate AFILIADO planId ────────────────────────────────────────
+    for (const affiliate of affiliates) {
+      if (affiliate.role === PersonRole.AFILIADO && !affiliate.planId) {
+        throw new BadRequestException(
+          `El afiliado ${affiliate.name} (${affiliate.typeIdentityCard}-${affiliate.identityCard}) debe tener un plan asignado.`,
+        );
+      }
+    }
+
+    // ── 4. Execute within a transaction ────────────────────────────────────
+    return this.contractsRepository.manager.transaction(async (manager) => {
+      const personRepo = manager.getRepository(Person);
+      const contractRepo = manager.getRepository(Contract);
+      const cpRepo = manager.getRepository(ContractPerson);
+      const historyRepo = manager.getRepository(AffiliationHistory);
+
+      // ── 4.1. Create the contract ──────────────────────────────────────
+      const contract = contractRepo.create({
+        ...contractData,
+        ...(advisorId ? { advisor: { id: advisorId } } : {}),
+        ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
+      });
+      const savedContract = await contractRepo.save(contract);
+
+      // ── 4.2. Process each affiliate ───────────────────────────────────
+      for (const affiliate of affiliates) {
+        const {
+          typeIdentityCard,
+          identityCard,
+          name,
+          birthDate,
+          gender,
+          planId,
+          role,
+          isBillingOwner,
+        } = affiliate;
+
+        // Resolve plan for AFILIADO
+        let plan: Plan | null = null;
+        if (role === PersonRole.AFILIADO && planId) {
+          plan = await this.plansService.findOne(planId);
+        }
+
+        // Check if person already exists by document
+        let person = await personRepo.findOne({
+          where: { identityCard, typeIdentityCard },
+          relations: ['plan', 'contractPersons', 'contractPersons.contract'],
+        });
+
+        let affiliationReason: string | null = null;
+
+        if (person) {
+          // Person exists → validate AFILIADO single-contract rule
+          if (role === PersonRole.AFILIADO) {
+            // Check if AFILIADO in an ACTIVE contract → block
+            const activeAffiliations = await cpRepo.find({
+              where: {
+                person: { id: person.id },
+                role: PersonRole.AFILIADO,
+                contract: { status: ContractStatus.ACTIVE },
+              },
+              relations: ['contract'],
+            });
+
+            if (activeAffiliations.length > 0) {
+              const contractCodes = activeAffiliations.map((cp) => cp.contract.code).join(', ');
+              throw new BadRequestException(
+                `El afiliado ${person.name} (${person.typeIdentityCard}-${person.identityCard}) ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero antes de asignarlo a otro contrato.`,
+              );
+            }
+
+            // Check if AFILIADO in an INACTIVE contract → CAMBIO_CONTRATO
+            const inactiveAffiliations = await cpRepo.find({
+              where: {
+                person: { id: person.id },
+                role: PersonRole.AFILIADO,
+                contract: { status: ContractStatus.INACTIVE },
+              },
+              relations: ['contract', 'person', 'person.plan'],
+            });
+
+            for (const oldCp of inactiveAffiliations) {
+              // Record CAMBIO_CONTRATO in old contract history
+              await historyRepo.save(
+                historyRepo.create({
+                  contract: oldCp.contract,
+                  person,
+                  plan: oldCp.person?.plan ?? null,
+                  action: AffiliationAction.CAMBIO_CONTRATO,
+                  amount: Number(oldCp.person?.plan?.amount ?? 0),
+                  reason: `Migrado al contrato ${savedContract.code}`,
+                }),
+              );
+
+              // Soft-delete old ContractPerson
+              await cpRepo.softRemove(oldCp);
+            }
+
+            if (inactiveAffiliations.length > 0) {
+              const oldCodes = inactiveAffiliations.map((cp) => cp.contract.code).join(', ');
+              affiliationReason = `Proveniente del contrato ${oldCodes}`;
+            }
+          }
+        } else {
+          // Person does not exist → create new
+          person = personRepo.create({
+            typeIdentityCard,
+            identityCard,
+            name,
+            birthDate: birthDate ? new Date(birthDate) : undefined,
+            gender,
+            plan,
+          });
+          person = await personRepo.save(person);
+        }
+
+        // ── 4.3. Create ContractPerson junction ─────────────────────────
+        const resolvedIsBillingOwner = hasBillingOwner
+          ? (isBillingOwner ?? false)
+          : role === PersonRole.TITULAR; // default: TITULAR is billing owner
+
+        const contractPerson = cpRepo.create({
+          contract: savedContract,
+          person,
+          role,
+          isBillingOwner: resolvedIsBillingOwner,
+        });
+        await cpRepo.save(contractPerson);
+
+        // ── 4.4. Record affiliation history for AFILIADOs ───────────────
+        if (role === PersonRole.AFILIADO) {
+          await historyRepo.save(
+            historyRepo.create({
+              contract: savedContract,
+              person,
+              plan,
+              action: AffiliationAction.AFILIACION,
+              amount: Number(plan?.amount ?? 0),
+              reason: affiliationReason,
+            }),
+          );
+        }
+      }
+
+      // ── 4.5. Recalculate monthly amount ─────────────────────────────────
+      await this.recalculateMonthlyAmount(savedContract.id, manager);
+
+      // ── 4.6. Return contract with relations loaded ──────────────────────
+      return contractRepo.findOne({
+        where: { id: savedContract.id },
+        relations: [
+          'contractPersons',
+          'contractPersons.person',
+          'contractPersons.person.plan',
+          'advisor',
+          'portfolio',
+        ],
+      });
+    });
+  }
+
+  /**
+   * Inactivates a contract, recording the reason and creating
+   * DESAFILIACION history entries for all active persons.
+   */
+  async inactivate(contractId: string, dto: InactivateContractDto): Promise<Contract> {
+    const contract = await this.findOne(contractId);
+
+    if (contract.status === ContractStatus.INACTIVE) {
+      throw new BadRequestException('El contrato ya se encuentra inactivo.');
+    }
+
+    return this.contractsRepository.manager.transaction(async (manager) => {
+      const contractRepo = manager.getRepository(Contract);
+      const cpRepo = manager.getRepository(ContractPerson);
+      const historyRepo = manager.getRepository(AffiliationHistory);
+
+      // Update contract status and reason
+      contract.status = ContractStatus.INACTIVE;
+      contract.inactivationReason = dto.reason;
+      await contractRepo.save(contract);
+
+      // Record DESAFILIACION for each active person
+      const activePersons = await cpRepo.find({
+        where: { contract: { id: contractId } },
+        relations: ['person', 'person.plan'],
+      });
+
+      for (const cp of activePersons) {
+        await historyRepo.save(
+          historyRepo.create({
+            contract,
+            person: cp.person,
+            plan: cp.person?.plan ?? null,
+            action: AffiliationAction.DESAFILIACION,
+            amount: Number(cp.person?.plan?.amount ?? 0),
+            reason: dto.reason,
+          }),
+        );
+      }
+
+      return contract;
+    });
   }
 
   async findAll(query: FindContractDto): Promise<PaginatedResult<Contract>> {

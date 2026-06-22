@@ -11,7 +11,8 @@ import {
 } from '@nestjs/common';
 import { RequirePermissions } from '../../auth/decorators';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
-import { CreateContractDto } from '../dto/create-contract.dto';
+import { CreateContractFullDto } from '../dto/create-contract-full.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
@@ -24,8 +25,8 @@ export class ContractsController {
 
   @Post()
   @RequirePermissions('create:contracts')
-  create(@Body() createContractDto: CreateContractDto) {
-    return this.contractsService.create(createContractDto);
+  create(@Body() createContractFullDto: CreateContractFullDto) {
+    return this.contractsService.createFull(createContractFullDto);
   }
 
   @Get()
@@ -76,6 +77,12 @@ export class ContractsController {
   @RequirePermissions('delete:contracts')
   remove(@Param('id') id: string) {
     return this.contractsService.remove(id);
+  }
+
+  @Patch(':id/inactivate')
+  @RequirePermissions('update:contracts')
+  inactivate(@Param('id') id: string, @Body() dto: InactivateContractDto) {
+    return this.contractsService.inactivate(id, dto);
   }
 
   @Post(':contractId/beneficiaries')
