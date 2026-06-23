@@ -60,6 +60,15 @@ export class ContractsService {
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
+    const existingContract = await this.contractsRepository.findOne({
+      where: { code: createContractDto.code },
+    });
+    if (existingContract) {
+      throw new BadRequestException(
+        `El código de contrato "${createContractDto.code}" ya está registrado.`,
+      );
+    }
+
     const { advisorId, portfolioId, ...rest } = createContractDto;
     const contract = this.contractsRepository.create({
       ...rest,
@@ -73,12 +82,20 @@ export class ContractsService {
    * Creates a contract with all its affiliated persons in a single transactional operation.
    *
    * Validations:
+   * - Contract code must not be duplicated
    * - At most one TITULAR (optional — a contract can have only AFILIADOs)
    * - At most one isBillingOwner (defaults to TITULAR if present and none specified)
    * - AFILIADOs must have a planId
    * - If a person's document already exists as AFILIADO in another active contract → rejected
    */
   async createFull(dto: CreateContractFullDto): Promise<Contract> {
+    const existingContract = await this.contractsRepository.findOne({
+      where: { code: dto.code },
+    });
+    if (existingContract) {
+      throw new BadRequestException(`El código de contrato "${dto.code}" ya está registrado.`);
+    }
+
     const { advisorId, portfolioId, affiliates, ...contractData } = dto;
 
     // ── 1. Validate TITULAR count (optional, but at most one) ──────────────
@@ -148,9 +165,8 @@ export class ContractsService {
         let affiliationReason: string | null = null;
 
         if (person) {
-          // Person exists → validate AFILIADO single-contract rule
+          // Person exists → validate single-contract rule (cannot be an AFILIADO in another ACTIVE contract)
           if (role === PersonRole.AFILIADO) {
-            // Check if AFILIADO in an ACTIVE contract → block
             const activeAffiliations = await cpRepo.find({
               where: {
                 person: { id: person.id },
@@ -163,42 +179,57 @@ export class ContractsService {
             if (activeAffiliations.length > 0) {
               const contractCodes = activeAffiliations.map((cp) => cp.contract.code).join(', ');
               throw new BadRequestException(
-                `El afiliado ${person.name} (${person.typeIdentityCard}-${person.identityCard}) ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero antes de asignarlo a otro contrato.`,
+                `El afiliado ${person.name} (${person.typeIdentityCard}-${person.identityCard}) ya es beneficiario activo en el contrato: ${contractCodes}. Debe ser desafiliado primero antes de asignarlo a otro contrato.`,
               );
-            }
-
-            // Check if AFILIADO in an INACTIVE contract → CAMBIO_CONTRATO
-            const inactiveAffiliations = await cpRepo.find({
-              where: {
-                person: { id: person.id },
-                role: PersonRole.AFILIADO,
-                contract: { status: ContractStatus.INACTIVE },
-              },
-              relations: ['contract', 'person', 'person.plan'],
-            });
-
-            for (const oldCp of inactiveAffiliations) {
-              // Record CAMBIO_CONTRATO in old contract history
-              await historyRepo.save(
-                historyRepo.create({
-                  contract: oldCp.contract,
-                  person,
-                  plan: oldCp.person?.plan ?? null,
-                  action: AffiliationAction.CAMBIO_CONTRATO,
-                  amount: Number(oldCp.person?.plan?.amount ?? 0),
-                  reason: `Migrado al contrato ${savedContract.code}`,
-                }),
-              );
-
-              // Soft-delete old ContractPerson
-              await cpRepo.softRemove(oldCp);
-            }
-
-            if (inactiveAffiliations.length > 0) {
-              const oldCodes = inactiveAffiliations.map((cp) => cp.contract.code).join(', ');
-              affiliationReason = `Proveniente del contrato ${oldCodes}`;
             }
           }
+
+          // Check if person belongs to an INACTIVE contract → CAMBIO_CONTRATO & softRemove from it
+          const inactiveAffiliations = await cpRepo.find({
+            where: {
+              person: { id: person.id },
+              contract: { status: ContractStatus.INACTIVE },
+            },
+            relations: ['contract', 'person', 'person.plan'],
+          });
+
+          for (const oldCp of inactiveAffiliations) {
+            // Record CAMBIO_CONTRATO in old contract history
+            await historyRepo.save(
+              historyRepo.create({
+                contract: oldCp.contract,
+                person,
+                plan: oldCp.person?.plan ?? null,
+                action: AffiliationAction.CAMBIO_CONTRATO,
+                amount: Number(oldCp.person?.plan?.amount ?? 0),
+                reason: `Migrado al contrato ${savedContract.code}`,
+              }),
+            );
+
+            // Soft-delete old ContractPerson so the person is no longer in the old contract
+            await cpRepo.softRemove(oldCp);
+          }
+
+          if (inactiveAffiliations.length > 0) {
+            const oldCodes = inactiveAffiliations.map((cp) => cp.contract.code).join(', ');
+            affiliationReason = `Proveniente del contrato ${oldCodes}`;
+          }
+
+          // Update person details
+          person.name = name;
+          if (birthDate) {
+            person.birthDate = new Date(birthDate);
+          }
+          if (gender !== undefined) {
+            person.gender = gender;
+          }
+
+          // Only update the plan if they are an AFILIADO in the new contract
+          if (role === PersonRole.AFILIADO) {
+            person.plan = plan;
+          }
+
+          person = await personRepo.save(person);
         } else {
           // Person does not exist → create new
           person = personRepo.create({
@@ -711,6 +742,18 @@ export class ContractsService {
   async update(id: string, updateContractDto: UpdateContractDto): Promise<Contract> {
     const contract = await this.findOne(id);
     const { advisorId, portfolioId, ...rest } = updateContractDto;
+
+    if (updateContractDto.code) {
+      const existing = await this.contractsRepository
+        .createQueryBuilder('contract')
+        .where('contract.code = :code AND contract.id != :id', { code: updateContractDto.code, id })
+        .getOne();
+      if (existing) {
+        throw new BadRequestException(
+          `El código de contrato "${updateContractDto.code}" ya está registrado en otro contrato.`,
+        );
+      }
+    }
 
     Object.assign(contract, rest);
 

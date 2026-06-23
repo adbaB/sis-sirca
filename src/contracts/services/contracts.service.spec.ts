@@ -113,14 +113,29 @@ describe('ContractsService', () => {
         code: '1',
       };
 
+      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
       jest.spyOn(repository, 'create').mockReturnValue(mockContract);
       jest.spyOn(repository, 'save').mockResolvedValue(mockContract);
 
       const result = await service.create(createContractDto);
 
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { code: '1' } });
       expect(repository.create).toHaveBeenCalledWith(createContractDto);
       expect(repository.save).toHaveBeenCalledWith(mockContract);
       expect(result).toEqual(mockContract);
+    });
+
+    it('should throw BadRequestException if contract code already exists', async () => {
+      const createContractDto: CreateContractDto = {
+        affiliationDate: '2023-01-01',
+        code: '1',
+      };
+
+      jest.spyOn(repository, 'findOne').mockResolvedValue(mockContract);
+
+      await expect(service.create(createContractDto)).rejects.toThrow(
+        'El código de contrato "1" ya está registrado.',
+      );
     });
   });
 
@@ -305,6 +320,26 @@ describe('ContractsService', () => {
       );
       expect(result.advisor).toBeNull();
       expect(result.portfolio).toBeNull();
+    });
+
+    it('should throw BadRequestException if update code is already used by another contract', async () => {
+      const updateContractDto: UpdateContractDto = {
+        code: 'existing-code',
+      };
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: '2', code: 'existing-code' }), // Different ID ('2') than updated contract ('1')
+      };
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
+      jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
+
+      await expect(service.update('1', updateContractDto)).rejects.toThrow(
+        'El código de contrato "existing-code" ya está registrado en otro contrato.',
+      );
     });
   });
 
