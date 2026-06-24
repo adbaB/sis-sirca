@@ -526,7 +526,6 @@ describe('ContractsService', () => {
       expect(mockContractRepo.save).toHaveBeenCalled();
       expect(mockPersonRepo.findOne).toHaveBeenCalledWith({
         where: { identityCard: '12345678', typeIdentityCard: TypeIdentityCard.V },
-        relations: ['plan', 'contractPersons', 'contractPersons.contract'],
         lock: { mode: 'pessimistic_write' },
       });
       expect(mockPersonRepo.save).toHaveBeenCalled();

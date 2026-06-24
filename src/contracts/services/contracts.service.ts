@@ -157,11 +157,20 @@ export class ContractsService {
         }
 
         // Check if person already exists by document (lock row for updates to avoid race conditions)
+        // NOTE: We must NOT load relations alongside pessimistic_write because
+        // PostgreSQL forbids FOR UPDATE on the nullable side of a LEFT JOIN.
         let person = await personRepo.findOne({
           where: { identityCard, typeIdentityCard },
-          relations: ['plan', 'contractPersons', 'contractPersons.contract'],
           lock: { mode: 'pessimistic_write' },
         });
+
+        // Now load the full person with relations (the row is already locked)
+        if (person) {
+          person = await personRepo.findOne({
+            where: { id: person.id },
+            relations: ['plan', 'contractPersons', 'contractPersons.contract'],
+          });
+        }
 
         let affiliationReason: string | null = null;
 
