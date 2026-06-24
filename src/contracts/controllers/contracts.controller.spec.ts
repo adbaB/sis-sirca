@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { CreateContractDto } from '../dto/create-contract.dto';
+import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { PersonRole } from '../entities/contract-person.entity';
+import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
 
@@ -19,6 +22,7 @@ describe('ContractsController', () => {
     updatedAt: new Date(),
     deletedAt: null,
     status: ContractStatus.ACTIVE,
+    inactivationReason: null,
   };
 
   beforeEach(async () => {
@@ -29,10 +33,12 @@ describe('ContractsController', () => {
           provide: ContractsService,
           useValue: {
             create: jest.fn(),
+            createFull: jest.fn(),
             findAll: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
             remove: jest.fn(),
+            inactivate: jest.fn(),
           },
         },
       ],
@@ -47,13 +53,37 @@ describe('ContractsController', () => {
   });
 
   describe('create', () => {
-    it('should create a contract', async () => {
-      const createContractDto: CreateContractDto = { affiliationDate: '2023-01-01', code: '1' };
-      jest.spyOn(service, 'create').mockResolvedValue(mockContract);
+    it('should create a contract with affiliates', async () => {
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2023-01-01',
+        code: '1',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Juan Perez',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+        ],
+      };
+      jest.spyOn(service, 'createFull').mockResolvedValue(mockContract);
 
-      const result = await controller.create(createContractDto);
+      const result = await controller.create(dto);
 
-      expect(service.create).toHaveBeenCalledWith(createContractDto);
+      expect(service.createFull).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(mockContract);
+    });
+  });
+
+  describe('inactivate', () => {
+    it('should delegate to service.inactivate', async () => {
+      const dto: InactivateContractDto = { reason: 'Test inactivation reason' };
+      jest.spyOn(service, 'inactivate').mockResolvedValue(mockContract);
+
+      const result = await controller.inactivate('1', dto);
+
+      expect(service.inactivate).toHaveBeenCalledWith('1', dto);
       expect(result).toEqual(mockContract);
     });
   });

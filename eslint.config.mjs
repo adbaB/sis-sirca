@@ -54,6 +54,7 @@ export default [
       '.github',
       '.eslintrc.json',
       '*.hbs',
+      '*.yml',
     ],
   },
   { languageOptions: { globals: globals.browser } },

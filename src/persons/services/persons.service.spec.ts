@@ -30,6 +30,7 @@ describe('PersonsService', () => {
     id: 'contract-1',
     affiliationDate: new Date('2023-01-01'),
     monthlyAmount: 0,
+    inactivationReason: null,
   } as Contract;
 
   const mockContractPerson: ContractPerson = {
