@@ -320,9 +320,12 @@ export class ContractsService {
       lockedContract.inactivationReason = dto.reason;
       await contractRepo.save(lockedContract);
 
-      // Record DESAFILIACION for each active person
+      // Record DESAFILIACION for each active person (only AFILIADOs, to avoid counting TITULARs as desafiliations)
       const activePersons = await cpRepo.find({
-        where: { contract: { id: contractId } },
+        where: {
+          contract: { id: contractId },
+          role: PersonRole.AFILIADO,
+        },
         relations: ['person', 'person.plan'],
       });
 

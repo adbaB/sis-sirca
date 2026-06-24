@@ -691,6 +691,10 @@ describe('ContractsService', () => {
         where: { id: '1' },
         lock: { mode: 'pessimistic_write' },
       });
+      expect(mockCpRepo.find).toHaveBeenCalledWith({
+        where: { contract: { id: '1' }, role: PersonRole.AFILIADO },
+        relations: ['person', 'person.plan'],
+      });
       expect(mockHistoryRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           reason: 'A'.repeat(255), // Check that it was truncated to 255
