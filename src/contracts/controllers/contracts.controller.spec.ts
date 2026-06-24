@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { PersonRole } from '../entities/contract-person.entity';
+import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
 
@@ -54,13 +57,33 @@ describe('ContractsController', () => {
       const dto: CreateContractFullDto = {
         affiliationDate: '2023-01-01',
         code: '1',
-        affiliates: [],
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Juan Perez',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+        ],
       };
       jest.spyOn(service, 'createFull').mockResolvedValue(mockContract);
 
       const result = await controller.create(dto);
 
       expect(service.createFull).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(mockContract);
+    });
+  });
+
+  describe('inactivate', () => {
+    it('should delegate to service.inactivate', async () => {
+      const dto: InactivateContractDto = { reason: 'Test inactivation reason' };
+      jest.spyOn(service, 'inactivate').mockResolvedValue(mockContract);
+
+      const result = await controller.inactivate('1', dto);
+
+      expect(service.inactivate).toHaveBeenCalledWith('1', dto);
       expect(result).toEqual(mockContract);
     });
   });

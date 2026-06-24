@@ -156,10 +156,11 @@ export class ContractsService {
           plan = await this.plansService.findOne(planId);
         }
 
-        // Check if person already exists by document
+        // Check if person already exists by document (lock row for updates to avoid race conditions)
         let person = await personRepo.findOne({
           where: { identityCard, typeIdentityCard },
           relations: ['plan', 'contractPersons', 'contractPersons.contract'],
+          lock: { mode: 'pessimistic_write' },
         });
 
         let affiliationReason: string | null = null;
@@ -288,10 +289,6 @@ export class ContractsService {
     });
   }
 
-  /**
-   * Inactivates a contract, recording the reason and creating
-   * DESAFILIACION history entries for all active persons.
-   */
   async inactivate(contractId: string, dto: InactivateContractDto): Promise<Contract> {
     const contract = await this.findOne(contractId);
 
@@ -304,10 +301,24 @@ export class ContractsService {
       const cpRepo = manager.getRepository(ContractPerson);
       const historyRepo = manager.getRepository(AffiliationHistory);
 
+      // Lock contract for update to guarantee idempotency and avoid race conditions
+      const lockedContract = await contractRepo.findOne({
+        where: { id: contractId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedContract) {
+        throw new NotFoundException(`El contrato con ID "${contractId}" no fue encontrado.`);
+      }
+
+      if (lockedContract.status === ContractStatus.INACTIVE) {
+        throw new BadRequestException('El contrato ya se encuentra inactivo.');
+      }
+
       // Update contract status and reason
-      contract.status = ContractStatus.INACTIVE;
-      contract.inactivationReason = dto.reason;
-      await contractRepo.save(contract);
+      lockedContract.status = ContractStatus.INACTIVE;
+      lockedContract.inactivationReason = dto.reason;
+      await contractRepo.save(lockedContract);
 
       // Record DESAFILIACION for each active person
       const activePersons = await cpRepo.find({
@@ -315,20 +326,23 @@ export class ContractsService {
         relations: ['person', 'person.plan'],
       });
 
+      // Truncate to match AffiliationHistory.reason max length (255)
+      const truncatedReason = dto.reason ? dto.reason.substring(0, 255) : null;
+
       for (const cp of activePersons) {
         await historyRepo.save(
           historyRepo.create({
-            contract,
+            contract: lockedContract,
             person: cp.person,
             plan: cp.person?.plan ?? null,
             action: AffiliationAction.DESAFILIACION,
             amount: Number(cp.person?.plan?.amount ?? 0),
-            reason: dto.reason,
+            reason: truncatedReason,
           }),
         );
       }
 
-      return contract;
+      return lockedContract;
     });
   }
 

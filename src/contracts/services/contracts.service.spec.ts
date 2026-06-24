@@ -1,14 +1,22 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  Repository,
+  SelectQueryBuilder,
+  EntityManager,
+  ObjectLiteral,
+  EntityTarget,
+} from 'typeorm';
 
-import { Person, PersonStatus } from '../../persons/entities/person.entity';
+import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { CreateContractDto } from '../dto/create-contract.dto';
+import { CreateContractFullDto } from '../dto/create-contract-full.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
-import { ContractPerson } from '../entities/contract-person.entity';
+import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractsService } from './contracts.service';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
@@ -74,6 +82,9 @@ describe('ContractsService', () => {
             findAndCount: jest.fn(),
             update: jest.fn(),
             createQueryBuilder: jest.fn(),
+            manager: {
+              transaction: jest.fn(),
+            },
           },
         },
         {
@@ -405,6 +416,312 @@ describe('ContractsService', () => {
         relations: ['person', 'person.plan'],
       });
       expect(repository.update).toHaveBeenCalledWith('invalid-id', { monthlyAmount: 0 });
+    });
+  });
+
+  describe('createFull', () => {
+    let mockManager: Partial<EntityManager>;
+    let mockPersonRepo: {
+      findOne: jest.Mock;
+      create: jest.Mock;
+      save: jest.Mock;
+    };
+    let mockContractRepo: {
+      create: jest.Mock;
+      save: jest.Mock;
+      findOne: jest.Mock;
+      update: jest.Mock;
+    };
+    let mockCpRepo: {
+      find: jest.Mock;
+      create: jest.Mock;
+      save: jest.Mock;
+      softRemove: jest.Mock;
+    };
+    let mockHistoryRepo: {
+      create: jest.Mock;
+      save: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockPersonRepo = {
+        findOne: jest.fn(),
+        create: jest.fn().mockImplementation((d) => ({ id: 'new-person-id', ...d })),
+        save: jest.fn().mockImplementation((p) => Promise.resolve(p)),
+      };
+      mockContractRepo = {
+        create: jest.fn().mockReturnValue(mockContract),
+        save: jest.fn().mockResolvedValue(mockContract),
+        findOne: jest.fn().mockResolvedValue(mockContract),
+        update: jest.fn().mockResolvedValue(undefined),
+      };
+      mockCpRepo = {
+        find: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((cp) => cp),
+        save: jest.fn().mockImplementation((cp) => Promise.resolve(cp)),
+        softRemove: jest.fn(),
+      };
+      mockHistoryRepo = {
+        create: jest.fn().mockImplementation((h) => h),
+        save: jest.fn().mockImplementation((h) => Promise.resolve(h)),
+      };
+
+      mockManager = {
+        getRepository: jest
+          .fn()
+          .mockImplementation(
+            <Entity extends ObjectLiteral>(
+              entityClass: EntityTarget<Entity>,
+            ): Repository<Entity> => {
+              if (entityClass === Person) return mockPersonRepo as unknown as Repository<Entity>;
+              if (entityClass === Contract)
+                return mockContractRepo as unknown as Repository<Entity>;
+              if (entityClass === ContractPerson)
+                return mockCpRepo as unknown as Repository<Entity>;
+              if (entityClass === AffiliationHistory)
+                return mockHistoryRepo as unknown as Repository<Entity>;
+              return null as unknown as Repository<Entity>;
+            },
+          ),
+      };
+
+      jest
+        .spyOn(repository.manager, 'transaction')
+        .mockImplementation(
+          (
+            isolationLevelOrRunInTransaction: unknown,
+            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
+          ) => {
+            const cb =
+              typeof isolationLevelOrRunInTransaction === 'function'
+                ? (isolationLevelOrRunInTransaction as (
+                    entityManager: EntityManager,
+                  ) => Promise<unknown>)
+                : runInTransaction!;
+            return cb(mockManager as EntityManager) as Promise<unknown>; // return as Promise<unknown> since transaction is typed dynamically
+          },
+        );
+      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
+    });
+
+    it('should successfully create a contract with a new person', async () => {
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2023-01-01',
+        code: 'NEW-123',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Juan Perez',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+        ],
+      };
+
+      const result = await service.createFull(dto);
+
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { code: 'NEW-123' } });
+      expect(mockContractRepo.create).toHaveBeenCalled();
+      expect(mockContractRepo.save).toHaveBeenCalled();
+      expect(mockPersonRepo.findOne).toHaveBeenCalledWith({
+        where: { identityCard: '12345678', typeIdentityCard: TypeIdentityCard.V },
+        relations: ['plan', 'contractPersons', 'contractPersons.contract'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockPersonRepo.save).toHaveBeenCalled();
+      expect(mockCpRepo.save).toHaveBeenCalled();
+      expect(result).toEqual(mockContract);
+    });
+
+    it('should throw BadRequestException if contract code already exists', async () => {
+      jest.spyOn(repository, 'findOne').mockResolvedValue(mockContract);
+
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2023-01-01',
+        code: 'DUPLICATE',
+        affiliates: [],
+      };
+
+      await expect(service.createFull(dto)).rejects.toThrow(
+        'El código de contrato "DUPLICATE" ya está registrado.',
+      );
+    });
+
+    it('should throw BadRequestException if there is more than one titular', async () => {
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2023-01-01',
+        code: 'NEW-123',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '1',
+            name: 'Juan',
+            role: PersonRole.TITULAR,
+          },
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '2',
+            name: 'Pedro',
+            role: PersonRole.TITULAR,
+          },
+        ],
+      };
+
+      await expect(service.createFull(dto)).rejects.toThrow(
+        'Solo puede haber un TITULAR por contrato.',
+      );
+    });
+
+    it('should throw BadRequestException if affiliate is already an active beneficiary elsewhere', async () => {
+      const existingPerson = {
+        id: 'person-1',
+        name: 'Juan',
+        identityCard: '123',
+        typeIdentityCard: TypeIdentityCard.V,
+      } as Person;
+      mockPersonRepo.findOne.mockResolvedValue(existingPerson);
+      mockCpRepo.find.mockResolvedValue([
+        { id: 'cp-active-relation', contract: { code: 'ACTIVE-CODE' } },
+      ]);
+
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2023-01-01',
+        code: 'NEW-123',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '123',
+            name: 'Juan',
+            role: PersonRole.AFILIADO,
+            planId: 'plan-1',
+          },
+        ],
+      };
+
+      jest
+        .spyOn(service['plansService'], 'findOne')
+        .mockResolvedValue({ id: 'plan-1', amount: 10 } as Plan);
+
+      await expect(service.createFull(dto)).rejects.toThrow(
+        'El afiliado Juan (V-123) ya es beneficiario activo en el contrato: ACTIVE-CODE. Debe ser desafiliado primero antes de asignarlo a otro contrato.',
+      );
+    });
+  });
+
+  describe('inactivate', () => {
+    let mockManager: Partial<EntityManager>;
+    let mockContractRepo: {
+      findOne: jest.Mock;
+      save: jest.Mock;
+    };
+    let mockCpRepo: {
+      find: jest.Mock;
+    };
+    let mockHistoryRepo: {
+      create: jest.Mock;
+      save: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue({ ...mockContract, status: ContractStatus.ACTIVE }),
+        save: jest.fn().mockImplementation((c) => Promise.resolve(c)),
+      };
+      mockCpRepo = {
+        find: jest
+          .fn()
+          .mockResolvedValue([{ person: { id: 'p-1', plan: { id: 'plan-1', amount: 50 } } }]),
+      };
+      mockHistoryRepo = {
+        create: jest.fn().mockImplementation((h) => h),
+        save: jest.fn().mockImplementation((h) => Promise.resolve(h)),
+      };
+
+      mockManager = {
+        getRepository: jest
+          .fn()
+          .mockImplementation(
+            <Entity extends ObjectLiteral>(
+              entityClass: EntityTarget<Entity>,
+            ): Repository<Entity> => {
+              if (entityClass === Contract)
+                return mockContractRepo as unknown as Repository<Entity>;
+              if (entityClass === ContractPerson)
+                return mockCpRepo as unknown as Repository<Entity>;
+              if (entityClass === AffiliationHistory)
+                return mockHistoryRepo as unknown as Repository<Entity>;
+              return null as unknown as Repository<Entity>;
+            },
+          ),
+      };
+
+      jest
+        .spyOn(repository.manager, 'transaction')
+        .mockImplementation(
+          (
+            isolationLevelOrRunInTransaction: unknown,
+            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
+          ) => {
+            const cb =
+              typeof isolationLevelOrRunInTransaction === 'function'
+                ? (isolationLevelOrRunInTransaction as (
+                    entityManager: EntityManager,
+                  ) => Promise<unknown>)
+                : runInTransaction!;
+            return cb(mockManager as EntityManager) as Promise<unknown>; // return as Promise<unknown> instead of any
+          },
+        );
+    });
+
+    it('should successfully inactivate an active contract and truncate the history reason to 255 chars', async () => {
+      const activeContract = { ...mockContract, status: ContractStatus.ACTIVE };
+      jest.spyOn(service, 'findOne').mockResolvedValue(activeContract);
+      mockContractRepo.findOne.mockResolvedValue(activeContract);
+
+      const dto: InactivateContractDto = {
+        reason: 'A'.repeat(300), // 300 characters reason
+      };
+
+      const result = await service.inactivate('1', dto);
+
+      expect(result.status).toBe(ContractStatus.INACTIVE);
+      expect(result.inactivationReason).toBe(dto.reason);
+      expect(mockContractRepo.findOne).toHaveBeenCalledWith({
+        where: { id: '1' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockHistoryRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'A'.repeat(255), // Check that it was truncated to 255
+          action: 'DESAFILIACION',
+        }),
+      );
+    });
+
+    it('should throw BadRequestException if contract is already inactive before transaction', async () => {
+      const inactiveContract = { ...mockContract, status: ContractStatus.INACTIVE };
+      jest.spyOn(service, 'findOne').mockResolvedValue(inactiveContract);
+
+      const dto: InactivateContractDto = { reason: 'reason' };
+
+      await expect(service.inactivate('1', dto)).rejects.toThrow(
+        'El contrato ya se encuentra inactivo.',
+      );
+    });
+
+    it('should throw BadRequestException if contract becomes inactive under concurrency (lock returns inactive)', async () => {
+      const activeContract = { ...mockContract, status: ContractStatus.ACTIVE };
+      const inactiveContract = { ...mockContract, status: ContractStatus.INACTIVE };
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(activeContract);
+      mockContractRepo.findOne.mockResolvedValue(inactiveContract); // Locks and discovers it was inactivated by another process
+
+      const dto: InactivateContractDto = { reason: 'reason' };
+
+      await expect(service.inactivate('1', dto)).rejects.toThrow(
+        'El contrato ya se encuentra inactivo.',
+      );
     });
   });
 });
