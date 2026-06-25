@@ -16,3 +16,4 @@ script
 src/chatbot/flow/*
 *.md
 *.hbs
+*.yml
