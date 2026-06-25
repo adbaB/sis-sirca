@@ -148,8 +148,9 @@ export class BillingController {
       }
     }
 
+    const currency = ocrResult.moneda ? ocrResult.moneda.trim().toUpperCase() : '';
     let mappedMethod = 'PAGO_MOVIL';
-    if (ocrResult.moneda === 'USD') {
+    if (currency === 'USD') {
       mappedMethod = 'ZELLE';
     } else if (ocrResult.origen) {
       const originUpper = ocrResult.origen.toUpperCase();
@@ -165,7 +166,7 @@ export class BillingController {
     let amountBsVal: number | null = null;
     const ocrAmount = ocrResult.monto || 0;
 
-    if (ocrResult.moneda === 'VES') {
+    if (currency === 'VES') {
       amountBsVal = ocrAmount;
     } else {
       amountUsd = ocrAmount;

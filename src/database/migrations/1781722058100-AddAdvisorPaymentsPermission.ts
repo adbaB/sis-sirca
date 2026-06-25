@@ -6,16 +6,16 @@ export class AddAdvisorPaymentsPermission1781722058100 implements MigrationInter
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Insert new permission for advisor payments
     await queryRunner.query(
-      `INSERT INTO "permissions" ("name", "description") VALUES ('create:advisor-payments', 'Permiso para que los asesores registren abonos de pagos')`,
+      `INSERT INTO "permissions" ("name", "description") VALUES ('create:advisor-payments', 'Permiso para que los asesores registren abonos de pagos') ON CONFLICT ("name") DO NOTHING`,
     );
 
     // Assign the new permission to admin role automatically
     await queryRunner.query(
       `INSERT INTO "role_permissions" ("role_id", "permission_id")
-             VALUES (
-                 (SELECT id FROM "roles" WHERE name = 'admin'),
-                 (SELECT id FROM "permissions" WHERE name = 'create:advisor-payments')
-             )`,
+             SELECT r.id, p.id
+             FROM "roles" r, "permissions" p
+             WHERE r.name = 'admin' AND p.name = 'create:advisor-payments'
+             ON CONFLICT DO NOTHING`,
     );
   }
 

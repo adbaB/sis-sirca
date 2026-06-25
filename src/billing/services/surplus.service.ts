@@ -139,12 +139,14 @@ export class SurplusService {
             paymentDate: new Date(),
             status: PaymentStatus.COMPLETED,
             invoice: invoice,
-            person: surplus.payment.person,
-            referenceNumber: `SURPLUS-${surplus.payment.referenceNumber}`,
+            person: surplus.payment ? surplus.payment.person : null,
+            referenceNumber: surplus.payment
+              ? `SURPLUS-${surplus.payment.referenceNumber}`
+              : `SURPLUS-SYSTEM-${surplus.id.slice(0, 8)}`,
             amount: amountToApplyUsd,
             amountBs: amountToApplyBs > 0 ? amountToApplyBs : 0,
-            paymentMethod: surplus.payment.paymentMethod,
-            url: surplus.payment.url,
+            paymentMethod: surplus.payment ? surplus.payment.paymentMethod : 'SURPLUS_AJUSTE',
+            url: surplus.payment ? surplus.payment.url : null,
           }) as Payment;
 
           await queryRunner.manager.save(surplusPayment);

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { CreatePaymentDto } from '../../dto/create-payment.dto';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { PaymentSplit, TransactionResult } from '../interfaces/payment.interface';
-import { Invoice } from '../../invoices/entities/invoice.entity';
+import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { Payment, PaymentStatus } from '../../entities/payment.entity';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
 import { DateTime } from 'luxon';
@@ -65,9 +65,14 @@ export class PaymentService {
     }
 
     try {
-      const paymentDate = dto.datePaymentReceipt
-        ? DateTime.fromISO(dto.datePaymentReceipt, { zone: 'America/Caracas' }).toJSDate()
-        : new Date();
+      let paymentDate = new Date();
+      if (dto.datePaymentReceipt) {
+        const dt = DateTime.fromISO(dto.datePaymentReceipt, { zone: 'America/Caracas' });
+        if (!dt.isValid) {
+          throw new BadRequestException('Formato de fecha de recibo inválido');
+        }
+        paymentDate = dt.toJSDate();
+      }
 
       const exchangeRate = await this.getExchangeRateOrThrow(paymentDate);
 
@@ -92,8 +97,23 @@ export class PaymentService {
         .setLock('pessimistic_write')
         .getMany();
 
-      if (invoices.length === 0) {
-        throw new NotFoundException('No se encontraron las facturas especificadas.');
+      if (invoices.length !== invoiceIds.length) {
+        throw new NotFoundException(
+          'Algunas de las facturas especificadas no existen o no pudieron ser encontradas.',
+        );
+      }
+
+      for (const invoice of invoices) {
+        if (invoice.status === InvoiceStatus.CANCELLED) {
+          throw new BadRequestException(
+            `La factura con ID ${invoice.id} está cancelada y no puede recibir pagos.`,
+          );
+        }
+        if (invoice.status === InvoiceStatus.PAID) {
+          throw new BadRequestException(
+            `La factura con ID ${invoice.id} ya está completamente pagada.`,
+          );
+        }
       }
 
       // Sort invoices chronologically by billingMonth
@@ -340,6 +360,11 @@ export class PaymentService {
     month?: number,
     year?: number,
   ) {
+    const parsedPage = typeof page === 'number' ? page : parseInt(String(page), 10);
+    const parsedLimit = typeof limit === 'number' ? limit : parseInt(String(limit), 10);
+    const sanitizedPage = isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+    const sanitizedLimit = isNaN(parsedLimit) || parsedLimit < 1 ? 10 : Math.min(parsedLimit, 100);
+
     const queryBuilder = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.person', 'person')
@@ -376,8 +401,8 @@ export class PaymentService {
     }
 
     const [data, total] = await queryBuilder
-      .skip((page - 1) * limit)
-      .take(limit)
+      .skip((sanitizedPage - 1) * sanitizedLimit)
+      .take(sanitizedLimit)
       .getManyAndCount();
 
     return {
@@ -385,9 +410,9 @@ export class PaymentService {
       meta: {
         totalItems: total,
         itemCount: data.length,
-        itemsPerPage: limit,
-        totalPages: Math.ceil(total / limit),
-        currentPage: page,
+        itemsPerPage: sanitizedLimit,
+        totalPages: Math.ceil(total / sanitizedLimit),
+        currentPage: sanitizedPage,
       },
     };
   }

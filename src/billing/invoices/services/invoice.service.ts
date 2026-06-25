@@ -295,20 +295,20 @@ export class InvoiceService {
   async calculateAmountByInvoicesIds(ids: string[], paymentMethod: string): Promise<number> {
     if (!ids || ids.length === 0) return 0;
 
-    const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
-    const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
-
-    if (!exchangeRate) {
-      throw new BadRequestException('Exchange rate not found for date');
-    }
-
     const invoices = await this.findInvoicesByIds(ids);
     const totalAmount = invoices.reduce(
       (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
       0,
     );
 
-    if (paymentMethod === 'transferencia' || paymentMethod === 'pago_movil') {
+    const normalizedMethod = paymentMethod ? paymentMethod.toLowerCase() : '';
+    if (normalizedMethod === 'transferencia' || normalizedMethod === 'pago_movil') {
+      const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
+      const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
+
+      if (!exchangeRate) {
+        throw new BadRequestException('Exchange rate not found for date');
+      }
       return totalAmount * exchangeRate.rateUsd;
     } else {
       return totalAmount;
@@ -701,12 +701,21 @@ export class InvoiceService {
     const totalPaymentsSum = Number(paymentResult?.total ?? 0);
     if (totalPaymentsSum > calculatedTotal && calculatedTotal >= 0) {
       const excessUsd = totalPaymentsSum - calculatedTotal;
+
+      const lastPayment = await paymentRepo.findOne({
+        where: {
+          invoice: { id: invoice.id },
+          status: In([PaymentStatus.PROCESSING, PaymentStatus.COMPLETED]),
+        },
+        order: { createdAt: 'DESC' },
+      });
+
       await surplusRepo.save(
         surplusRepo.create({
           amountUsd: excessUsd,
           amountBs: null,
           date: new Date(),
-          payment: null,
+          payment: lastPayment,
           invoice: null,
           contract: invoice.contract,
           status: SurplusStatus.PENDING,
