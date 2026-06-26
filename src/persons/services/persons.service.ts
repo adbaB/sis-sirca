@@ -13,14 +13,14 @@ import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
 
-import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
-import { ContractsService } from '../../contracts/services/contracts.service';
-import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
-import { Invoice, InvoiceStatus } from '../../billing/entities/invoice.entity';
-import { InvoiceLine } from '../../billing/entities/invoice-line.entity';
 import { InvoiceLineCategory } from '../../billing/enums/invoice-line-category.enum';
+import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
+import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { getBillingMonth } from '../../billing/utils/billing-month.util';
+import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
+import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
+import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
 
 @Injectable()

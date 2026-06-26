@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import ExcelJS from 'exceljs';
 import { Repository } from 'typeorm';
-import { Invoice } from '../billing/entities/invoice.entity';
 import { PaymentStatus } from '../billing/entities/payment.entity';
+import { Invoice } from '../billing/invoices/entities/invoice.entity';
 import { ContractStatus } from '../contracts/entities/contract.entity';
 import { PdfService } from '../pdf/services/pdf.service';
 import {

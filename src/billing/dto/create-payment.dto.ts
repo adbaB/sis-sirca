@@ -1,13 +1,18 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreatePaymentDto {
   @IsUUID()
-  @IsNotEmpty()
-  invoiceId: string;
+  @IsOptional()
+  invoiceId?: string;
+
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  @IsOptional()
+  invoiceIds?: string[];
 
   @IsNumber()
-  @IsNotEmpty()
-  amount: number;
+  @IsOptional()
+  amount?: number;
 
   @IsNumber()
   @IsOptional()

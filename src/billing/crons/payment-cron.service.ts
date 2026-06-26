@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
-import { BillingService } from './billing.service';
+import { BillingService } from '../services/billing.service';
 
 /**
  * Maps a Google Sheets status string to the corresponding PaymentStatus

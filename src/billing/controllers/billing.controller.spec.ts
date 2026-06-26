@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { PdfService } from '../../pdf/services/pdf.service';
 import { BillingController } from './billing.controller';
-import { BillingService } from './services/billing.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
-import { PdfService } from '../pdf/services/pdf.service';
+import { CreatePaymentDto } from '../dto/create-payment.dto';
+import { BillingService } from '../services/billing.service';
+
+import { AwsService } from '../../aws/aws.service';
+import { OcrService } from '../../ocr/ocr.service';
 
 describe('BillingController', () => {
   let controller: BillingController;
@@ -22,6 +25,14 @@ describe('BillingController', () => {
         },
         {
           provide: PdfService,
+          useValue: {},
+        },
+        {
+          provide: AwsService,
+          useValue: {},
+        },
+        {
+          provide: OcrService,
           useValue: {},
         },
       ],

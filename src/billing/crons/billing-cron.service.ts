@@ -3,11 +3,11 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
-import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
-import { InvoiceLine } from '../entities/invoice-line.entity';
-import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
-import { SurplusService } from './surplus.service';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
+import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
+import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
+import { SurplusService } from '../services/surplus.service';
 
 @Injectable()
 export class BillingCronService {

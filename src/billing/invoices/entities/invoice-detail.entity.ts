@@ -8,9 +8,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { Person } from '../../../persons/entities/person.entity';
+import type { Plan } from '../../../plans/entities/plan.entity';
 import type { Invoice } from './invoice.entity';
-import type { Person } from '../../persons/entities/person.entity';
-import type { Plan } from '../../plans/entities/plan.entity';
 
 /**
  * @deprecated Usar {@link InvoiceLine} (tabla `invoice_lines`) en su lugar.

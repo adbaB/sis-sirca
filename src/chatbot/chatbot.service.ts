@@ -7,7 +7,6 @@ import * as crypto from 'crypto';
 import { AwsService } from '../aws/aws.service';
 import { BillingService } from '../billing/services/billing.service';
 import config from '../config/configurations';
-import { EmailService } from '../email/email.service';
 import { OcrService } from '../ocr/ocr.service';
 import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { PersonsService } from '../persons/services/persons.service';
@@ -49,7 +48,6 @@ export class ChatbotService {
     @Inject(config.KEY)
     private readonly configService: ConfigType<typeof config>,
     private awsService: AwsService,
-    private emailService: EmailService,
     private ocrService: OcrService,
     private billingService: BillingService,
     private personsService: PersonsService,

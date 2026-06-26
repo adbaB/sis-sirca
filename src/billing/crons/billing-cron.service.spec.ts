@@ -4,11 +4,11 @@ import { DataSource } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { Plan } from '../../plans/entities/plan.entity';
-import { InvoiceLine } from '../entities/invoice-line.entity';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
-import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
+import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
+import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
+import { SurplusService } from '../services/surplus.service';
 import { BillingCronService } from './billing-cron.service';
-import { SurplusService } from './surplus.service';
 
 describe('BillingCronService', () => {
   let service: BillingCronService;
