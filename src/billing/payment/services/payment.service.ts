@@ -67,7 +67,15 @@ export class PaymentService {
     try {
       let paymentDate = new Date();
       if (dto.datePaymentReceipt) {
-        const dt = DateTime.fromISO(dto.datePaymentReceipt, { zone: 'America/Caracas' });
+        const raw = dto.datePaymentReceipt.trim();
+        // Try ISO first (YYYY-MM-DD), then DD/MM/YYYY, then DD-MM-YYYY
+        let dt = DateTime.fromISO(raw, { zone: 'America/Caracas' });
+        if (!dt.isValid) {
+          dt = DateTime.fromFormat(raw, 'dd/MM/yyyy', { zone: 'America/Caracas' });
+        }
+        if (!dt.isValid) {
+          dt = DateTime.fromFormat(raw, 'dd-MM-yyyy', { zone: 'America/Caracas' });
+        }
         if (!dt.isValid) {
           throw new BadRequestException('Formato de fecha de recibo inválido');
         }
