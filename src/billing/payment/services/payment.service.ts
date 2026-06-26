@@ -568,12 +568,17 @@ export class PaymentService {
       }
       const newDate = dt.toJSDate();
 
-      const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(newDate);
-      if (!exchangeRate) {
-        throw new BadRequestException('No se encontró tasa de cambio para la fecha especificada.');
+      let rateUsd = 1;
+      const isZelle = payment.paymentMethod.toLowerCase() === 'zelle';
+      if (!isZelle) {
+        const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(newDate);
+        if (!exchangeRate) {
+          throw new BadRequestException(
+            'No se encontró tasa de cambio para la fecha especificada.',
+          );
+        }
+        rateUsd = Number(exchangeRate.rateUsd);
       }
-
-      const rateUsd = Number(exchangeRate.rateUsd);
 
       // Obtener excedentes asociados y activos
       const associatedSurpluses = await surplusRepo.find({

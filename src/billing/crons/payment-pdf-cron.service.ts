@@ -1,4 +1,4 @@
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,6 +17,7 @@ import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
 import { fetchReceiptAsBase64 } from '../utils/image-fetcher.util';
 
+@Injectable()
 export class PaymentPdfCronService {
   private readonly logger = new Logger(PaymentPdfCronService.name);
 
@@ -139,7 +140,8 @@ export class PaymentPdfCronService {
     const amountBs = Number(payment.amountBs);
     const amountUsd = Number(payment.amount);
     const totalAmount = Number(payment.invoice?.totalAmount);
-    const amountUnpaid = Number(totalAmount - amountUsd);
+    const paidAmount = Number(payment.invoice?.paidAmount);
+    const amountUnpaid = Math.max(0, totalAmount - paidAmount);
     const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
     const formatted = new Intl.NumberFormat('es-ES', {
       minimumFractionDigits: 2,
@@ -149,7 +151,7 @@ export class PaymentPdfCronService {
     return {
       amountUsd: formatted.format(amountUsd),
       amountBs: amountBs > 0 ? formatted.format(amountBs) : null,
-      exchangeRateUsdToBs: formatted.format(Number(exchangeRate)),
+      exchangeRateUsdToBs: exchangeRate ? formatted.format(Number(exchangeRate)) : null,
       totalAmount: formatted.format(totalAmount),
       amountUnpaid: formatted.format(amountUnpaid),
     };

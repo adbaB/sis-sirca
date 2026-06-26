@@ -72,8 +72,11 @@ export class BillingService {
     return this.invoiceService.calculateAmountByInvoicesIds(ids, paymentMethod);
   }
 
-  async recalculateInvoicePaidAmount(invoiceId: string, queryRunner?: QueryRunner): Promise<void> {
-    return this.invoiceService.recalculateInvoicePaidAmount(invoiceId, queryRunner);
+  async recalculateInvoicePaidAmount(
+    invoiceId: string,
+    queryRunnerOrManager?: QueryRunner | EntityManager,
+  ): Promise<void> {
+    return this.invoiceService.recalculateInvoicePaidAmount(invoiceId, queryRunnerOrManager);
   }
 
   async recalculateInvoiceAmountFromContract(invoiceId: string): Promise<Invoice> {

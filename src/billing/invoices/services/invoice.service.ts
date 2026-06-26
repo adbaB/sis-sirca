@@ -315,13 +315,22 @@ export class InvoiceService {
     }
   }
 
-  async recalculateInvoicePaidAmount(invoiceId: string, queryRunner?: QueryRunner): Promise<void> {
-    const invoiceRepo = queryRunner
-      ? queryRunner.manager.getRepository(Invoice)
-      : this.invoiceRepository;
-    const paymentRepo = queryRunner
-      ? queryRunner.manager.getRepository(Payment)
-      : this.dataSource.getRepository(Payment);
+  async recalculateInvoicePaidAmount(
+    invoiceId: string,
+    queryRunnerOrManager?: QueryRunner | EntityManager,
+  ): Promise<void> {
+    let invoiceRepo = this.invoiceRepository;
+    let paymentRepo = this.dataSource.getRepository(Payment);
+
+    if (queryRunnerOrManager) {
+      if ('manager' in queryRunnerOrManager) {
+        invoiceRepo = queryRunnerOrManager.manager.getRepository(Invoice);
+        paymentRepo = queryRunnerOrManager.manager.getRepository(Payment);
+      } else {
+        invoiceRepo = queryRunnerOrManager.getRepository(Invoice);
+        paymentRepo = queryRunnerOrManager.getRepository(Payment);
+      }
+    }
 
     const invoice = await invoiceRepo.findOne({ where: { id: invoiceId } });
 
@@ -735,7 +744,7 @@ export class InvoiceService {
     await invoiceRepo.save(invoice);
 
     // Gap 6: Recalcular status (PENDING/PARTIAL/PAID) y ajustar paidAmount
-    await this.recalculateInvoicePaidAmount(invoice.id, manager?.queryRunner);
+    await this.recalculateInvoicePaidAmount(invoice.id, manager);
 
     this.logger.log(`[billing] Líneas removidas para persona ${personId} en factura ${invoice.id}`);
   }

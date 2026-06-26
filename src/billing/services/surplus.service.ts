@@ -142,7 +142,7 @@ export class SurplusService {
             person: surplus.payment ? surplus.payment.person : null,
             referenceNumber: surplus.payment
               ? `SURPLUS-${surplus.payment.referenceNumber}`
-              : `SURPLUS-SYSTEM-${surplus.id.slice(0, 8)}`,
+              : `SURPLUS-SYSTEM-${surplus.id ? surplus.id.slice(0, 8) : 'NEW'}`,
             amount: amountToApplyUsd,
             amountBs: amountToApplyBs > 0 ? amountToApplyBs : 0,
             paymentMethod: surplus.payment ? surplus.payment.paymentMethod : 'SURPLUS_AJUSTE',
