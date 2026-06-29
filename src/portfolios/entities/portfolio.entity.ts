@@ -17,7 +17,7 @@ export enum PortfolioStatus {
 }
 
 @Entity('portfolios')
-@Check(`"commission_amount" >= 0`)
+@Check('CHK_portfolios_commission_amount', '"commission_amount" >= 0')
 export class Portfolio {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -29,8 +29,8 @@ export class Portfolio {
   code: string;
 
   @Column({
-    type: 'enum',
-    enum: PortfolioStatus,
+    type: 'varchar',
+    length: 20,
     default: PortfolioStatus.ACTIVE,
   })
   status: PortfolioStatus;
@@ -39,7 +39,7 @@ export class Portfolio {
     type: 'decimal',
     precision: 10,
     scale: 2,
-    default: 0.0,
+    default: 0,
     name: 'commission_amount',
   })
   commissionAmount: number;

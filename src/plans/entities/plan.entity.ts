@@ -16,7 +16,8 @@ export enum PlanStatus {
 }
 
 @Entity('plans')
-@Check(`"commission_amount" >= 0`)
+@Check('CHK_plans_commission_amount', '"commission_amount" >= 0')
+@Check('CK_plans_status', "\"status\" IN ('ACTIVE', 'INACTIVE')")
 export class Plan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -30,12 +31,12 @@ export class Plan {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.0, name: 'commission_amount' })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, name: 'commission_amount' })
   commissionAmount: number;
 
   @Column({
-    type: 'enum',
-    enum: PlanStatus,
+    type: 'varchar',
+    length: 20,
     default: PlanStatus.ACTIVE,
   })
   status: PlanStatus;

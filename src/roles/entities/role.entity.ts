@@ -28,11 +28,21 @@ export class Role {
 
   @ManyToMany('Permission', (permission: Permission) => permission.roles, {
     eager: true,
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
   })
   @JoinTable({
     name: 'role_permissions',
-    joinColumn: { name: 'role_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'permission_id', referencedColumnName: 'id' },
+    joinColumn: {
+      name: 'role_id',
+      referencedColumnName: 'id',
+      foreignKeyConstraintName: 'FK_role_permissions_role',
+    },
+    inverseJoinColumn: {
+      name: 'permission_id',
+      referencedColumnName: 'id',
+      foreignKeyConstraintName: 'FK_role_permissions_permission',
+    },
   })
   permissions: Permission[];
 

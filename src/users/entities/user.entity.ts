@@ -29,15 +29,24 @@ export class User {
   @Column({ type: 'uuid', name: 'role_id', nullable: true })
   roleId: string;
 
-  @ManyToOne('Role', (role: Role) => role.users, { eager: true })
-  @JoinColumn({ name: 'role_id' })
+  @ManyToOne('Role', (role: Role) => role.users, {
+    eager: true,
+    onUpdate: 'NO ACTION',
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'role_id', foreignKeyConstraintName: 'FK_users_role' })
   role: Role;
 
   @Column({ type: 'uuid', name: 'advisor_id', nullable: true })
   advisorId: string;
 
-  @ManyToOne('Advisor', { nullable: true, eager: true })
-  @JoinColumn({ name: 'advisor_id' })
+  @ManyToOne('Advisor', {
+    nullable: true,
+    eager: true,
+    onUpdate: 'NO ACTION',
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'advisor_id', foreignKeyConstraintName: 'FK_users_advisor' })
   advisor: Advisor;
 
   @Exclude()
