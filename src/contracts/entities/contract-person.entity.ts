@@ -3,10 +3,10 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
-  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import type { Contract } from './contract.entity';
@@ -18,7 +18,10 @@ export enum PersonRole {
 }
 
 @Entity('contract_persons')
-@Unique(['contract', 'person'])
+@Index('UQ_contract_person_active', ['contract', 'person'], {
+  unique: true,
+  where: '"deleted_at" IS NULL',
+})
 export class ContractPerson {
   @PrimaryGeneratedColumn('uuid')
   id: string;

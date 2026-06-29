@@ -1,8 +1,10 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -14,6 +16,15 @@ import { InvoiceLineCategory } from '../../enums/invoice-line-category.enum';
 import type { Invoice } from './invoice.entity';
 
 @Entity('invoice_lines')
+@Index('IDX_invoice_lines_category', ['category'])
+@Index('IDX_invoice_lines_invoice', ['invoice'])
+@Index('IDX_invoice_lines_projectable', ['isProjectable'])
+@Check('CHK_invoice_lines_amount', '"amount" >= 0')
+@Check('CHK_invoice_lines_quantity', '"quantity" > 0')
+@Check(
+  'CHK_invoice_lines_category',
+  "\"category\" IN ('MENSUALIDAD', 'COMISION', 'INCLUSION', 'RECOBRO', 'IMPUESTO')",
+)
 export class InvoiceLine {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -22,7 +33,7 @@ export class InvoiceLine {
     onDelete: 'CASCADE',
     nullable: false,
   })
-  @JoinColumn({ name: 'invoice_id' })
+  @JoinColumn({ name: 'invoice_id', foreignKeyConstraintName: 'FK_invoice_lines_invoice' })
   invoice: Invoice;
 
   @Column({ type: 'varchar', length: 30, default: InvoiceLineCategory.MENSUALIDAD })
@@ -38,11 +49,11 @@ export class InvoiceLine {
   quantity: number;
 
   @ManyToOne('Person', { nullable: true })
-  @JoinColumn({ name: 'person_id' })
+  @JoinColumn({ name: 'person_id', foreignKeyConstraintName: 'FK_invoice_lines_person' })
   person: Person;
 
   @ManyToOne('Plan', { nullable: true })
-  @JoinColumn({ name: 'plan_id' })
+  @JoinColumn({ name: 'plan_id', foreignKeyConstraintName: 'FK_invoice_lines_plan' })
   plan: Plan;
 
   @Column({ type: 'boolean', default: false, name: 'is_projectable' })

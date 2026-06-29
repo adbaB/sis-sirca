@@ -1,7 +1,9 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -12,20 +14,25 @@ import type { Plan } from '../../plans/entities/plan.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 
 @Entity('affiliation_history')
+@Index('IDX_ah_action', ['action'])
+@Index('IDX_ah_person', ['person'])
+@Index('IDX_ah_contract', ['contract'])
+@Index('IDX_ah_action_date', ['actionDate'])
+@Check('CHK_ah_action', "\"action\" IN ('AFILIACION', 'DESAFILIACION')")
 export class AffiliationHistory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @ManyToOne('Contract', { nullable: false })
-  @JoinColumn({ name: 'contract_id' })
+  @JoinColumn({ name: 'contract_id', foreignKeyConstraintName: 'FK_ah_contract' })
   contract: Contract;
 
   @ManyToOne('Person', { nullable: false })
-  @JoinColumn({ name: 'person_id' })
+  @JoinColumn({ name: 'person_id', foreignKeyConstraintName: 'FK_ah_person' })
   person: Person;
 
   @ManyToOne('Plan', { nullable: true })
-  @JoinColumn({ name: 'plan_id' })
+  @JoinColumn({ name: 'plan_id', foreignKeyConstraintName: 'FK_ah_plan' })
   plan: Plan;
 
   @Column({ type: 'varchar', length: 30 })
