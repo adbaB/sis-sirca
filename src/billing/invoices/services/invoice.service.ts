@@ -157,8 +157,7 @@ export class InvoiceService {
 
     let billingMonth = billingMonthInput;
     if (!billingMonth) {
-      const nowVe = DateTime.now().setZone('America/Caracas');
-      billingMonth = nowVe.toFormat('yyyy-MM');
+      billingMonth = getBillingMonth();
     }
 
     try {
@@ -231,6 +230,9 @@ export class InvoiceService {
       const now = new Date();
       const dueDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5);
 
+      const retentionPercentage = Number(contract.retentionPercentage || 0);
+      const retentionAmount = totalAmount * (retentionPercentage / 100);
+
       const invoice = invoiceRepo.create({
         contract: contract,
         billingMonth: billingMonth,
@@ -240,6 +242,8 @@ export class InvoiceService {
         totalAmount: totalAmount,
         paidAmount: 0,
         status: InvoiceStatus.PENDING,
+        retentionPercentage,
+        retentionAmount,
       });
 
       const savedInvoice = await invoiceRepo.save(invoice);
@@ -350,10 +354,12 @@ export class InvoiceService {
 
     const newPaidAmount = Number(result?.total ?? 0);
     const totalAmount = Number(invoice.totalAmount);
+    const retentionAmount = Number(invoice.retentionAmount || 0);
+    const amountDue = Math.max(0, totalAmount - retentionAmount);
 
     invoice.paidAmount = Math.min(newPaidAmount, totalAmount);
 
-    if (newPaidAmount >= totalAmount) {
+    if (newPaidAmount >= amountDue) {
       invoice.status = InvoiceStatus.PAID;
     } else if (newPaidAmount > 0) {
       invoice.status = InvoiceStatus.PARTIAL;
@@ -416,9 +422,16 @@ export class InvoiceService {
       const calculatedTotal = newBaseAmount + additionalAmount;
       invoice.totalAmount = calculatedTotal;
 
-      // Adjust paidAmount if it exceeds totalAmount to avoid DB check constraint violations
-      if (invoice.paidAmount > calculatedTotal) {
-        invoice.paidAmount = calculatedTotal;
+      const retentionPercentage = Number(contract.retentionPercentage || 0);
+      const retentionAmount = calculatedTotal * (retentionPercentage / 100);
+      invoice.retentionPercentage = retentionPercentage;
+      invoice.retentionAmount = retentionAmount;
+
+      const amountDue = Math.max(0, calculatedTotal - retentionAmount);
+
+      // Adjust paidAmount if it exceeds amountDue to avoid DB check constraint violations
+      if (invoice.paidAmount > amountDue) {
+        invoice.paidAmount = amountDue;
       }
 
       // Save intermediate state in transaction
@@ -897,6 +910,18 @@ export class InvoiceService {
         totalLine: `$${(Number(l.amount) * Number(l.quantity ?? 1)).toFixed(2)}`,
       }));
 
+    const planCounts: Record<string, number> = {};
+    for (const member of members) {
+      const planName = member.plan;
+      planCounts[planName] = (planCounts[planName] || 0) + 1;
+    }
+    const planSummary = Object.entries(planCounts)
+      .map(([planName, count]) => ({
+        planName,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
+
     const totalAmount = Number(invoice.totalAmount);
     const formatted = new Intl.NumberFormat('es-ES', {
       minimumFractionDigits: 2,
@@ -916,7 +941,9 @@ export class InvoiceService {
       pagesToRender.map(async (payment) => {
         const amountUsd = payment ? Number(payment.amount) : Number(invoice.paidAmount);
         const amountBsRaw = payment ? Number(payment.amountBs ?? 0) : 0;
-        const amountUnpaid = Math.max(0, totalAmount - Number(invoice.paidAmount));
+        const retentionAmount = Number(invoice.retentionAmount || 0);
+        const amountDue = Math.max(0, totalAmount - retentionAmount);
+        const amountUnpaid = Math.max(0, amountDue - Number(invoice.paidAmount));
 
         const exchangeRate =
           amountBsRaw > 0 && amountUsd > 0 ? (amountBsRaw / amountUsd).toFixed(4) : null;
@@ -932,6 +959,7 @@ export class InvoiceService {
           personName,
           identityCard,
           members,
+          planSummary,
           additionalCharges,
           hasAdditionalCharges: additionalCharges.length > 0,
           today,
@@ -941,6 +969,11 @@ export class InvoiceService {
           amountBs: amountBsRaw > 0 ? formatted.format(amountBsRaw) : null,
           exchangeRateUsdToBs: exchangeRate ? formatted.format(Number(exchangeRate)) : null,
           totalAmount: formatted.format(totalAmount),
+          retentionPercentage: invoice.retentionPercentage
+            ? formatted.format(Number(invoice.retentionPercentage))
+            : null,
+          retentionAmount: retentionAmount > 0 ? formatted.format(retentionAmount) : null,
+          amountDue: formatted.format(amountDue),
           amountUnpaid: formatted.format(amountUnpaid),
           date: today,
           advisor: contract.advisor?.name ?? 'Sin asesor',

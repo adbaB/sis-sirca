@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateContractDto {
   @IsDateString()
@@ -15,4 +15,10 @@ export class CreateContractDto {
   @IsOptional()
   @IsUUID()
   portfolioId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  retentionPercentage?: number;
 }

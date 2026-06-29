@@ -20,10 +20,25 @@ export enum ContractStatus {
   INACTIVE = 'INACTIVE',
 }
 
+const decimalTransformer = {
+  to: (value: number) => value,
+  from: (value: string | null) => (value === null ? 0 : Number(value)),
+};
+
 @Entity('contracts')
 export class Contract {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0.0,
+    name: 'retention_percentage',
+    transformer: decimalTransformer,
+  })
+  retentionPercentage: number;
 
   @Column({ type: 'date', name: 'affiliation_date' })
   affiliationDate: Date;
@@ -54,7 +69,7 @@ export class Contract {
   advisor?: Advisor | null;
 
   @ManyToOne('Portfolio', (portfolio: Portfolio) => portfolio.contracts, { nullable: true })
-  @JoinColumn({ name: 'portfolio_id' })
+  @JoinColumn({ name: 'portfolio_id', foreignKeyConstraintName: 'FK_contracts_portfolio' })
   portfolio?: Portfolio | null;
 
   @Column({ type: 'enum', enum: ContractStatus, default: ContractStatus.ACTIVE })

@@ -152,7 +152,9 @@ export class PaymentService {
 
         const invoiceUnpaidAmount = Math.max(
           0,
-          Number(invoice.totalAmount) - Number(invoice.paidAmount),
+          Number(invoice.totalAmount) -
+            Number(invoice.retentionAmount || 0) -
+            Number(invoice.paidAmount),
         );
 
         if (invoiceUnpaidAmount <= 0 && !isLastInvoice) {
@@ -233,7 +235,12 @@ export class PaymentService {
 
       // Calculate total unpaid debt of the invoices BEFORE this payment
       const totalInvoiceDebtUsd = invoices.reduce(
-        (sum, inv) => sum + Math.max(0, Number(inv.totalAmount) - Number(inv.paidAmount)),
+        (sum, inv) =>
+          sum +
+          Math.max(
+            0,
+            Number(inv.totalAmount) - Number(inv.retentionAmount || 0) - Number(inv.paidAmount),
+          ),
         0,
       );
 
@@ -611,7 +618,9 @@ export class PaymentService {
       // Recalcular saldo pendiente antes de este pago
       const invoiceUnpaidBefore = Math.max(
         0,
-        Number(invoice.totalAmount) - (Number(invoice.paidAmount) - Number(payment.amount)),
+        Number(invoice.totalAmount) -
+          Number(invoice.retentionAmount || 0) -
+          (Number(invoice.paidAmount) - Number(payment.amount)),
       );
 
       let amountUsdInput = totalUsd;

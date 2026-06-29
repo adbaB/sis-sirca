@@ -10,6 +10,9 @@ import {
   IsString,
   IsUUID,
   ValidateNested,
+  IsNumber,
+  Min,
+  Max,
 } from 'class-validator';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonRole } from '../entities/contract-person.entity';
@@ -65,6 +68,12 @@ export class CreateContractFullDto {
   @IsOptional()
   @IsUUID()
   portfolioId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  retentionPercentage?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

@@ -722,19 +722,25 @@ export class ContractsService {
    * Adds a single invoice's financial contribution to the running totals.
    */
   private accumulateInvoiceStats(
-    inv: { status: string; totalAmount: number; paidAmount: number; baseAmount?: number },
+    inv: {
+      status: string;
+      totalAmount: number;
+      paidAmount: number;
+      baseAmount?: number;
+      retentionAmount?: number;
+    },
     totals: PipelineTotals,
   ): void {
+    const retention = Number(inv.retentionAmount || 0);
+    const amountDue = Math.max(0, Number(inv.baseAmount ?? inv.totalAmount) - retention);
+
     if (inv.status === 'PAID') {
       totals.totalCollected += Number(inv.paidAmount);
     } else if (inv.status === 'PARTIAL') {
       totals.totalCollected += Number(inv.paidAmount);
-      totals.totalPending += Math.max(
-        0,
-        Number((inv.baseAmount ?? inv.totalAmount) - inv.paidAmount),
-      );
+      totals.totalPending += Math.max(0, amountDue - Number(inv.paidAmount));
     } else if (inv.status === 'PENDING') {
-      totals.totalPending += Number(inv.baseAmount ?? inv.totalAmount);
+      totals.totalPending += amountDue;
     }
   }
 

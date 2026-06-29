@@ -196,6 +196,14 @@
         <p><strong>Referencia:</strong> {{ referenceNumber }}</p>
         {{/if}}
       </div>
+      <div class="info-box">
+        <h3>Planes Contratados</h3>
+        {{#each planSummary}}
+        <p><strong>{{ this.count }}</strong> &nbsp;—&nbsp; {{ this.planName }}</p>
+        {{else}}
+        <p>Sin planes activos</p>
+        {{/each}}
+      </div>
     </div>
 
     <!-- Two-column: detail table left, receipt right -->
@@ -246,6 +254,18 @@
               <td></td>
               <td style="text-align:right;"><strong>${{ totalAmount }}</strong></td>
             </tr>
+            {{#if retentionAmount}}
+            <tr>
+              <td>Retención ISLR ({{ retentionPercentage }}%)</td>
+              <td></td>
+              <td style="text-align:right; color: #ea580c;">-${{ retentionAmount }}</td>
+            </tr>
+            <tr class="subtotal-row">
+              <td>Total Neto a Pagar (USD)</td>
+              <td></td>
+              <td style="text-align:right;"><strong>${{ amountDue }}</strong></td>
+            </tr>
+            {{/if}}
             <tr>
               <td>Abono a contrato {{contractCode}} ({{ paymentMethod }})</td>
               <td></td>
@@ -278,7 +298,11 @@
         </table>
 
         <div class="total-section">
+          {{#if retentionAmount}}
+          <p>Total Neto a pagar (USD):&nbsp;<span class="total-amount">${{ amountDue }}</span></p>
+          {{else}}
           <p>Total a pagar (USD):&nbsp;<span class="total-amount">${{ totalAmount }}</span></p>
+          {{/if}}
           <p>Total Pagado (USD):&nbsp;<span class="total-amount">${{ amountUsd }}</span></p>
         </div>
       </div>

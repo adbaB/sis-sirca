@@ -31,6 +31,7 @@ const decimalTransformer = {
 @Check('"total_amount" >= 0')
 @Check('"paid_amount" >= 0')
 @Check('"paid_amount" <= "total_amount"')
+@Check('CHK_invoices_base_amount', '"base_amount" >= 0')
 @Unique(['contract', 'billingMonth'])
 export class Invoice {
   @PrimaryGeneratedColumn('uuid')
@@ -77,6 +78,26 @@ export class Invoice {
     transformer: decimalTransformer,
   })
   paidAmount: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0,
+    name: 'retention_percentage',
+    transformer: decimalTransformer,
+  })
+  retentionPercentage: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    name: 'retention_amount',
+    transformer: decimalTransformer,
+  })
+  retentionAmount: number;
 
   @Column({ type: 'enum', enum: InvoiceStatus, default: InvoiceStatus.PENDING })
   status: InvoiceStatus;
