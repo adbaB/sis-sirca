@@ -22,6 +22,8 @@ import { ContractsService } from './contracts.service';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { PdfService } from '../../pdf/services/pdf.service';
+import { AwsService } from '../../aws/aws.service';
 
 describe('ContractsService', () => {
   let service: ContractsService;
@@ -70,6 +72,20 @@ describe('ContractsService', () => {
           provide: PlansService,
           useValue: {
             findOne: jest.fn(),
+          },
+        },
+        {
+          provide: PdfService,
+          useValue: {
+            generatePdf: jest.fn().mockResolvedValue(Buffer.from('mock-pdf')),
+          },
+        },
+        {
+          provide: AwsService,
+          useValue: {
+            uploadFile: jest
+              .fn()
+              .mockResolvedValue('https://mock-s3-url.com/contracts/SIR-001.pdf'),
           },
         },
         {

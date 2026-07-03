@@ -22,6 +22,7 @@ import { ContractPerson, PersonRole } from '../../contracts/entities/contract-pe
 import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
 
 @Injectable()
 export class PersonsService {
@@ -36,6 +37,8 @@ export class PersonsService {
     private invoiceRepository: Repository<Invoice>,
     @InjectRepository(InvoiceLine)
     private invoiceLineRepository: Repository<InvoiceLine>,
+    @InjectRepository(HealthDeclaration)
+    private healthDeclarationRepository: Repository<HealthDeclaration>,
     private plansService: PlansService,
     @Inject(forwardRef(() => ContractsService))
     private contractsService: ContractsService,
@@ -44,7 +47,15 @@ export class PersonsService {
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
-    const { planId, contractId, role, isBillingOwner, ...personData } = createPersonDto;
+    const {
+      planId,
+      contractId,
+      role,
+      isBillingOwner,
+      relationship,
+      healthDeclarations,
+      ...personData
+    } = createPersonDto;
     const resolvedRole = role || PersonRole.AFILIADO;
 
     // Check if a person with this identityCard already exists
@@ -94,8 +105,19 @@ export class PersonsService {
             person,
             role: resolvedRole,
             isBillingOwner: isBillingOwner ?? false,
+            relationship,
           });
-          await this.contractPersonRepository.save(contractPerson);
+          const savedCp = await this.contractPersonRepository.save(contractPerson);
+
+          if (healthDeclarations && healthDeclarations.length > 0) {
+            const hdEntities = healthDeclarations.map((hd) =>
+              this.healthDeclarationRepository.create({
+                ...hd,
+                contractPerson: savedCp,
+              }),
+            );
+            await this.healthDeclarationRepository.save(hdEntities);
+          }
 
           if (resolvedRole === PersonRole.AFILIADO) {
             // Registrar en historial
@@ -153,8 +175,19 @@ export class PersonsService {
         person: savedPerson,
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
+        relationship,
       });
-      await this.contractPersonRepository.save(contractPerson);
+      const savedCp = await this.contractPersonRepository.save(contractPerson);
+
+      if (healthDeclarations && healthDeclarations.length > 0) {
+        const hdEntities = healthDeclarations.map((hd) =>
+          this.healthDeclarationRepository.create({
+            ...hd,
+            contractPerson: savedCp,
+          }),
+        );
+        await this.healthDeclarationRepository.save(hdEntities);
+      }
 
       await this.contractsService.recalculateMonthlyAmount(contractId);
 

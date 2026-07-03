@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Planilla de Afiliación y Contrato - {{ contractCode }}</title>
+  <style>
+    :root {
+      --primary-color: #1e293b;
+      --primary-dark: #0f172a;
+      --text-color: #334155;
+      --text-dark: #0f172a;
+      --border-color: #94a3b8;
+      --border-light: #cbd5e1;
+      --bg-light: #f8fafc;
+      --bg-header: #f1f5f9;
+      --accent-color: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      font-size: 10px;
+      line-height: 1.3;
+    }
+    .page {
+      width: 100%;
+      height: 1000px;
+      page-break-after: always;
+      position: relative;
+    }
+    .page:last-child {
+      page-break-after: avoid;
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 5px;
+    }
+    .header-table td {
+      border: 1px solid var(--border-color);
+      padding: 5px;
+      vertical-align: middle;
+    }
+    .logo-container {
+      width: 40%;
+      text-align: center;
+    }
+    .logo-img {
+      height: 35px;
+      object-fit: contain;
+    }
+    .title-container {
+      width: 40%;
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--primary-dark);
+    }
+    .contract-info-container {
+      width: 20%;
+      font-size: 8.5px;
+      color: var(--text-color);
+    }
+    .section-title {
+      background-color: var(--bg-header);
+      color: var(--primary-dark);
+      font-weight: bold;
+      text-align: center;
+      padding: 3px;
+      border: 1px solid var(--border-color);
+      font-size: 9px;
+      text-transform: uppercase;
+      margin-top: 5px;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 5px;
+    }
+    .data-table td, .data-table th {
+      border: 1px solid var(--border-color);
+      padding: 4px 6px;
+      font-size: 8px;
+      text-align: left;
+    }
+    .data-table th {
+      background-color: var(--bg-light);
+      font-weight: bold;
+      color: var(--primary-dark);
+    }
+    .text-center {
+      text-align: center !important;
+    }
+    .text-right {
+      text-align: right !important;
+    }
+    .bold {
+      font-weight: bold;
+    }
+    .w-10 { width: 10%; }
+    .w-15 { width: 15%; }
+    .w-20 { width: 20%; }
+    .w-25 { width: 25%; }
+    .w-30 { width: 30%; }
+    .w-40 { width: 40%; }
+    .w-50 { width: 50%; }
+    
+    .legal-text {
+      font-size: 12px;
+      text-align: justify;
+      line-height: 1.45;
+      margin-bottom: 15px;
+      color: var(--text-color);
+    }
+    .legal-clause {
+      margin-bottom: 10px;
+    }
+    .legal-clause-title {
+      font-weight: bold;
+      color: var(--primary-dark);
+      text-decoration: underline;
+    }
+    .signature-container {
+      width: 100%;
+      margin-top: 50px;
+      display: flex;
+      justify-content: space-around;
+    }
+    .signature-box {
+      width: 200px;
+      border-top: 1px solid var(--primary-dark);
+      text-align: center;
+      padding-top: 5px;
+      font-size: 9px;
+      color: var(--primary-dark);
+    }
+    .thumbprint-box {
+      width: 80px;
+      height: 90px;
+      border: 1px solid var(--border-color);
+      display: inline-block;
+      margin: 5px;
+      vertical-align: top;
+      text-align: center;
+      font-size: 7.5px;
+      padding-top: 75px;
+      color: var(--text-color);
+      border-radius: 4px;
+    }
+    .checkbox-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      border: 1px solid var(--border-color);
+      padding: 5px;
+      font-size: 8px;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      width: 30%;
+    }
+    .checkbox-box {
+      width: 10px;
+      height: 10px;
+      border: 1px solid var(--primary-dark);
+      margin-right: 5px;
+      display: inline-block;
+      text-align: center;
+      line-height: 8px;
+      font-weight: bold;
+      border-radius: 2px;
+    }
+
+    /* ── ENROLLMENT PAGES 1 & 2 SCORING (LARGER TEXT) ─────────────────── */
+    .enrollment-page {
+      font-size: 11px !important;
+      line-height: 1.35 !important;
+    }
+    .enrollment-page .section-title {
+      background-color: var(--bg-header);
+      font-size: 11px; /* Increased from 9px */
+      padding: 4px 6px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      margin-top: 6px;
+      margin-bottom: 4px;
+      text-align: left;
+      font-weight: bold;
+      color: var(--primary-dark);
+    }
+    .enrollment-page .data-table td, 
+    .enrollment-page .data-table th {
+      border: 1px solid var(--border-light);
+      padding: 3px 5px;
+      font-size: 9.5px; /* Increased from 8px */
+      color: var(--text-dark);
+    }
+    .enrollment-page .data-table th {
+      background-color: var(--bg-light);
+      font-weight: 600;
+      color: var(--primary-dark);
+    }
+    .enrollment-page .header-table td {
+      border: 1px solid var(--border-light);
+      padding: 5px;
+    }
+    .enrollment-page .checkbox-list {
+      border: 1px solid var(--border-light);
+      padding: 5px;
+      font-size: 9px; /* Increased from 8px */
+      border-radius: 4px;
+    }
+    .enrollment-page .checkbox-box {
+      border: 1px solid var(--primary-dark);
+      background-color: var(--bg-light);
+    }
+    .enrollment-page .legal-disclaimer {
+      font-size: 9.5px !important; /* Increased from 7.5px */
+      line-height: 1.35;
+      color: var(--text-color);
+    }
+    .enrollment-page .juramento-box {
+      font-size: 9px !important; /* Increased from 7px */
+      line-height: 1.35;
+      padding: 6px;
+      border: 1px solid var(--border-light);
+      background-color: var(--bg-light);
+      border-radius: 4px;
+      margin-bottom: 6px;
+      color: var(--text-color);
+    }
+    .enrollment-page .fondos-box {
+      font-size: 8.5px !important; /* Increased from 7px */
+      line-height: 1.35;
+      padding: 6px;
+      border: 1px solid var(--border-light);
+      background-color: var(--bg-light);
+      border-radius: 4px;
+      margin-bottom: 6px;
+      color: var(--primary-dark);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== HOJA 1: PLANILLA DE AFILIACIÓN ==================== -->
+  <div class="page enrollment-page">
+    <!-- Header -->
+    <table class="header-table">
+      <tr>
+        <td class="logo-container">
+          {{#if logoBase64}}
+            <img src="{{logoBase64}}" alt="SIRCA LOGO" class="logo-img" />
+          {{/if}}
+        </td>
+        <td class="title-container">PLANILLA DE AFILIACIÓN</td>
+        <td class="contract-info-container">
+          <strong>Nº DE CONTRATO:</strong><br>
+          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">SIR - {{ contractCode }}</span><br>
+          <strong>FECHA:</strong> {{ affiliationDateFormatted }}
+        </td>
+      </tr>
+    </table>
+
+    <div class="legal-disclaimer" style="text-align: justify; margin-bottom: 5px;">
+      De acuerdo con la información solicitada a continuación, la Empresa <strong>SALUD INTEGRAL EL ROSARIO, C.A. (SIRCA)</strong> se reservará el derecho de contratar o no el Servicio de Medicina Prepagada, es por ello que agradecemos que esta solicitud sea completada en todas sus partes con letra legible o de imprenta, sin enmienda, alteración, omisión, forjamiento, información falsa o fraudulenta.
+    </div>
+
+    <!-- Tipo de Operacion -->
+    <div style="display: flex; justify-content: space-around; border: 1px solid var(--border-color); padding: 5px; font-size: 9.5px; font-weight: bold; margin-bottom: 6px; background-color: var(--bg-light); border-radius: 4px;">
+      <div><span class="checkbox-box">X</span> INCLUSIÓN</div>
+      <div><span class="checkbox-box"></span> EXCLUSIÓN</div>
+      <div><span class="checkbox-box"></span> MODIFICACIÓN</div>
+      <div><span class="checkbox-box"></span> RENOVACIÓN</div>
+    </div>
+
+    <!-- Datos del Afiliado Titular -->
+    <div class="section-title">Datos del Afiliado Titular</div>
+    <table class="data-table">
+      <tr>
+        <td colspan="3"><span class="bold">APELLIDO(S) Y NOMBRE(S) O RAZÓN SOCIAL:</span><br>{{ titular.name }}</td>
+        <td><span class="bold">CÉDULA DE IDENTIDAD O Nº DE R.I.F.:</span><br>{{ titular.typeIdentityCard }}-{{ titular.identityCard }}</td>
+      </tr>
+      <tr>
+        <td colspan="4"><span class="bold">NOMBRE DEL REPRESENTANTE LEGAL EN CASO DE PERSONA JURÍDICA:</span><br>{{#if titular.legalRepresentative}}{{ titular.legalRepresentative }}{{else}}-{{/if}}</td>
+      </tr>
+      <tr>
+        <td><span class="bold">FECHA DE NACIMIENTO:</span><br>{{ titular.birthDateFormatted }}</td>
+        <td><span class="bold">EDAD:</span><br>{{ titular.age }} AÑOS</td>
+        <td><span class="bold">PESO:</span><br>{{#if titular.weight}}{{ titular.weight }} KG{{else}}-{{/if}}</td>
+        <td><span class="bold">TALLA:</span><br>{{#if titular.height}}{{ titular.height }} MTS{{else}}-{{/if}}</td>
+      </tr>
+      <tr>
+        <td colspan="4"><span class="bold">DIRECCIÓN:</span><br>{{#if titular.address}}{{ titular.address }}{{else}}-{{/if}}</td>
+      </tr>
+      <tr>
+        <td><span class="bold">CIUDAD:</span><br>{{#if titular.city}}{{ titular.city }}{{else}}-{{/if}}</td>
+        <td><span class="bold">ZONA POSTAL:</span><br>{{#if titular.postalCode}}{{ titular.postalCode }}{{else}}-{{/if}}</td>
+        <td><span class="bold">ESTADO:</span><br>{{#if titular.state}}{{ titular.state }}{{else}}-{{/if}}</td>
+        <td><span class="bold">TELÉFONO:</span><br>{{#if titular.phone}}{{ titular.phone }}{{else}}-{{/if}}</td>
+      </tr>
+      <tr>
+        <td colspan="2"><span class="bold">CORREO ELECTRÓNICO:</span><br>{{#if titular.email}}{{ titular.email }}{{else}}-{{/if}}</td>
+        <td><span class="bold">TELÉFONO: (otro donde ubicarle)</span><br>{{#if titular.alternatePhone}}{{ titular.alternatePhone }}{{else}}-{{/if}}</td>
+        <td><span class="bold">ACTIVIDAD U OCUPACIÓN:</span><br>{{#if titular.occupation}}{{ titular.occupation }}{{else}}-{{/if}}</td>
+      </tr>
+    </table>
+
+    <!-- Plan Contratado -->
+    <div class="section-title">Plan Contratado</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="w-40 text-center">PLANES</th>
+          <th class="w-20 text-center">PLATA</th>
+          <th class="w-20 text-center">ORO</th>
+          <th class="w-20 text-center">PLATINO</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="bold text-center">COBERTURA</td>
+          <td class="text-center">$ 5,000.00</td>
+          <td class="text-center">$ 12,000.00</td>
+          <td class="text-center">$ 20,000.00</td>
+        </tr>
+        <tr>
+          <td class="bold text-center">CUOTA MENSUAL POR BENEFICIARIO</td>
+          <td class="text-center">$ 17 {{#if isPlata}}<strong>(X)</strong>{{/if}}</td>
+          <td class="text-center">$ 21 {{#if isOro}}<strong>(X)</strong>{{/if}}</td>
+          <td class="text-center">$ 33 {{#if isPlatino}}<strong>(X)</strong>{{/if}}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Datos del Grupo Familiar -->
+    <div class="section-title">Datos del Grupo Familiar a ser Incluido / Beneficiarios</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 5%;">CÓD</th>
+          <th style="width: 15%;">PLAN</th>
+          <th style="width: 10%;">PARENTESCO</th>
+          <th style="width: 30%;">APELLIDO(S) Y NOMBRE(S)</th>
+          <th style="width: 15%;">Nº C.I. O PASAPORTE</th>
+          <th style="width: 10%;">FECHA NAC.</th>
+          <th style="width: 5%;">SEXO</th>
+          <th style="width: 7%;">PESO</th>
+          <th style="width: 8%;">TALLA</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each beneficiaries}}
+        <tr>
+          <td class="text-center">{{index}}</td>
+          <td>{{planName}}</td>
+          <td>{{relationship}}</td>
+          <td>{{name}}</td>
+          <td>{{typeIdentityCard}}-{{identityCard}}</td>
+          <td>{{birthDateFormatted}}</td>
+          <td class="text-center">{{genderLabel}}</td>
+          <td>{{weight}} kg</td>
+          <td>{{height}} m</td>
+        </tr>
+        {{/each}}
+        <!-- Empty rows up to 5 if needed -->
+        {{#each emptyRows}}
+        <tr>
+          <td class="text-center">{{this}}</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ==================== HOJA 2: DECLARACIÓN DE SALUD ==================== -->
+  <div class="page enrollment-page">
+    <table class="header-table">
+      <tr>
+        <td class="logo-container">
+          {{#if logoBase64}}
+            <img src="{{logoBase64}}" alt="SIRCA LOGO" class="logo-img" />
+          {{/if}}
+        </td>
+        <td class="title-container">DECLARACIÓN DE SALUD</td>
+        <td class="contract-info-container">
+          <strong>Nº DE CONTRATO:</strong><br>
+          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">SIR - {{ contractCode }}</span>
+        </td>
+      </tr>
+    </table>
+
+    <div class="legal-disclaimer" style="margin-bottom: 5px;">
+      RESPONDA EL CUESTIONARIO E INDIQUE SI USTED O CUALQUIERA DE LAS PERSONAS DE SU GRUPO FAMILIAR HAN PADECIDO, HAN SIDO DIAGNOSTICADOS, TRATADOS O MEDICADOS, POR ALGUNOS DE LOS SÍNTOMAS Y/O ENFERMEDADES DETALLADAS A CONTINUACIÓN.
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 65%;">DESCRIPCIÓN</th>
+          <th style="width: 5%;" class="text-center">SI</th>
+          <th style="width: 5%;" class="text-center">NO</th>
+          <th style="width: 25%;">NOMBRE(S) DE LA(S) PERSONA(S) AFECTADA(S) Y DETALLES</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each healthQuestions}}
+        <tr>
+          <td><strong>{{id}}. {{title}}</strong>: {{description}}</td>
+          <td class="text-center bold">{{#if hasCondition}}X{{/if}}</td>
+          <td class="text-center bold">{{#unless hasCondition}}X{{/unless}}</td>
+          <td>{{#if hasCondition}}{{affectedDetails}}{{else}}-{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Declaracion Jurada -->
+    <div class="section-title">Declaración Jurada</div>
+    <div class="juramento-box" style="text-align: justify;">
+      Yo, el Afiliado Titular, declaro:<br>
+      a. Que he leído y entendido cabalmente cada una de las partes de esta Solicitud y la información que suministro es verdadera, amplia, completa y exacta, dependiendo de ella la validez del contrato.<br>
+      b. Que acepto, que la responsabilidad de la prestadora del servicio, comienza una vez celebrado el contrato.<br>
+      c. Que no he omitido o simulado, ningún hecho o circunstancia en las respuestas que pueda modificar las condiciones del plan solicitado, exceptuando de responsabilidad a la prestadora de servicio y a SIRCA, ya que conozco en todo su contenido cada uno de los planes y las excepciones de los mismos.<br>
+      d. Renuncio expresamente, a todos los beneficios del secreto profesional que las disposiciones legales impongan a los médicos que me han tratado o examinado, facultándolos para proporcionar a la prestadora del servicio cualquier información que éste les solicite y que pueda referirse a mi persona.
+    </div>
+
+    <!-- Origen y Destino de Fondos -->
+    <div class="section-title">Declaración Jurada de Origen y Destino de Fondos</div>
+    <div class="fondos-box text-center bold">
+      "DOY FE QUE EL DINERO UTILIZADO PARA EL PAGO DE LAS CUOTAS DEL PRESENTE CONTRATO PROVIENE DE UNA FUENTE LÍCITA Y POR LO TANTO, NO TIENE RELACIÓN ALGUNA CON DINERO, CAPITALES, BIENES, HABERES, VALORES O TÍTULOS PRODUCTO DE LAS ACTIVIDADES O ACCIONES DERIVADAS DE OPERACIONES ILÍCITAS PREVISTAS EN LA 'LEY ORGÁNICA CONTRA LA DELINCUENCIA ORGANIZADA Y EL FINANCIAMIENTO AL TERRORISMO'"
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
+      <div style="width: 60%; font-size: 9.5px;">
+        <span class="bold">DOCUMENTOS CONSIGNADOS CON ESTA SOLICITUD:</span>
+        <div class="checkbox-list">
+          <div class="checkbox-item"><span class="checkbox-box">X</span> 1. Planilla de Afiliación FIRMADA</div>
+          <div class="checkbox-item"><span class="checkbox-box">X</span> 2. Contrato Firmado</div>
+          <div class="checkbox-item"><span class="checkbox-box">X</span> 3. Cuadro Recibo Firmado</div>
+          <div class="checkbox-item"><span class="checkbox-box">X</span> 4. Copia de C.I. del Titular</div>
+          <div class="checkbox-item"><span class="checkbox-box"></span> 5. Copia de C.I. Afiliados > 9 años</div>
+          <div class="checkbox-item"><span class="checkbox-box"></span> 6. Copia de P.N. de Afiliados &lt; 9 años</div>
+        </div>
+        
+        <div style="margin-top: 10px; border: 1px solid var(--border-color); padding: 6px; background-color: var(--bg-light); border-radius: 4px;">
+          <span class="bold">DATOS DEL ASESOR:</span><br>
+          Nombre: {{#if advisorName}}{{advisorName}}{{else}}-{{/if}}<br>
+          Código: {{#if advisorCode}}{{advisorCode}}{{else}}-{{/if}}
+        </div>
+      </div>
+      
+      <div style="width: 35%; text-align: right;">
+        <div class="thumbprint-box">Pulgar Izquierdo</div>
+        <div class="thumbprint-box">Pulgar Derecho</div>
+        <div style="margin-top: 5px; text-align: center;">
+          <div style="border-top: 1px solid #000; width: 150px; margin: 15px auto 0 auto;"></div>
+          <span style="font-size: 8px;" class="bold">FIRMA DEL AFILIADO</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== HOJA 3: CONTRATO (PAG 1) ==================== -->
+  <div class="page" style="padding: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      {{#if logoBase64}}
+        <img src="{{logoBase64}}" alt="Logo" style="height: 40px;" />
+      {{/if}}
+      <h2 style="margin: 0; font-size: 16px; font-weight: bold; text-align: right;">CONTRATO</h2>
+    </div>
+
+    <div class="legal-text">
+      Entre <strong>SALUD INTEGRAL EL ROSARIO, C.A.</strong>, constituida en el Registro Mercantil Primero de la Circunscripción Judicial del Estado Zulia, en fecha 22 de Diciembre de 2021, bajo el No. 54, Tomo 56-A, domiciliada en la carretera K, Edificio Hospital El Rosario, Piso 1 local S/N, Sector 5 Bocas, Municipio Cabimas del Estado Zulia, representada por María Valdez, venezolana, mayor de edad, titular de la Cédula de Identidad Nos. V-12.861.831, en su carácter de Vice-Presidente, que en adelante y para efectos de este contrato se denominará <strong>SIRCA</strong>, y el (la) ciudadano (a) <strong>{{ titular.name }}</strong>, venezolano (a) mayor de edad, titular de la Cédula de Identidad No. <strong>{{ titular.typeIdentityCard }}-{{ titular.identityCard }}</strong>, domiciliado (a) en <strong>{{#if titular.address}}{{ titular.address }}{{else}}-{{/if}}</strong> quien a los efectos del presente contrato se denominará <strong>EL AFILIADO</strong>; hemos decidido celebrar el presente contrato de Servicios de Medicina Prepagada, que se rige por las siguientes cláusulas, y en lo no previsto en ellas, por las normas pertinentes a su materia en la República Bolivariana de Venezuela. En lo sucesivo y a los fines del presente contrato cuando se haga referencia a <strong>SIRCA</strong> y <strong>EL AFILIADO</strong> conjuntamente se designarán como <strong>LAS PARTES</strong>.
+    </div>
+
+    <div class="legal-text">
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA PRIMERA. OBJETO PRINCIPAL</span>: El objeto principal de este contrato es la reglamentación de las relaciones entre LAS PARTES, referido al Servicio de Plan de Medicina Preventiva que contrata <strong>EL AFILIADO</strong>, a través de la comercialización, supervisión, control de calidad y cobranza de los servicios por parte de <strong>SIRCA</strong>, especificados en la <strong>Planilla de Afiliación, Condiciones Generales y Recibo</strong>, lo cual forma parte del presente contrato.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA SEGUNDA. VIGENCIA DEL CONTRATO</span>: La vigencia del presente contrato será de doce (12) meses, contados a partir de la fecha de suscripción del mismo. Si LAS PARTES lo desean podrán renovarlo por un periodo igual. <strong>EL AFILIADO</strong> deberá manifestar por escrito su voluntad de no renovarlo. De renovarlo <strong>EL AFILIADO</strong> aceptará las adecuaciones y ajustes del servicio, según se le informe en los documentos contentivos del paquete a contratar.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA TERCERA. PLAN CONTRATADO</span>: LAS PARTES suscriben el presente contrato con el Plan indicado en el Anexo1, contenido en el Cuadro de Planes Médicos, e indicado en la Planilla de Afiliación, Condiciones Generales y Recibo, del Titular y su Grupo Familiar, el cual conoce y acepta <strong>EL AFILIADO</strong> en todo su contenido.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA CUARTA. FORMA DE PAGO</span>: <strong>EL AFILIADO</strong>, deberá pagar la cantidad correspondiente a él Plan o Planes indicados en el Anexo1, durante los cinco (5) primeros días de cada mes, por adelantado para poder disfrutar del servicio que lo contiene. La falta de pago en forma oportuna acarreará para EL AFILIADO, suspensión inmediata e incluso anulación del contrato si fuere el caso de no realizar dichos pagos, en el tiempo establecido. <strong>EL AFILIADO</strong> podrá pagar a través de: Trasferencia Zelle o efectivo, Pago Móvil y Transferencias Bancarias en Bolívares a la tasa de cambio oficial del día del pago fijada por el Banco Central de Venezuela (BCV).
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA QUINTA. LUGAR DE PRESTACIÓN DEL SERVICIO</span>: Los servicios contratados por <strong>EL AFILIADO</strong>, le serán prestados de forma única y exclusiva en el Hospital El Rosario, C.A.; ubicado en la carretera K, Edificio Hospital El Rosario, Sector 5 Bocas, Municipio Cabimas del Estado Zulia, y en Ciudad Ojeda en Carretera O, entre Avenida 34 y calle El Progreso, dichos servicios están contenidos en el Cuadro de Planes Médicos el cual forma parte integrante del presente contrato, según el contenido del Anexo 1, el cual indica los Planes suscritos por el Afiliado en el presente contrato.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA SEXTA. DECLARACIÓN JURADA DE EL AFILIADO</span>: EL AFILIADO será responsable de la información de su estado de salud y/o historial médico indicado en: Planilla de Afiliación del Titular, Beneficiario y/o su Grupo Familiar; cualquier alteración, omisión, forjamiento, información falsa o fraudulenta presentada por <strong>EL AFILIADO</strong> y su grupo familiar, que hubiere llevado a SIRCA a contratar en otras condiciones, relevan de toda responsabilidad al Hospital El Rosario y a SIRCA.
+      </div>
+    </div>
+    
+    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 8px;">Página 1 de 5</div>
+  </div>
+
+  <!-- ==================== HOJA 4: CONTRATO (PAG 2) ==================== -->
+  <div class="page" style="padding: 20px;">
+    <div class="legal-text">
+      En todo caso SIRCA, podrá suspender el servicio a <strong>EL AFILIADO</strong> y excluirlo del mismo y/o anular el contrato, previa notificación, e incluso reclamar pagos por causas de indemnización en aquellos casos en que se encuentren en entredicho la buena fe de <strong>EL AFILIADO</strong> o alguno de su grupo familiar.
+    </div>
+
+    <div class="legal-text">
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA SEPTIMA. EL AFILIADO</span> se obliga a mantener un comportamiento adecuado y respetuoso, tanto con el personal y público del Hospital El Rosario, como con el personal de SIRCA; de evidenciarse un comportamiento inadecuado e irrespetuoso, se tomarán medidas de suspensión del servicio o anulación del presente contrato.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA OCTAVA. CONOCIMIENTO Y ACEPTACION DEL AFILIADO</span>: EL AFILIADO declara que conoce y acepta todas y cada una de las condiciones establecidas en el presente contrato para la prestación del servicio, las cuales se encuentran especificadas en el Recibo y Condiciones Generales, lo cual ya ha leído y acepta en todo su contenido.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA NOVENA. NOTIFICACIONES DE LAS PARTES</span>: Para cualquier información que las partes necesiten notificarse lo podrán realizar a través de comunicación escrita y por correo electrónico; para lo que se indican los siguientes datos de las partes: EL AFILIADO: La dirección y correo electrónico indicadas por EL AFILIADO en el Recibo y la <em>Planilla de Afiliación</em>; SIRCA: carretera K, Edificio Hospital El Rosario, Piso 1 Local S/N, Sector 5 Bocas, Municipio Cabimas del Estado Zulia, Correo Electrónico: <a href="mailto:admonsirca@gmail.com">admonsirca@gmail.com</a>.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA DECIMA. DOMICILIO JUDICIAL</span>: LAS PARTES, eligen para los efectos del presente contrato como domicilio especial y con exclusión de cualquier otro, a la ciudad y Municipio Autónomo de Cabimas del estado Zulia, a la Jurisdicción de dichos Tribunales declaran someterse.
+      </div>
+
+      <div class="legal-clause">
+        <span class="legal-clause-title">CLAUSULA DECIMA PRIMERA. DE LOS EJEMPLARES</span>: Del presente contrato se hacen dos (2) ejemplares con un mismo tenor y a un solo efecto. En Cabimas, a los <strong>{{ dayText }} ({{ dayNumber }})</strong> días del mes de <strong>{{ monthText }}</strong> del 2026.
+      </div>
+    </div>
+
+    <!-- Signatures -->
+    <div class="signature-container">
+      <div class="signature-box">
+        <strong>SIRCA</strong>
+      </div>
+      <div class="signature-box">
+        <strong>EL AFILIADO</strong>
+      </div>
+    </div>
+
+    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 8px;">Página 2 de 5</div>
+  </div>
+
+  <!-- ==================== HOJA 5: CONDICIONES GENERALES (PAG 1) ==================== -->
+  <div class="page" style="padding: 20px;">
+    <div style="text-align: center; margin-bottom: 15px;">
+      <span style="font-size: 11px; font-weight: bold;">SALUD INTEGRAL EL ROSARIO</span><br>
+      <span style="font-size: 10px; font-weight: bold;">CONDICIONES GENERALES PARA DISFRUTE DEL PLAN DE SALUD</span>
+    </div>
+
+    <div style="font-size: 9px; text-align: justify; margin-bottom: 10px; line-height: 1.3;">
+      Se establecen las condiciones de disfrute del Plan Médico, el cual va dirigido a personas desde <strong>2 MESES A 59</strong> años de edad, del Plan <strong>{{ planName }}</strong>. Dicho plan médico está bajo la comercialización de la Sociedad Mercantil <strong>SALUD INTEGRAL EL ROSARIO, C.A.</strong>, constituida en el Registro Mercantil Primero de la Circunscripción Judicial del Estado Zulia, en fecha 22 de Diciembre de 2021, bajo el No. 54, Tomo 56-A, domiciliada en Municipio Cabimas, Estado Zulia, quien se denominará SIRCA; para la prestación de todos los servicios médicos a cargo de la Sociedad Mercantil <strong>HOSPITAL EL ROSARIO, C.A.</strong>, domiciliada en el Municipio Cabimas del Estado Zulia, quien se denominará LA PRESTADORA DEL SERVICIO; y el Afiliado, quienes exponen las siguientes Condiciones bajo las cuales se rige el Servicio de Medico del presente plan.
+    </div>
+
+    <div style="font-size: 9px; text-align: justify; line-height: 1.3;">
+      <div class="text-center bold" style="font-size: 9px; margin-bottom: 5px;">1. GLOSARIO:</div>
+      
+      <span class="bold">Prestadora del Servicio:</span> HOSPITAL EL ROSARIO, C.A., ubicado en la carretera K, Edificio Hospital El Rosario, Piso 1 Local S/N, Sector 5 Bocas, Municipio Cabimas del Estado Zulia de forma exclusiva brindando todos los servicios contenidos en el plan.<br>
+      <span class="bold">Afiliado:</span> Persona natural que puede ser Beneficio, Titular o ambos al mismo tiempo.<br>
+      <span class="bold">Beneficiario:</span> Persona natural que disfruta del Plan si asumir el pago del mismo.<br>
+      <span class="bold">Titular:</span> Persona natural o jurídica, que disfruta y asume el pago del Plan con beneficiarios a su cargo.<br>
+      <span class="bold">Grupo Familiar:</span> Conjunto de personas unidas o no por vínculos de sangre y los cuales forman parte de una misma Afiliación como Beneficiarios.<br>
+      <span class="bold">Documentos que forman parte del Contrato de Afiliación:</span> Planilla de Afiliación, Contrato, Condiciones Generales, Cuadro de Planes Médicos, Recibo, y los demás documentos que por su naturaleza formen parte del mismo.<br>
+      <span class="bold">Planilla de Afiliación:</span> Cuestionario con: Datos de Identificación, domicilio, correo electrónico y teléfono de los afiliados, datos estos que serán utilizados para cualquier comunicación entre la empresa y el afiliado y que forma parte integrante de este contrato.<br>
+      <span class="bold">Declaración de Salud:</span> Puede influir en la estimación de los servicios y de las exclusiones y preexistencias del mismo, deben ser contestadas en su totalidad, veracidad y con exactitud por el Afiliado, constituyendo dicha declaración la base legal para la prestación de servicios del Plan Medico a contratar.<br>
+      <span class="bold">Anexo 1:</span> Listado con los datos de identificación de los beneficiarios de forma detallada, el cual debe entregar a SIRCA el afiliado.<br>
+      <span class="bold">Monto para los servicios del plan:</span> Límite máximo amparado por parte de la Prestadora del Servicio, indicado en el Plan Contratado. Este monto será aplicado a todos los servicios del Plan contratado.<br>
+      <span class="bold">Emergencia Médica:</span> Condición que compromete la vida o la integridad física de una persona, cuya atención no puede ser diferida, y su diagnóstico lo hace un médico calificado de la institución hospitalaria, prestadora de los servicios de salud.<br>
+      <span class="bold">Enfermedad:</span> Alteración de la salud que resulte de la acción de agentes morbosos de origen interno o externo con relación al organismo, que origine reducción de su capacidad funcional y que requiera tratamiento médico y/o intervención quirúrgica.<br>
+      <span class="bold">Enfermedad Preexistente:</span> Enfermedad o lesión que ha sido adquirida o diagnosticada con anterioridad a la fecha de inicio del contrato conocida o no por el Afiliado.<br>
+      <span class="bold">Enfermedad, Defecto o Malformación Congénita:</span> Alteración del estado fisiológico de una o varias partes del cuerpo humano que existan desde la fecha de nacimiento o antes del mismo.<br>
+      <span class="bold">Enfermedad Crónica:</span> Las enfermedades crónicas son aquellas que permanecen más de seis (6) meses continuos en el individuo.<br>
+      <span class="bold">Enfermedad Grave:</span> Dolencia seria que pone en riesgo la vida o limita significativamente la actividad habitual de una persona.<br>
+      <span class="bold">Patología:</span> Parte de la medicina que estudia los trastornos anatómicos y fisiológicos de los tejidos y los órganos enfermos.<br>
+      <span class="bold">Intrahospitalaria:</span> Procedimiento de diagnóstico o terapéutico, que solamente se puede realizar bajo reclusión hospitalaria.<br>
+      <span class="bold">Accidente:</span> Suceso no planeado y no deseado que provoca un daño o lesión negativa al individuo.<br>
+      <span class="bold">Cirugía Electiva:</span> Intervención quirúrgica, planificada entre médico y paciente.<br>
+      <span class="bold">Cirugía de Emergencia:</span> Cirugía que requieren un diagnóstico e intervención rápida para evitar complicaciones.<br>
+      <span class="bold">Médico:</span> Profesional que, tras cursar estudios necesarios y obtener el título correspondiente, cuenta con una autorización legal para ejercer la medicina.<br>
+      <span class="bold">Tratamiento Médico:</span> Medidas realizadas u ordenadas por un médico puestas en práctica para la curación o alivio de una enfermedad o lesión.<br>
+      <span class="bold">Acto Médico:</span> La conducta de un médico en ejercicio de su actividad profesional, en forma independiente y autónoma, bajo su exclusiva responsabilidad adoptada, para fines diagnóstico, tratamiento, alivio o rehabilitación de una enfermedad o lesión en relación con un paciente.<br>
+      <span class="bold">Consulta:</span> Acto Médico donde se valora la condición clínico – patológica de un paciente y sus antecedentes de salud, para confirmar o establecer un diagnóstico y adoptar una conducta.<br>
+      <span class="bold">Accidente de Trabajo:</span> Todo suceso imprevisto o repentino que sobrevenga por causa o con ocasión del trabajo, que produzca al trabajador una lesión y no provocada por el trabajador.<br>
+      <span class="bold">Atención Ambulatoria:</span> Nivel de atención primaria de salud con un procedimiento que no requiere que el paciente permanezca hospitalizado o recluido para llevarlo a cabo.<br>
+      <span class="bold">Prótesis:</span> Dispositivo o aparato diseñado para reemplazar una parte faltante del cuerpo o para hacer que una parte del cuerpo trabaje mejor.<br>
+      <span class="bold">Exclusiones:</span> Lo que no está cubierto por el Plan contratado.<br>
+      <span class="bold">Evento:</span> Suceso imprevisto que amerita atención médica, hospitalización o intervención quirúrgica.
+    </div>
+
+    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 9px;">Página 3 de 5</div>
+  </div>
+
+  <!-- ==================== HOJA 6: CONDICIONES GENERALES (PAG 2) ==================== -->
+  <div class="page" style="padding: 20px;">
+    <div style="font-size: 9px; text-align: justify; line-height: 1.3;">
+      <div class="text-center bold" style="font-size: 9px; margin-bottom: 5px;">2. VIGENCIA DEL CONTRATO DE AFILIACION:</div>
+      El contrato tiene una vigencia de doce (12) meses a partir del pago, firma del contrato con sus anexos, la activación del servicio comienza a los siete (7) días hábiles del pago, firma y entrega de anexos. Cumplidos los Plazos y la antigüedad correspondiente, exclusiones y preexistencias declaradas o no en la Planilla de Afiliación o descubiertas por los médicos de <strong>SIRCA</strong> de los beneficiarios del presente contrato.
+      
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">2.1.- RENOVACION:</div>
+      El contrato que contiene el Plan Médico, será renovado al finalizar el último día de vigencia, por un tiempo igual al anterior. Las condiciones contractuales podrán modificarse de acuerdo al efecto inflacionario y mejora del servicio. La no renovación se dará por la manifestación de voluntad motivada por cualquiera de las partes.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">3. ALCANCE Y OBJETO DEL CONTRATO:</div>
+      Lo constituye la prestación de los servicios Médicos en el plan contratado por LA PRESTADORA DEL SERVICIO (Hospital El Rosario, C.A.) de forma única y exclusiva, del afiliado deberá seguir pagando la mensualidad; y b) La exigencia del pago de la anualidad completa de forma inmediata. Agotada este monto antes de la anualidad, El Afiliado, deberá pagar el equivalente a las cuotas de los meses restantes, hasta completar los doce (12) meses del plan contratado. En cuanto al límite de la cobertura, los gastos en los cuales incurra el afiliado, por servicios intrahospitalarios, de clínica, laboratorio, consultas y estudios, serán en base a las condiciones del Plan Médico y la cobertura contratada.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">4. SERVICIOS ACTIVADOS CON EL PLAN A LOS SIETE (7) DÍAS DE CONTRATACIÓN</div>
+      Servicios de los que disfruta el Afiliado, una vez activado el Plan contratado los cuales son: (VER CUADRO DESCRIPTIVO DEL PLAN ANEXO 2).
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">5. REEMBOLSOS:</div>
+      No será reembolsado el costo de servicio médico prestado en otra institución hospitalaria.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">6. ACCESO A LOS SERVICIOS (Consultas Básicas, Consultas Especializadas y Paraclínicos):</div>
+      El Beneficiario deberá comunicarse con el Call Center de Citas, quien canalizará cualquier consulta (básica o especializada) y paraclínicos donde al momento de recibir el servicio deberá identificarse (Cedula o Partida de Nacimiento según el caso), según la antigüedad con el plan.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">7. HORARIOS DE ATENCIÓN DE EMERGENCIA:</div>
+      El servicio de emergencias será las 24 horas del día, los 365 días del año, será brindado por LA PRESTADORA DEL SERVICIO (Hospital El Rosario, C.A.) de forma única y exclusiva, siempre y cuando las mismas estén dentro del Plan Contratado por el Afiliado y no formen parte de las excepciones y preexistencias declaradas o no, y que no puedan ser atendidas dentro del horario de consulta el cual es de Lunes a Viernes en horario de 8:00 am a 3:00 pm. Para el servicio de emergencia debe presentarse directamente a la emergencia de LA PRESTADORA DE SERVICIO e identificarse con (cedula de identidad y/o partida de nacimiento según el caso) e indicar que es afiliado de SIRCA y de acuerdo a las condiciones del servicio de su plan se le prestarán el servicio.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">7. 1. PREEXISTENCIA:</div>
+      El Plan contratado no cubre preexistencias de ningún tipo, declaradas o no. En caso de la atención de una emergencia derivada de alguna preexistencia, se le dará al beneficiario la consulta de emergencia y se remitirá a su médico tratante particular; si requiriere el beneficiario una atención inmediata en relación o derivada de la preexistencia, correrá por su única y exclusiva cuenta, y la Prestadora de Servicio no se hará responsable por la atención ni SIRCA.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">8. CESION DE DERECHOS:</div>
+      No son transferibles los derechos de los afiliados.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">9. CUOTA MENSUAL DE AFILIACIÓN:</div>
+      La cuota mensual debe ser pagada dentro de los cinco (5) primeros días de cada mes, independientemente de la fecha en que se haya afiliado. Dicha cuota por efecto inflacionario podrá ser incrementada, previa notificación al afiliado de treinta (30) días. La falta de pago suspenderá el servicio; su reactivación será a los siguientes siete (7) días hábiles siguientes al pago pendiente. El Afiliado perderá su condición transcurridos sesenta (60) días en mora; es decir, dos cuotas no pagadas. El Afiliado podrá excluir beneficiarios, lo cual deberá notificar por escrito a SIRCA, por lo menos (03) días antes del vencimiento de la cuota mensual.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">10. RESPONSABILIDAD DE LAS PARTES:</div>
+      SIRCA no tendrá responsabilidad sobre preexistencias declaradas o no y exclusiones establecidas en la cláusula 12 del presente condicionado. El beneficiario tendrá diez (10) días continuos para indicar cualquier reclamación sobre los servicios, pasado este este tiempo se entenderá que desiste de cualquier reclamación.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">11. MOTIVOS DE ANULACIÓN DEL CONTRATO:</div>
+      1. La omisión y/o alteración de información o suministro de información falsa o fraudulenta del Afiliado y/o beneficiarios en el contrato, Anexo 1 o documentos que forman parte de él, serán causa suficiente para anular el contrato, por cuanto configuran un acto de mala fe del Afiliado y/o beneficiarios, considerándose este tipo de conducta como dolosa. Constituyéndose así, en una circunstancia eximente de responsabilidad de la cobertura que ofrece SIRCA.<br>
+      2. La existencia y/o preexistencia, de una enfermedad grave (cardiopatías crónicas, enfermedades coronarias agudas o crónicas, enfermedades cerebrovasculares agudas, enfermedades digestivas hemorrágicas, enfermedades metabólicas, enfermedades renales crónicas y reagudizada, enfermedades pulmonares crónicas EBOP y EPOP, enfermedades neurológicas crónicas), no declarada al momento de la suscripción del contrato, aun conociéndola o no el afiliado y/o sus beneficiarios. De igual manera, el diagnostico de este tipo de enfermedad durante la vigencia del contrato, será causa de anulación, por cuanto SIRCA expresamente deja constancia que no ofrece la cobertura para diagnósticos ni tratamientos de cualquier tipo de enfermedad grave. Se destaca que SIRCA no cuenta con los recursos, materiales, ni médicos, ni medios suficientes para asumir la cobertura de una enfermedad grave y su tratamiento.<br>
+      3. La existencia y/o preexistencia, de enfermedades oncológicas no declarada al momento de la suscripción del contrato, aun conociéndola o no la TITULAR y/o sus beneficiarios. De igual manera, el diagnostico de este tipo de enfermedad durante la vigencia del contrato, será causa de anulación, por cuanto SIRCA expresamente deja constancia que no ofrece la cobertura para diagnósticos ni tratamientos de cualquier tipo de enfermedad oncológica. Se destaca que SIRCA no cuenta con los recursos, materiales, ni médicos, ni medios suficientes para asumir la cobertura de una enfermedad oncológica y su tratamiento.<br>
+      4. La falta de pago oportuna de cualquiera de las cuotas establecidas en este contrato.<br>
+      5. Por intento de suplantación de identidad o fraude por parte del Afiliado en el servicio médico que requiera.<br>
+      6. Cuando el Afiliado este en mora en dos (60 días) o más cuotas de su plan.<br>
+      7. Por comportamiento inadecuado e respetuoso hacia el personal y publico del Hospital El Rosario, C.A.; y personal de Salud Integral El Rosario, C.A. (SIRCA)<br>
+      8. Por causas imputables al Afiliado o beneficiarios ocurra la anulación del presente contrato.<br>
+      9. Cuando la utilización del servicio supere el monto pagado, en el caso el Afiliado esta cancelando su plan por cuotas, deberá cancelar a SIRCA, la diferencia entre lo pagado a través de sus cuotas mensuales y lo consumido por asistencia médica prestada.<br>
+      10. Si el Afiliado le fuera anulado el contrato y no hubiese usado el servicio los beneficiarios, se considerará consumido el monto total de la cobertura, como indemnización por daños y perjuicios a favor de SIRCA. En cualquiera de los casos, SIRCA, tendrá potestad y derecho de suspender el servicio médico objeto del contrato, y relevará ala Prestadora de Servicio de cualquier compromiso de atención de asistencia médica, hasta tanto SIRCA, convenga en la reactivación del mismo.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">12. EXCLUSIONES DEL SERVICIO:</div>
+      Se establece de manera clara y precisa, y queda en conocimiento del Afiliado y/o beneficiarios, que SIRCA ha determinado, por razones de materiales, y disponibilidad, la exclusión de la prestación del servicio médico directa o indirectamente, próxima o remotamente, de las patologías, enfermedades, cirugías, tratamientos, entre otros procedimientos médicos y estudios que a continuación se detallan:<br>
+      1º Preexistencias declaradas o no por el Afiliado y/o beneficiarios en la Declaración de Salud de la Planilla de Afiliación.<br>
+      2º Embarazos concebidos antes y durante el primer año de contrato. Aclarándose que la cobertura, luego del primer año de contrato será para partos simple, quedando excluidos los partos múltiples. El recién nacido no está amparado por el plan.<br>
+      3º Defectos físicos preexistentes, originados u ocurridos antes de esta contratación.<br>
+      4º Enfermedades congénitas y/o genéticas.<br>
+      5º Secuelas de accidentes, enfermedades, intervenciones quirúrgicas ocurridas antes de la vigencia de este contrato.<br>
+      6º Consecuencias o complicaciones por atención médica o cirugías realizadas con particulares o en otras instituciones a la aquí establecida.<br>
+      7º Cirugía plástica cosmética o reparadora.<br>
+      8º Cirugía Cardiovascular.<br>
+      9º Adquisición o alquiler de prótesis de cualquier tipo, tales como: marcapasos, válvulas cardíacas, muletas, aparatos para mejorar la audición, aparatos para el tratamiento de enfermedades y/o intervenciones quirúrgicas y cualquier otro aparato o prótesis similar o afín.<br>
+      9.1. Dispositivos Intrauterinos.
+    </div>
+
+    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 9px;">Página 4 de 5</div>
+  </div>
+
+  <!-- ==================== HOJA 7: CONDICIONES GENERALES (PAG 3) ==================== -->
+  <div class="page" style="padding: 20px;">
+    <div style="font-size: 9px; text-align: justify; line-height: 1.3;">
+      10º Trasplantes de órganos y cirugías con rayos láser.<br>
+      11º Litotricia.<br>
+      12º Tratamientos de enfermedades y operaciones odontológicas o maxilofaciales con fines cosméticos o estéticos, tratamientos de conducto.<br>
+      13º Enfermedades de transmisión sexual y sus consecuencias.<br>
+      14º Enfermedades epidemiológicas (epidemias y pandemias) de cualquier tipo.<br>
+      15º Síndrome de inmunodeficiencia adquirida (SIDA) y sus consecuencias.<br>
+      16º Enfermedades tropicales y lesiones causadas por accidentes catastróficos (terremotos, temblor de tierra, inundaciones, maremotos).<br>
+      17º Enfermedades y lesiones ocurridas por radiaciones nucleares o cualquier tipo de radiación, por exposición directa o indirecta y sus consecuencias.<br>
+      18º Alcoholismo.<br>
+      19º Tentativa de suicidio y deficiencias mentales, curas de reposo y todo tipo de consultas y tratamientos psicológicos y/o psiquiátricos.<br>
+      19.1. Uso de estupefacientes o sustancias psicotrópicas.<br>
+      20º Tratamientos de infertilidad, impotencia y frigidez.<br>
+      21º Tratamientos de radioterapia, cobaltoterapia, quimioterapia o cualquier otra aplicación de elementos radiactivos o radiaciones con fines terapéuticos, sea cual fuere su medio, tipo, técnica, en cualquier versión y/o sus complicaciones.<br>
+      22º Fisioterapia y rehabilitación.<br>
+      23º Lentes correctivos.<br>
+      24º Tratamientos quirúrgicos para la obesidad.<br>
+      25º Enfermedades, padecimientos, lesiones o accidentes derivados de: a) Ingesta de alcohol. b) Participación en hechos delictivos, riñas o alteraciones del orden público. c) Actos de guerra declarada o no. d) Actos en servicio militar o policial. e) Motines, insurrecciones, conmoción civil, revoluciones, tumultos populares, rebeliones. f) Actos contrarios a lo establecido en providencias gubernamentales y leyes del país. g) Tratamientos y enfermedades que requieran diálisis peritoneal o por vía sanguínea en forma sucesiva y permanente. h) Tratamientos, enfermedades con condiciones que ameriten el uso de sangre y/o hemoderivados.<br>
+      26ºEnfermedades Graves (cardiopatías crónicas, enfermedades coronarias agudas o crónicas, enfermedades cerebrovasculares agudas, enfermedades digestivas hemorrágicas, enfermedades metabólicas, enfermedades pulmonares crónicas EBOP y EPOP, enfermedades neurológicas crónicas).<br>
+      27º Procedimientos o exámenes de diagnóstico requeridos rutinariamente a los titulares de un colectivo por normas de seguridad industrial (Pre y Post vacacional).<br>
+      28º Enfermedad Neoplásica benigna o maligna y sus complicaciones en cualquier tipo o grado (diagnosticado, con síntomas o sospecha)<br>
+      28.1. ENFERMEDADES ONCOLOGICAS de cualquier grado, nivel o clase. Las personas que hayan sido sometidas a tratamientos oncológicos (terapia anti monoclonal, bloqueo hormonal en cualquiera que fuere su método y/o método de aplicación, tipo, técnica o versión y/o sus complicaciones).<br>
+      28.2. Las personas que sean insulino dependientes.<br>
+      29º Personas con COVID - 19, con síntomas, o sospecha de COVID - 19 no son afiliables mientras tengan la enfermedad. Lo mismo aplica para todos los cuadros de enfermedades agudas.<br>
+      30º No tiene cobertura para emergencia, hospitalización y UCI en caso de COVID - 19 (diagnosticado, con síntomas o sospecha del virus).<br>
+      31º Quiste de ovario torcido.<br>
+      32º Vía Central.<br>
+      33º ODONTOLOGÍA: Exodoncias que incluyan cirugías y/o con doble carga de anestesia, Imágenes básicas y/o especializadas, aparatología, prótesis.<br>
+      34º Quemaduras en cualquier grado.<br>
+      35º Neurocirugía.<br>
+      36º ENFERMEDADES RENALES CRONICAS de cualquier grado, nivel o clase, lesiones renales agudas, crónicas y reagudizada.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">13. PENALIDADES EN CONSULTAS:</div>
+      Si por causas inherentes al afiliado, no se presenta a cualquier consulta programada, sin notificación de cancelación de la misma, por lo menos con veinticuatro (24) horas de anticipación, será descontada del monto de su cobertura. Aplica para cualquier especialidad y/o examen o estudio. Las consultas de cortesía una vez programadas, y sin notificación de cancelación de la misma, por lo menos con veinticuatro (24) horas de anticipación no son reagendables.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">14. DISMINUCIÓN DE COBERTURA:</div>
+      Los servicios médicos contratados por el Afiliado, serán hasta cubrir el monto máximo de la cobertura del plan contratado para cada uno, del Afiliado y/o beneficiarios, de forma acumulativa y por persona, durante el año de vigencia del contrato suscrito. Agotada dicha cantidad, los gastos que se generen por servicios médicos, de parte afiliado correrá por cuenta de éste, sin que exista responsabilidad alguna por parte de Salud Integral El Rosario, C.A., o del centro de atención hospitalaria (Hospital El Rosario, C.A.) con respecto a dicho excedente.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">15. DESCUENTO DE SERVICIOS:</div>
+      Los servicios médicos utilizados por el Afiliado serán descotados de manera progresiva y en el momento en que sean prestados. El plan es de Medicina Preventiva, por lo cual, de darse descuentos de servicios no acorde al porcentaje mensual estimado del monto para cubrir los servicios con relación a la cuota mensual, SIRCA, evaluará para indicar: a) La suspensión del servicio hasta alcanzar el tiempo equivalente según el importe mensual (en este caso el afiliado deberá seguir pagando la mensualidad); y b) La exigencia del pago de la anualidad completa de forma inmediata. Agotada este monto antes de la anualidad, El Afiliado, deberá pagar el equivalente a las cuotas de los meses restantes, hasta completar los doce (12) sin que exista responsabilidad alguna por parte de SIRCA, o de la Prestadora de Servicio, con respecto a dicho pago.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">16. MODIFICACIÓN DE LAS CONDICIONES:</div>
+      Salud Integral El Rosario, C.A., tendrá derecho de cambiar el contenido de las condiciones generales del contrato cuando lo considere conveniente, a fin de mejorar la prestación del servicio y hará del conocimiento contratantes sobre dichas modificaciones en los términos y medios establecidos.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">17. CONOCIMIENTO Y ACEPTACION DE LA TITULAR:</div>
+      El afiliado declara que conoce y acepta todas y cada una de las condiciones establecidas en el presente contrato, para la prestación de servicio y del plan aquí contratado, las cuales se encuentra especificadas en: el presente contrato, planilla de afiliación y cuadro de planes, todo lo cual ya leido y acepta en todo su contenido.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">18. NOTIFICACIONES DE LAS PARTES:</div>
+      Para cualquier información que las partes necesiten notificarse lo podrán realizar a través de comunicación escrita y por correo electrónico; para lo que se indican los siguientes datos de las partes: El Afiliado: La dirección, correo electrónico y teléfono que indicó en la Planilla de Afiliación de él a título personal como de sus Beneficiarios y/o Representados si fuera el caso; SIRCA: ubicado en la carretera K, Edificio Hospital El Rosario, Piso 1 Local S/N, Sector 5 Bocas, Municipio Cabimas del Estado Zulia. Correo Electrónico: admonsirca@gmail.com; Teléfono: 0424-6537074.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">17. DOMICILIO JUDICIAL:</div>
+      LAS PARTES, eligen para los efectos del presente contrato como domicilio especial y con exclusión de cualquier otro, a la ciudad y Municipio Cabimas del estado Zulia, a la Jurisdicción de dichos Tribunales declaran someterse.
+
+      <div class="text-center bold" style="font-size: 9px; margin: 8px 0 5px 0;">18. DE LOS EJEMPLARES:</div>
+      Del presente contrato se hacen dos (2) ejemplares con un mismo tenor y a un solo efecto. En Cabimas, a los {{ dayNumber }} días del mes de {{ monthText }} del 2026.
+    </div>
+
+    <!-- Signatures -->
+    <div class="signature-container" style="margin-top: 30px;">
+      <div class="signature-box">
+        <strong>POR SIRCA</strong>
+      </div>
+      <div class="signature-box">
+        <strong>EL AFILIADO</strong>
+      </div>
+    </div>
+
+    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 9px;">Página 5 de 5</div>
+  </div>
+
+  <!-- ==================== HOJA 8: ANEXO 1 ==================== -->
+  <div class="page" style="padding: 20px;">
+    <div style="text-align: center; margin-bottom: 20px;">
+      <span style="font-size: 14px; font-weight: bold;">ANEXO 1</span><br>
+      <span style="font-size: 12px; font-weight: bold;">CUADRO DEL PLAN PARA TITULAR Y/O FAMILIARES</span>
+    </div>
+
+    <table class="data-table" style="font-size: 9px;">
+      <thead>
+        <tr>
+          <th style="width: 15%; font-size: 9.5px;">CONDICION</th>
+          <th style="width: 35%; font-size: 9.5px;">NOMBRE Y APELLIDO</th>
+          <th style="width: 15%; font-size: 9.5px;">C.I.</th>
+          <th style="width: 10%; font-size: 9.5px;">EDAD</th>
+          <th style="width: 15%; font-size: 9.5px;">PLAN</th>
+          <th style="width: 15%; font-size: 9.5px; text-align: right;">COBERTURA ANUAL</th>
+          <th style="width: 15%; font-size: 9.5px; text-align: right;">COSTO MENSUAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Titular Row if present -->
+        {{#if titularRow}}
+        <tr>
+          <td class="bold">TITULAR</td>
+          <td>{{titularRow.name}}</td>
+          <td>{{titularRow.typeIdentityCard}}-{{titularRow.identityCard}}</td>
+          <td>{{titularRow.age}} AÑOS</td>
+          <td>{{titularRow.planName}}</td>
+          <td class="text-right">${{titularRow.coverage}}</td>
+          <td class="text-right">${{titularRow.monthlyCost}}</td>
+        </tr>
+        {{/if}}
+        <!-- Beneficiaries Row -->
+        {{#each beneficiariesRow}}
+        <tr>
+          <td>BENEFICIARIO</td>
+          <td>{{name}}</td>
+          <td>{{typeIdentityCard}}-{{identityCard}}</td>
+          <td>{{age}} AÑOS</td>
+          <td>{{planName}}</td>
+          <td class="text-right">${{coverage}}</td>
+          <td class="text-right">${{monthlyCost}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+</body>
+</html>

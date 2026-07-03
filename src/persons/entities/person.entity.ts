@@ -28,6 +28,11 @@ export enum TypeIdentityCard {
   PN = 'PN',
 }
 
+const decimalTransformer = {
+  to: (value: number | null) => value,
+  from: (value: string | null) => (value === null ? null : Number(value)),
+};
+
 @Entity('persons')
 @Unique(['typeIdentityCard', 'identityCard'])
 export class Person {
@@ -48,6 +53,51 @@ export class Person {
 
   @Column({ type: 'boolean', name: 'gender', nullable: true })
   gender?: boolean;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  phone?: string;
+
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'alternate_phone' })
+  alternatePhone?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  email?: string;
+
+  @Column({ type: 'text', nullable: true })
+  address?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  city?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  state?: string;
+
+  @Column({ type: 'varchar', length: 10, nullable: true, name: 'postal_code' })
+  postalCode?: string;
+
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    transformer: decimalTransformer,
+  })
+  weight?: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 4,
+    scale: 2,
+    nullable: true,
+    transformer: decimalTransformer,
+  })
+  height?: number;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  occupation?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'legal_representative' })
+  legalRepresentative?: string;
 
   @ManyToOne('Plan', (plan: Plan) => plan.persons, { nullable: true })
   @JoinColumn({ name: 'plan_id' })
