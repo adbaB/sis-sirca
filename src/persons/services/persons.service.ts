@@ -17,7 +17,7 @@ import { InvoiceLineCategory } from '../../billing/enums/invoice-line-category.e
 import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { BillingService } from '../../billing/services/billing.service';
-import { getBillingMonth } from '../../billing/utils/billing-month.util';
+import { getBillingMonth } from '../../common/utils/date.util';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractsService } from '../../contracts/services/contracts.service';

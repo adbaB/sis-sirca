@@ -5,12 +5,16 @@ import { PaymentSplit, TransactionResult } from '../interfaces/payment.interface
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { Payment, PaymentStatus } from '../../entities/payment.entity';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
-import { DateTime } from 'luxon';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Surplus, SurplusStatus } from '../../entities/surplus.entity';
 import { InvoiceService } from '../../invoices/services/invoice.service';
 import { SurplusService } from '../../services/surplus.service';
+import {
+  parseDateToCaracas,
+  getCaracasTodayJSDate,
+  formatToISODateString,
+} from '../../../common/utils/date.util';
 
 @Injectable()
 export class PaymentService {
@@ -65,37 +69,10 @@ export class PaymentService {
     }
 
     try {
-      let paymentDate = new Date();
+      let paymentDate = getCaracasTodayJSDate();
       if (dto.datePaymentReceipt) {
-        const raw = dto.datePaymentReceipt.trim();
         const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
-
-        // Try ISO first (YYYY-MM-DD)
-        let dt = DateTime.fromISO(raw, { zone: 'America/Caracas' });
-
-        // Zelle receipts use US format (MM/DD/YYYY)
-        if (!dt.isValid && isZelle) {
-          dt = DateTime.fromFormat(raw, 'MM/dd/yyyy', { zone: 'America/Caracas' });
-          if (!dt.isValid) {
-            dt = DateTime.fromFormat(raw, 'MM-dd-yyyy', { zone: 'America/Caracas' });
-          }
-        }
-
-        if (!dt.isValid) {
-          dt = DateTime.fromFormat(raw, 'dd/MM/yyyy', { zone: 'America/Caracas' });
-        }
-        if (!dt.isValid) {
-          dt = DateTime.fromFormat(raw, 'dd-MM-yyyy', { zone: 'America/Caracas' });
-        }
-
-        // Fallback for non-Zelle if it happens to be MM/DD/YYYY
-        if (!dt.isValid && !isZelle) {
-          dt = DateTime.fromFormat(raw, 'MM/dd/yyyy', { zone: 'America/Caracas' });
-          if (!dt.isValid) {
-            dt = DateTime.fromFormat(raw, 'MM-dd-yyyy', { zone: 'America/Caracas' });
-          }
-        }
-
+        const dt = parseDateToCaracas(dto.datePaymentReceipt, isZelle);
         if (!dt.isValid) {
           throw new BadRequestException('Formato de fecha de recibo inválido');
         }
@@ -307,9 +284,7 @@ export class PaymentService {
   private async getExchangeRateOrThrow(date: Date): Promise<ExchangeRate> {
     const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(date);
     if (!exchangeRate) {
-      const dateFormatted = DateTime.fromJSDate(date)
-        .setZone('America/Caracas')
-        .toFormat('yyyy-MM-dd');
+      const dateFormatted = formatToISODateString(date);
       throw new BadRequestException(
         `No se encontró la tasa de cambio para la fecha ${dateFormatted}.`,
       );
@@ -597,7 +572,7 @@ export class PaymentService {
         throw new NotFoundException(`Pago con ID ${id} no encontrado`);
       }
 
-      const dt = DateTime.fromISO(newDateStr, { zone: 'America/Caracas' });
+      const dt = parseDateToCaracas(newDateStr);
       if (!dt.isValid) {
         throw new BadRequestException('Formato de fecha inválido');
       }

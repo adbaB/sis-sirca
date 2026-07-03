@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import ExcelJS from 'exceljs';
-import { DateTime } from 'luxon';
 import { DataSource } from 'typeorm';
+import { formatToISODateString, getCaracasDateTime } from '../common/utils/date.util';
 import { PdfService } from '../pdf/services/pdf.service';
 import {
   applyGrandTotalStyle,
@@ -228,31 +228,22 @@ export class SipCommissionsService {
   private checkIsNew(row: SipCommissionQueryRow): boolean {
     const affiliationDateStr = this.formatToDateString(row.affiliation_date);
     const issueDateStr = this.formatToDateString(row.issue_date);
-    const nextIssueDateStr = DateTime.fromJSDate(
-      row.issue_date instanceof Date ? row.issue_date : new Date(row.issue_date),
-    )
-      .setZone('America/Caracas')
-      .plus({ months: 1 })
-      .toFormat('yyyy-MM-dd');
+    const nextIssueDateStr = formatToISODateString(
+      getCaracasDateTime(row.issue_date).plus({ months: 1 }),
+    );
 
     return affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
   }
 
   private checkIsExtemporaneo(row: SipCommissionQueryRow): boolean {
-    const paymentDateStr = DateTime.fromJSDate(
-      row.payment_date instanceof Date ? row.payment_date : new Date(row.payment_date),
-    )
-      .setZone('America/Caracas')
-      .toFormat('yyyy-MM-dd');
+    const paymentDateStr = this.formatToDateString(row.payment_date);
     const dueDateStr = this.formatToDateString(row.due_date);
 
     return paymentDateStr > dueDateStr;
   }
 
   private formatToDateString(dateVal: Date | string): string {
-    if (!dateVal) return '';
-    const parsedDate = dateVal instanceof Date ? dateVal : new Date(dateVal);
-    return parsedDate.toISOString().slice(0, 10);
+    return formatToISODateString(dateVal);
   }
 
   /**

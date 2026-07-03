@@ -16,6 +16,7 @@ import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
 import { fetchReceiptAsBase64 } from '../utils/image-fetcher.util';
+import { formatDateES, getCaracasNow, getCaracasTodayJSDate } from '../../common/utils/date.util';
 
 @Injectable()
 export class PaymentPdfCronService {
@@ -65,12 +66,7 @@ export class PaymentPdfCronService {
 
     this.logger.log(`CRON [payment-pdf]: Procesando ${payments.length} pago(s)...`);
 
-    const today = new Date().toLocaleDateString('es-VE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      timeZone: 'America/Caracas',
-    });
+    const today = formatDateES(getCaracasNow(), 'dd/MM/yyyy');
 
     const { invoices, validPayments } = await this.buildInvoicesData(payments, today);
 
@@ -309,7 +305,7 @@ export class PaymentPdfCronService {
   }
 
   private async markPaymentsAsSent(payments: Payment[]): Promise<void> {
-    const now = new Date();
+    const now = getCaracasTodayJSDate();
     for (const payment of payments) {
       payment.sendAt = now;
     }

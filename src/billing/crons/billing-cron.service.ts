@@ -8,6 +8,13 @@ import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
 import { SurplusService } from '../services/surplus.service';
+import {
+  getCaracasNow,
+  getStartOfMonth,
+  getEndOfMonth,
+  getDueDate,
+  getCaracasTodayJSDate,
+} from '../../common/utils/date.util';
 
 @Injectable()
 export class BillingCronService {
@@ -27,27 +34,19 @@ export class BillingCronService {
     const chunkSize = 100;
     let offset = 0;
 
-    const now = new Date();
+    const now = getCaracasNow();
     // Calculate the target month (next month) since invoices are generated on the 25th of the current month
-    const targetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const targetDate = now.plus({ months: 1 });
 
     // 1st of the target month
-    const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+    const startOfMonth = getStartOfMonth(targetDate);
     // Last millisecond of the target month
-    const endOfMonth = new Date(
-      targetDate.getFullYear(),
-      targetDate.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-      999,
-    );
+    const endOfMonth = getEndOfMonth(targetDate);
     // Let's set a due date for the 5th of the target month
-    const dueDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 5);
+    const dueDate = getDueDate(targetDate, 5);
 
     // Create billingMonth string YYYY-MM
-    const billingMonth = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    const billingMonth = targetDate.toFormat('yyyy-MM');
 
     while (true) {
       const contracts = await this.contractRepository.find({
@@ -161,7 +160,7 @@ export class BillingCronService {
       const invoice = queryRunner.manager.create(Invoice, {
         contract: contract,
         billingMonth: billingMonth,
-        issueDate: new Date(),
+        issueDate: getCaracasTodayJSDate(),
         dueDate: dueDate,
         baseAmount: totalAmount,
         totalAmount: totalAmount,

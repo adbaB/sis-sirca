@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DateTime } from 'luxon';
 import { DataSource, In, IsNull, QueryRunner, Repository } from 'typeorm';
+import { getCaracasTodayJSDate } from '../../common/utils/date.util';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
@@ -69,7 +69,7 @@ export class SurplusService {
         relations: ['payment', 'payment.person', 'contract'],
       });
 
-      const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
+      const fechaVe = getCaracasTodayJSDate();
       let exchangeRate: ExchangeRate | null = null;
       let remainingBalanceUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
 
@@ -136,7 +136,7 @@ export class SurplusService {
 
           // Create a new Payment record applying this surplus segment to the invoice
           const surplusPayment = queryRunner.manager.create(Payment, {
-            paymentDate: new Date(),
+            paymentDate: getCaracasTodayJSDate(),
             status: PaymentStatus.COMPLETED,
             invoice: invoice,
             person: surplus.payment ? surplus.payment.person : null,

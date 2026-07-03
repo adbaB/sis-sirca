@@ -11,6 +11,7 @@ import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.en
 import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DataCleaned } from '../interface/data-cleaned.interface';
+import { excelDateToDateString } from '../../common/utils/date.util';
 
 @Injectable()
 export class SyncService {
@@ -158,9 +159,7 @@ export class SyncService {
   }
 
   excelDateToJSDate(serial: number): string | null {
-    if (!serial || isNaN(serial)) return null;
-    const date = new Date((serial - 25569) * 86400 * 1000);
-    return date.toISOString().split('T')[0]; // Retorna YYYY-MM-DD
+    return excelDateToDateString(serial);
   }
 
   private async saveDataToDatabase(data: DataCleaned[]): Promise<void> {

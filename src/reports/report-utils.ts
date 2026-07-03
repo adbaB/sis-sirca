@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { readFile, access } from 'fs/promises';
 import { Logger } from '@nestjs/common';
-import { DateTime } from 'luxon';
+import { formatDateES as centralFormatDateES, getCaracasNow } from '../common/utils/date.util';
 import { join } from 'path';
 import { DataSource } from 'typeorm';
 
@@ -41,13 +41,8 @@ export const MONTH_NAMES_ES = [
 // Date & timestamp helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Format a Date or ISO date string as DD-MM-YYYY using Luxon and
- * the America/Caracas timezone.
- */
 export const formatDateES = (date: Date | string): string => {
-  const parsedDate = date instanceof Date ? date : new Date(`${date}T00:00:00`);
-  return DateTime.fromJSDate(parsedDate).setZone('America/Caracas').toFormat('dd-MM-yyyy');
+  return centralFormatDateES(date);
 };
 
 /**
@@ -55,7 +50,7 @@ export const formatDateES = (date: Date | string): string => {
  * Venezuela's timezone (America/Caracas).
  */
 export const getGeneratedAtTimestamp = (): string => {
-  return new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
+  return getCaracasNow().toFormat('d/M/yyyy, h:mm:ss a');
 };
 
 // ---------------------------------------------------------------------------
