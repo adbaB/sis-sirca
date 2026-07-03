@@ -12,6 +12,7 @@ import { TypeIdentityCard } from '../persons/entities/person.entity';
 import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 import { DataSource } from 'typeorm';
+import { DateTime } from 'luxon';
 
 interface UserState {
   step:
@@ -962,7 +963,7 @@ export class ChatbotService {
 
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
-      const datePaymentReceipt = state.extracted_data?.fecha as string | undefined;
+      const datePaymentReceipt = DateTime.now().setZone('America/Caracas').toISODate() ?? undefined;
       const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
       // Build OCR metadata to persist alongside the payment (exclude receiptUrl which has its own column)
