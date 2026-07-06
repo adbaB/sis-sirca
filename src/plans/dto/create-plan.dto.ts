@@ -30,6 +30,23 @@ export class CreatePlanDto {
   @Type(() => Number)
   commissionAmount?: number;
 
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  coverage: number;
+
+  @IsInt()
+  @Min(2)
+  @IsOptional()
+  @Type(() => Number)
+  minMonths?: number = 2;
+
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  minAge?: number = 0;
+
   @IsEnum(PlanStatus)
   @IsOptional()
   status?: PlanStatus;
