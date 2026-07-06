@@ -16,8 +16,11 @@ describe('PlansService', () => {
     id: '1',
     name: 'Basic Plan',
     maxAge: 30,
+    minAge: 0,
     amount: 10,
     commissionAmount: 0,
+    coverage: 5000,
+    minMonths: 2,
     status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -57,7 +60,10 @@ describe('PlansService', () => {
       const createPlanDto: CreatePlanDto = {
         name: 'Basic Plan',
         maxAge: 30,
+        minAge: 0,
         amount: 10,
+        coverage: 5000,
+        minMonths: 2,
       };
 
       jest.spyOn(repository, 'create').mockReturnValue(mockPlan);

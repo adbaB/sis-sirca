@@ -51,12 +51,24 @@ describe('Report Utils', () => {
       expect(name).toBe('Todos los Asesores');
     });
 
-    it('should return the advisor name from the database if found', async () => {
-      (mockDataSource.query as jest.Mock).mockResolvedValue([{ name: 'Alberto Basabe' }]);
+    it('should return the advisor name with code if found with code', async () => {
+      (mockDataSource.query as jest.Mock).mockResolvedValue([{ name: 'Alberto Basabe', code: 5 }]);
+      const name = await fetchAdvisorName(mockDataSource as DataSource, 'advisor-123');
+      expect(name).toBe('Alberto Basabe (005)');
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        'SELECT name, code FROM advisors WHERE id = $1 AND deleted_at IS NULL',
+        ['advisor-123'],
+      );
+    });
+
+    it('should return only the advisor name if found without code', async () => {
+      (mockDataSource.query as jest.Mock).mockResolvedValue([
+        { name: 'Alberto Basabe', code: null },
+      ]);
       const name = await fetchAdvisorName(mockDataSource as DataSource, 'advisor-123');
       expect(name).toBe('Alberto Basabe');
       expect(mockDataSource.query).toHaveBeenCalledWith(
-        'SELECT name FROM advisors WHERE id = $1 AND deleted_at IS NULL',
+        'SELECT name, code FROM advisors WHERE id = $1 AND deleted_at IS NULL',
         ['advisor-123'],
       );
     });

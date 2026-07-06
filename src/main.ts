@@ -1,9 +1,9 @@
 import './instrument';
 
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { useContainer } from 'class-validator';
 import cookieParser from 'cookie-parser';
@@ -24,6 +24,8 @@ async function bootstrap(): Promise<void> {
       whitelist: true,
     }),
   );
+
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   useContainer(app.select(AppModule), { fallbackOnErrors: true });
 

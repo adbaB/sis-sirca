@@ -99,7 +99,7 @@ export class ProjectionReportService {
         cp.role AS person_role,
         SUM(CASE WHEN cp.role = 'AFILIADO' THEN COALESCE(pl.amount, 0) ELSE 0 END) OVER(PARTITION BY c.id) AS contract_total_amount,
         COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
-        COALESCE(adv.name, 'Sin asesor') AS advisor_name
+        COALESCE(adv.name || ' (' || CASE WHEN adv.code < 1000 THEN LPAD(adv.code::text, 3, '0') ELSE adv.code::text END || ')', 'Sin asesor') AS advisor_name
       FROM contracts c
       JOIN contract_persons cp ON cp.contract_id = c.id AND cp.deleted_at IS NULL
       JOIN persons p ON cp.person_id = p.id AND p.deleted_at IS NULL
