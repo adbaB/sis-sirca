@@ -18,6 +18,10 @@ export enum PlanStatus {
 @Entity('plans')
 @Check('CHK_plans_commission_amount', '"commission_amount" >= 0')
 @Check('CK_plans_status', "\"status\" IN ('ACTIVE', 'INACTIVE')")
+@Check('CHK_plans_coverage', '"coverage" >= 0')
+@Check('CHK_plans_min_months', '"min_months" >= 2')
+@Check('CHK_plans_min_age', '"min_age" >= 0')
+@Check('CHK_plans_age_range', '"max_age" >= "min_age"')
 export class Plan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -28,11 +32,20 @@ export class Plan {
   @Column({ type: 'int', name: 'max_age' })
   maxAge: number;
 
+  @Column({ type: 'int', name: 'min_age', default: 0 })
+  minAge: number;
+
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, name: 'commission_amount' })
   commissionAmount: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  coverage: number;
+
+  @Column({ type: 'int', name: 'min_months', default: 2 })
+  minMonths: number;
 
   @Column({
     type: 'varchar',

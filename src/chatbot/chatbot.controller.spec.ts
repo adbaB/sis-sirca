@@ -92,4 +92,47 @@ describe('ChatbotController', () => {
       expect(service.handleIncomingMessage).toHaveBeenCalledWith(body);
     });
   });
+
+  describe('handleFlowEndpoint', () => {
+    it('should send 200 OK and encrypted response on success', async () => {
+      const mockResponse = {
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+      } as unknown as Response;
+      const body = {
+        encrypted_aes_key: 'key',
+        encrypted_flow_data: 'data',
+        initial_vector: 'iv',
+      };
+
+      mockChatbotService.handleEncryptedFlowDataExchange.mockResolvedValue('encrypted_payload');
+
+      await controller.handleFlowEndpoint(body, mockResponse);
+
+      expect(service.handleEncryptedFlowDataExchange).toHaveBeenCalledWith(body);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.send).toHaveBeenCalledWith('encrypted_payload');
+    });
+
+    it('should send 500 error on service exception', async () => {
+      const mockResponse = {
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+      } as unknown as Response;
+      const body = {
+        encrypted_aes_key: 'key',
+        encrypted_flow_data: 'data',
+        initial_vector: 'iv',
+      };
+
+      mockChatbotService.handleEncryptedFlowDataExchange.mockRejectedValue(
+        new Error('Decrypt error'),
+      );
+
+      await controller.handleFlowEndpoint(body, mockResponse);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(500);
+      expect(mockResponse.send).toHaveBeenCalledWith('Error processing secure flow request.');
+    });
+  });
 });

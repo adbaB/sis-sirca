@@ -122,7 +122,9 @@ export class ReportsService {
         paidAmountUsdFormatted: paidAmountUsd.toFixed(2),
         paidAmountBsFormatted: paidAmountBs.toFixed(2),
         statusClass: statusMap[invoice.status] || 'pending',
-        advisorName: contract.advisor?.name || 'Sin asesor',
+        advisorName: contract.advisor
+          ? `${contract.advisor.name} (${contract.advisor.code})`
+          : 'Sin asesor',
       };
     });
   }

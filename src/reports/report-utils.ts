@@ -126,11 +126,21 @@ export const fetchAdvisorName = async (
   if (!advisorId) return 'Todos los Asesores';
 
   const rows = await dataSource.query(
-    'SELECT name FROM advisors WHERE id = $1 AND deleted_at IS NULL',
+    'SELECT name, code FROM advisors WHERE id = $1 AND deleted_at IS NULL',
     [advisorId],
   );
 
-  return rows && rows.length > 0 ? rows[0].name : 'Asesor No Encontrado';
+  if (rows && rows.length > 0) {
+    const advisor = rows[0];
+    const formattedCode = advisor.code
+      ? advisor.code < 1000
+        ? String(advisor.code).padStart(3, '0')
+        : String(advisor.code)
+      : '';
+    return formattedCode ? `${advisor.name} (${formattedCode})` : advisor.name;
+  }
+
+  return 'Asesor No Encontrado';
 };
 
 // ---------------------------------------------------------------------------

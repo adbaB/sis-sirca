@@ -46,12 +46,15 @@ export class ChatbotController {
 
     if (mode && token) {
       if (mode === 'subscribe' && token === verifyToken) {
-        return response.status(HttpStatus.OK).send(challenge);
+        response.status(HttpStatus.OK).send(challenge);
+        return;
       } else {
-        return response.sendStatus(HttpStatus.FORBIDDEN);
+        response.sendStatus(HttpStatus.FORBIDDEN);
+        return;
       }
     }
-    return response.sendStatus(HttpStatus.BAD_REQUEST);
+    response.sendStatus(HttpStatus.BAD_REQUEST);
+    return;
   }
 
   @Post('webhook')
@@ -74,11 +77,11 @@ export class ChatbotController {
     // Flow endpoints are decrypted and encrypted using the ChatbotService
     try {
       const encryptedResponse = await this.chatbotService.handleEncryptedFlowDataExchange(body);
-      return response.status(HttpStatus.OK).send(encryptedResponse);
+      response.status(HttpStatus.OK).send(encryptedResponse);
     } catch (error) {
       this.logger.error('Error in encrypted flow endpoint:', error);
       // Meta expects an encrypted response or a plain text error, not a JSON object
-      return response
+      response
         .status(HttpStatus.INTERNAL_SERVER_ERROR)
         .send('Error processing secure flow request.');
     }

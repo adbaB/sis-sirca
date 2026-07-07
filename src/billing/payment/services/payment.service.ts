@@ -68,14 +68,34 @@ export class PaymentService {
       let paymentDate = new Date();
       if (dto.datePaymentReceipt) {
         const raw = dto.datePaymentReceipt.trim();
-        // Try ISO first (YYYY-MM-DD), then DD/MM/YYYY, then DD-MM-YYYY
+        const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
+
+        // Try ISO first (YYYY-MM-DD)
         let dt = DateTime.fromISO(raw, { zone: 'America/Caracas' });
+
+        // Zelle receipts use US format (MM/DD/YYYY)
+        if (!dt.isValid && isZelle) {
+          dt = DateTime.fromFormat(raw, 'MM/dd/yyyy', { zone: 'America/Caracas' });
+          if (!dt.isValid) {
+            dt = DateTime.fromFormat(raw, 'MM-dd-yyyy', { zone: 'America/Caracas' });
+          }
+        }
+
         if (!dt.isValid) {
           dt = DateTime.fromFormat(raw, 'dd/MM/yyyy', { zone: 'America/Caracas' });
         }
         if (!dt.isValid) {
           dt = DateTime.fromFormat(raw, 'dd-MM-yyyy', { zone: 'America/Caracas' });
         }
+
+        // Fallback for non-Zelle if it happens to be MM/DD/YYYY
+        if (!dt.isValid && !isZelle) {
+          dt = DateTime.fromFormat(raw, 'MM/dd/yyyy', { zone: 'America/Caracas' });
+          if (!dt.isValid) {
+            dt = DateTime.fromFormat(raw, 'MM-dd-yyyy', { zone: 'America/Caracas' });
+          }
+        }
+
         if (!dt.isValid) {
           throw new BadRequestException('Formato de fecha de recibo inválido');
         }
