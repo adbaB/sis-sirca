@@ -208,9 +208,9 @@ export class SyncService {
             `[CONTRACT] Creating new contract with code "${item.contract}" (fila=${item.rowNumber}).`,
           );
           contract = await this.contractsService.create({
-            code: item.contract,
+            legacyCode: item.contract,
             affiliationDate: item.affiliationDate,
-            advisorId: advisor?.id ?? undefined,
+            advisorId: advisor ? advisor.id : '00000000-0000-0000-0000-000000000000', // Use a dummy UUID or let the service fail if advisor is strictly required
           });
         } else {
           // Update advisor on existing contract if it changed

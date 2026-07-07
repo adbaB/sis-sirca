@@ -108,17 +108,17 @@ export class AffiliatePersonDto {
 }
 
 export class CreateContractFullDto {
+  @IsOptional()
+  @IsString()
+  legacyCode?: string;
+
   @IsDateString()
   @IsNotEmpty()
   affiliationDate: string;
 
-  @IsString()
   @IsNotEmpty()
-  code: string;
-
-  @IsOptional()
   @IsUUID()
-  advisorId?: string;
+  advisorId: string;
 
   @IsOptional()
   @IsUUID()

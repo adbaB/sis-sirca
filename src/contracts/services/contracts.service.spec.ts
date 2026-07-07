@@ -9,6 +9,8 @@ import {
   EntityTarget,
 } from 'typeorm';
 
+import { SystemCounter } from '../../common/entities/system-counter.entity';
+import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
@@ -138,32 +140,33 @@ describe('ContractsService', () => {
     it('should successfully insert a contract', async () => {
       const createContractDto: CreateContractDto = {
         affiliationDate: '2023-01-01',
-        code: '1',
+        advisorId: '123',
       };
 
-      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
-      jest.spyOn(repository, 'create').mockReturnValue(mockContract);
-      jest.spyOn(repository, 'save').mockResolvedValue(mockContract);
+      const mockAdvisor = { id: '123', code: '001' };
+      const mockManager = {
+        getRepository: jest.fn().mockImplementation((entityClass) => {
+          if (entityClass === SystemCounter) {
+            return {
+              findOne: jest.fn().mockResolvedValue({ key: 'contract_code', value: 1 }),
+              save: jest.fn().mockResolvedValue(true),
+            };
+          }
+          return {
+            findOne: jest.fn().mockResolvedValue(mockAdvisor),
+            create: jest.fn().mockReturnValue(mockContract),
+            save: jest.fn().mockResolvedValue(mockContract),
+          };
+        }),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      jest.spyOn(repository.manager, 'transaction').mockImplementation(async (cb: any) => {
+        return cb(mockManager);
+      });
 
       const result = await service.create(createContractDto);
 
-      expect(repository.findOne).toHaveBeenCalledWith({ where: { code: '1' } });
-      expect(repository.create).toHaveBeenCalledWith(createContractDto);
-      expect(repository.save).toHaveBeenCalledWith(mockContract);
       expect(result).toEqual(mockContract);
-    });
-
-    it('should throw BadRequestException if contract code already exists', async () => {
-      const createContractDto: CreateContractDto = {
-        affiliationDate: '2023-01-01',
-        code: '1',
-      };
-
-      jest.spyOn(repository, 'findOne').mockResolvedValue(mockContract);
-
-      await expect(service.create(createContractDto)).rejects.toThrow(
-        'El código de contrato "1" ya está registrado.',
-      );
     });
   });
 
@@ -349,26 +352,6 @@ describe('ContractsService', () => {
       expect(result.advisor).toBeNull();
       expect(result.portfolio).toBeNull();
     });
-
-    it('should throw BadRequestException if update code is already used by another contract', async () => {
-      const updateContractDto: UpdateContractDto = {
-        code: 'existing-code',
-      };
-
-      const mockQueryBuilder = {
-        where: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({ id: '2', code: 'existing-code' }), // Different ID ('2') than updated contract ('1')
-      };
-
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
-      jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
-
-      await expect(service.update('1', updateContractDto)).rejects.toThrow(
-        'El código de contrato "existing-code" ya está registrado en otro contrato.',
-      );
-    });
   });
 
   describe('remove', () => {
@@ -497,6 +480,15 @@ describe('ContractsService', () => {
                 return mockCpRepo as unknown as Repository<Entity>;
               if (entityClass === AffiliationHistory)
                 return mockHistoryRepo as unknown as Repository<Entity>;
+              if (entityClass === Advisor)
+                return {
+                  findOne: jest.fn().mockResolvedValue({ id: 'adv-1', code: '001' }),
+                } as unknown as Repository<Entity>;
+              if (entityClass === SystemCounter)
+                return {
+                  findOne: jest.fn().mockResolvedValue({ key: 'contract_code', value: 1 }),
+                  save: jest.fn().mockResolvedValue(true),
+                } as unknown as Repository<Entity>;
               return null as unknown as Repository<Entity>;
             },
           ),
@@ -524,7 +516,7 @@ describe('ContractsService', () => {
     it('should successfully create a contract with a new person', async () => {
       const dto: CreateContractFullDto = {
         affiliationDate: '2023-01-01',
-        code: 'NEW-123',
+        advisorId: 'adv-1',
         affiliates: [
           {
             typeIdentityCard: TypeIdentityCard.V,
@@ -538,7 +530,6 @@ describe('ContractsService', () => {
 
       const result = await service.createFull(dto);
 
-      expect(repository.findOne).toHaveBeenCalledWith({ where: { code: 'NEW-123' } });
       expect(mockContractRepo.create).toHaveBeenCalled();
       expect(mockContractRepo.save).toHaveBeenCalled();
       expect(mockPersonRepo.findOne).toHaveBeenCalledWith({
@@ -550,24 +541,10 @@ describe('ContractsService', () => {
       expect(result).toEqual(mockContract);
     });
 
-    it('should throw BadRequestException if contract code already exists', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(mockContract);
-
-      const dto: CreateContractFullDto = {
-        affiliationDate: '2023-01-01',
-        code: 'DUPLICATE',
-        affiliates: [],
-      };
-
-      await expect(service.createFull(dto)).rejects.toThrow(
-        'El código de contrato "DUPLICATE" ya está registrado.',
-      );
-    });
-
     it('should throw BadRequestException if there is more than one titular', async () => {
       const dto: CreateContractFullDto = {
         affiliationDate: '2023-01-01',
-        code: 'NEW-123',
+        advisorId: 'adv-1',
         affiliates: [
           {
             typeIdentityCard: TypeIdentityCard.V,
@@ -603,7 +580,7 @@ describe('ContractsService', () => {
 
       const dto: CreateContractFullDto = {
         affiliationDate: '2023-01-01',
-        code: 'NEW-123',
+        advisorId: 'adv-1',
         affiliates: [
           {
             typeIdentityCard: TypeIdentityCard.V,

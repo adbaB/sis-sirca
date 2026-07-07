@@ -26,7 +26,6 @@
     }
     .page {
       width: 100%;
-      height: 1000px;
       page-break-after: always;
       position: relative;
     }
@@ -244,19 +243,8 @@
     }
 
     /* ── CONDITIONS PAGES 5, 6, 7 SCORING (LARGER TEXT) ─────────────────── */
-    .conditions-page {
-      font-size: 10.2px !important; /* Increased from 8px/9px */
-      line-height: 1.22 !important;
-      color: var(--text-dark);
-    }
-    .conditions-page .clause-header {
-      font-size: 10.2px !important;
-      font-weight: bold;
-      text-align: center;
-      margin: 5px 0 2px 0 !important;
-      color: var(--primary-dark);
-      text-transform: uppercase;
-    }
+    .conditions-page { font-size: 11px !important; line-height: 1.4 !important; color: var(--text-dark); text-align: justify; }
+    .clause-header { font-size: 11px !important; font-weight: bold; text-align: center; margin: 10px 0 2px 0 !important; }
   </style>
 </head>
 <body>
@@ -274,7 +262,7 @@
         <td class="title-container">PLANILLA DE AFILIACIÓN</td>
         <td class="contract-info-container">
           <strong>Nº DE CONTRATO:</strong><br>
-          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">SIR - {{ contractCode }}</span><br>
+          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span><br>
           <strong>FECHA:</strong> {{ affiliationDateFormatted }}
         </td>
       </tr>
@@ -329,25 +317,23 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th class="w-40 text-center">PLANES</th>
-          <th class="w-20 text-center">PLATA</th>
-          <th class="w-20 text-center">ORO</th>
-          <th class="w-20 text-center">PLATINO</th>
+          <th class="w-30 text-center">PLAN CONTRATADO</th>
+          <th class="w-15 text-center">CANTIDAD</th>
+          <th class="w-20 text-center">COBERTURA</th>
+          <th class="w-15 text-center">CUOTA MENSUAL</th>
+          <th class="w-20 text-center">TOTAL MENSUAL</th>
         </tr>
       </thead>
       <tbody>
+        {{#each contractedPlansList}}
         <tr>
-          <td class="bold text-center">COBERTURA</td>
-          <td class="text-center">$ 5,000.00</td>
-          <td class="text-center">$ 12,000.00</td>
-          <td class="text-center">$ 20,000.00</td>
+          <td class="bold text-center">{{name}}</td>
+          <td class="text-center">{{count}}</td>
+          <td class="text-center">$ {{coverage}}</td>
+          <td class="text-center">$ {{unitCost}}</td>
+          <td class="text-center bold">$ {{totalCost}}</td>
         </tr>
-        <tr>
-          <td class="bold text-center">CUOTA MENSUAL POR BENEFICIARIO</td>
-          <td class="text-center">$ 17 {{#if isPlata}}<strong>(X)</strong>{{/if}}</td>
-          <td class="text-center">$ 21 {{#if isOro}}<strong>(X)</strong>{{/if}}</td>
-          <td class="text-center">$ 33 {{#if isPlatino}}<strong>(X)</strong>{{/if}}</td>
-        </tr>
+        {{/each}}
       </tbody>
     </table>
 
@@ -356,15 +342,17 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th style="width: 5%;">CÓD</th>
-          <th style="width: 15%;">PLAN</th>
-          <th style="width: 10%;">PARENTESCO</th>
-          <th style="width: 30%;">APELLIDO(S) Y NOMBRE(S)</th>
-          <th style="width: 15%;">Nº C.I. O PASAPORTE</th>
-          <th style="width: 10%;">FECHA NAC.</th>
+          <th style="width: 4%;">CÓD</th>
+          <th style="width: 12%;">PLAN</th>
+          <th style="width: 8%;">COBERTURA</th>
+          <th style="width: 9%;">PARENTESCO</th>
+          <th style="width: 25%;">APELLIDO(S) Y NOMBRE(S)</th>
+          <th style="width: 12%;">Nº C.I. O PASAPORTE</th>
+          <th style="width: 8%;">FECHA NAC.</th>
+          <th style="width: 5%;">EDAD</th>
           <th style="width: 5%;">SEXO</th>
-          <th style="width: 7%;">PESO</th>
-          <th style="width: 8%;">TALLA</th>
+          <th style="width: 6%;">PESO</th>
+          <th style="width: 6%;">TALLA</th>
         </tr>
       </thead>
       <tbody>
@@ -372,10 +360,12 @@
         <tr>
           <td class="text-center">{{index}}</td>
           <td>{{planName}}</td>
+          <td>${{coverage}}</td>
           <td>{{relationship}}</td>
           <td>{{name}}</td>
           <td>{{typeIdentityCard}}-{{identityCard}}</td>
           <td>{{birthDateFormatted}}</td>
+          <td class="text-center">{{age}}</td>
           <td class="text-center">{{genderLabel}}</td>
           <td>{{weight}} kg</td>
           <td>{{height}} m</td>
@@ -385,6 +375,8 @@
         {{#each emptyRows}}
         <tr>
           <td class="text-center">{{this}}</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
           <td>&nbsp;</td>
           <td>&nbsp;</td>
           <td>&nbsp;</td>
@@ -411,7 +403,7 @@
         <td class="title-container">DECLARACIÓN DE SALUD</td>
         <td class="contract-info-container">
           <strong>Nº DE CONTRATO:</strong><br>
-          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">SIR - {{ contractCode }}</span>
+          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span>
         </td>
       </tr>
     </table>
@@ -457,31 +449,26 @@
       "DOY FE QUE EL DINERO UTILIZADO PARA EL PAGO DE LAS CUOTAS DEL PRESENTE CONTRATO PROVIENE DE UNA FUENTE LÍCITA Y POR LO TANTO, NO TIENE RELACIÓN ALGUNA CON DINERO, CAPITALES, BIENES, HABERES, VALORES O TÍTULOS PRODUCTO DE LAS ACTIVIDADES O ACCIONES DERIVADAS DE OPERACIONES ILÍCITAS PREVISTAS EN LA 'LEY ORGÁNICA CONTRA LA DELINCUENCIA ORGANIZADA Y EL FINANCIAMIENTO AL TERRORISMO'"
     </div>
 
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
-      <div style="width: 60%; font-size: 9.5px;">
-        <span class="bold">DOCUMENTOS CONSIGNADOS CON ESTA SOLICITUD:</span>
-        <div class="checkbox-list">
-          <div class="checkbox-item"><span class="checkbox-box">X</span> 1. Planilla de Afiliación FIRMADA</div>
-          <div class="checkbox-item"><span class="checkbox-box">X</span> 2. Contrato Firmado</div>
-          <div class="checkbox-item"><span class="checkbox-box">X</span> 3. Cuadro Recibo Firmado</div>
-          <div class="checkbox-item"><span class="checkbox-box">X</span> 4. Copia de C.I. del Titular</div>
-          <div class="checkbox-item"><span class="checkbox-box"></span> 5. Copia de C.I. Afiliados > 9 años</div>
-          <div class="checkbox-item"><span class="checkbox-box"></span> 6. Copia de P.N. de Afiliados &lt; 9 años</div>
-        </div>
-        
-        <div style="margin-top: 10px; border: 1px solid var(--border-color); padding: 6px; background-color: var(--bg-light); border-radius: 4px;">
-          <span class="bold">DATOS DEL ASESOR:</span><br>
-          Nombre: {{#if advisorName}}{{advisorName}}{{else}}-{{/if}}<br>
-          Código: {{#if advisorCode}}{{advisorCode}}{{else}}-{{/if}}
-        </div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px;">
+      <div style="width: 45%; text-align: center;">
+        <div style="border-top: 1px solid #000; width: 80%; margin: 0 auto 5px auto;"></div>
+        <span class="bold" style="font-size: 10px;">POR SIRCA (ASESOR)</span><br>
+        <span style="font-size: 9px;">{{#if advisorName}}{{advisorName}}{{else}}-{{/if}}</span>
       </div>
       
-      <div style="width: 35%; text-align: right;">
-        <div class="thumbprint-box">Pulgar Izquierdo</div>
-        <div class="thumbprint-box">Pulgar Derecho</div>
-        <div style="margin-top: 5px; text-align: center;">
-          <div style="border-top: 1px solid #000; width: 150px; margin: 15px auto 0 auto;"></div>
-          <span style="font-size: 8px;" class="bold">FIRMA DEL AFILIADO</span>
+      <div style="width: 55%; display: flex; justify-content: flex-end; align-items: flex-end;">
+        <div style="display: flex; flex-direction: column; align-items: center; margin-right: 15px;">
+          <div style="width: 50px; height: 65px; border: 1px solid #000; border-radius: 4px; margin-bottom: 5px;"></div>
+          <span style="font-size: 8px;">Pulgar Izq.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; margin-right: 20px;">
+          <div style="width: 50px; height: 65px; border: 1px solid #000; border-radius: 4px; margin-bottom: 5px;"></div>
+          <span style="font-size: 8px;">Pulgar Der.</span>
+        </div>
+        <div style="text-align: center; width: 180px;">
+          <div style="border-top: 1px solid #000; width: 100%; margin: 0 auto 5px auto;"></div>
+          <span style="font-size: 10px;" class="bold">FIRMA DEL AFILIADO</span><br>
+          <span style="font-size: 9px;">{{titular.name}}</span>
         </div>
       </div>
     </div>
@@ -526,11 +513,8 @@
       </div>
     </div>
     
-    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 8px;">Página 1 de 5</div>
-  </div>
-
-  <!-- ==================== HOJA 4: CONTRATO (PAG 2) ==================== -->
-  <div class="page" style="padding: 20px;">
+    
+  
     <div class="legal-text">
       En todo caso SIRCA, podrá suspender el servicio a <strong>EL AFILIADO</strong> y excluirlo del mismo y/o anular el contrato, previa notificación, e incluso reclamar pagos por causas de indemnización en aquellos casos en que se encuentren en entredicho la buena fe de <strong>EL AFILIADO</strong> o alguno de su grupo familiar.
     </div>
@@ -557,21 +541,20 @@
       </div>
     </div>
 
-    <!-- Signatures -->
-    <div class="signature-container">
-      <div class="signature-box">
-        <strong>SIRCA</strong>
+    <div class="signature-container" style="margin-top: 60px; page-break-inside: avoid;">
+      <div class="signature-box" style="text-align: center;">
+        <strong>POR SIRCA (ASESOR)</strong><br>
+        <span style="font-size: 10px;">{{#if advisorName}}{{advisorName}}{{else}}-{{/if}}</span>
       </div>
-      <div class="signature-box">
-        <strong>EL AFILIADO</strong>
+      <div class="signature-box" style="text-align: center;">
+        <strong>EL AFILIADO (TITULAR)</strong><br>
+        <span style="font-size: 10px;">{{titular.name}}</span>
       </div>
     </div>
 
-    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 8px;">Página 2 de 5</div>
-  </div>
-
-  <!-- ==================== HOJA 5: CONDICIONES GENERALES (PAG 1) ==================== -->
-  <div class="page conditions-page" style="padding: 15px 20px;">
+    
+  
+    <div style="page-break-before: always;"></div>
     <div style="text-align: center; margin-bottom: 12px;">
       <span style="font-size: 11.5px; font-weight: bold; color: var(--primary-dark);">SALUD INTEGRAL EL ROSARIO</span><br>
       <span style="font-size: 10.5px; font-weight: bold; color: var(--primary-dark);">CONDICIONES GENERALES PARA DISFRUTE DEL PLAN DE SALUD</span>
@@ -612,43 +595,65 @@
       <span class="bold">Accidente de Trabajo:</span> Todo suceso imprevisto o repentino que sobrevenga por causa o con ocasión del trabajo, que produzca al trabajador una lesión y no provocada por el trabajador.<br>
       <span class="bold">Atención Ambulatoria:</span> Nivel de atención primaria de salud con un procedimiento que no requiere que el paciente permanezca hospitalizado o recluido para llevarlo a cabo.<br>
       <span class="bold">Prótesis:</span> Dispositivo o aparato diseñado para reemplazar una parte faltante del cuerpo o para hacer que una parte del cuerpo trabaje mejor.<br>
-      <span class="bold">Exclusiones:</span>   <!-- ==================== HOJA 6: CONDICIONES GENERALES (PAG 2) ==================== -->
-  <div class="page conditions-page" style="padding: 15px 20px;">
+      <span class="bold">Exclusiones:</span>Lo que no está cubierto por el Plan contratado.<br>
+      <span class="bold">Evento:</span> Suceso imprevisto que amerita la atención médica, hospitalización o intervención quirúrgica.<br>
+    </div>
+
+    
+  
     <div style="text-align: justify;">
       <div class="clause-header">2. VIGENCIA DEL CONTRATO DE AFILIACION:</div>
+      <br>
       El contrato tiene una vigencia de doce (12) meses a partir del pago, firma del contrato con sus anexos, la activación del servicio comienza a los siete (7) días hábiles del pago, firma y entrega de anexos. Cumplidos los Plazos y la antigüedad correspondiente, exclusiones y preexistencias declaradas o no en la Planilla de Afiliación o descubiertas por los médicos de <strong>SIRCA</strong> de los beneficiarios del presente contrato.
-      
+      <br>
       <div class="clause-header">2.1.- RENOVACION:</div>
+      <br>
       El contrato que contiene el Plan Médico, será renovado al finalizar el último día de vigencia, por un tiempo igual al anterior. Las condiciones contractuales podrán modificarse de acuerdo al efecto inflacionario y mejora del servicio. La no renovación se dará por la manifestación de voluntad motivada por cualquiera de las partes.
-
+      <br>
       <div class="clause-header">3. ALCANCE Y OBJETO DEL CONTRATO:</div>
+      <br>
       Lo constituye la prestación de los servicios Médicos en el plan contratado por LA PRESTADORA DEL SERVICIO (Hospital El Rosario, C.A.) de forma única y exclusiva, del afiliado deberá seguir pagando la mensualidad; y b) La exigencia del pago de la anualidad completa de forma inmediata. Agotada este monto antes de la anualidad, El Afiliado, deberá pagar el equivalente a las cuotas de los meses restantes, hasta completar los doce (12) meses del plan contratado. En cuanto al límite de la cobertura, los gastos en los cuales incurra el afiliado, por servicios intrahospitalarios, de clínica, laboratorio, consultas y estudios, serán en base a las condiciones del Plan Médico y la cobertura contratada.
-
+      <br>
+      <br>
+      <br>
       <div class="clause-header">4. SERVICIOS ACTIVADOS CON EL PLAN A LOS SIETE (7) DÍAS DE CONTRATACIÓN:</div>
+      <br>
       Servicios de los que disfruta el Afiliado, una vez activado el Plan contratado los cuales son: (VER CUADRO DESCRIPTIVO DEL PLAN ANEXO 2).
-
+      <br>
       <div class="clause-header">5. REEMBOLSOS:</div>
+      <br>
       No será reembolsado el costo de servicio médico prestado en otra institución hospitalaria.
-
+      <br>
       <div class="clause-header">6. ACCESO A LOS SERVICIOS (Consultas Básicas, Consultas Especializadas y Paraclínicos):</div>
+      <br>
       El Beneficiario deberá comunicarse con el Call Center de Citas, quien canalizará cualquier consulta (básica o especializada) y paraclínicos donde al momento de recibir el servicio deberá identificarse (Cedula o Partida de Nacimiento según el caso), según la antigüedad con el plan.
 
-      <div class="clause-header">7. HORARIOS DE ATENCIÓN DE EMERGENCIA:</div>
-      El servicio de emergencias será las 24 horas del día, los 365 días del año, será brindado por LA PRESTADORA DEL SERVICIO (Hospital El Rosario, C.A.) de forma única y exclusiva, siempre y cuando las mismas estén dentro del Plan Contratado por el Afiliado y no formen parte de las excepciones y preexistencias declaradas o no, y que no puedan ser atendidas dentro del horario de consulta el cual es de Lunes a Viernes en horario de 8:00 am a 3:00 pm. Para el servicio de emergencia debe presentarse directamente a la emergencia de LA PRESTADORA DE SERVICIO e identificarse con (cedula de identidad y/o partida de nacimiento según el caso) e indicar que es afiliado de SIRCA y de acuerdo a las condiciones del servicio de su plan se le prestarán el servicio.
-
+      
+        <br>
+        <div class="clause-header">7. HORARIOS DE ATENCIÓN DE EMERGENCIA:</div>
+        <br>
+        El servicio de emergencias será las 24 horas del día, los 365 días del año, será brindado por LA PRESTADORA DEL SERVICIO (Hospital El Rosario, C.A.) de forma única y exclusiva, siempre y cuando las mismas estén dentro del Plan Contratado por el Afiliado y no formen parte de las excepciones y preexistencias declaradas o no, y que no puedan ser atendidas dentro del horario de consulta el cual es de Lunes a Viernes en horario de 8:00 am a 3:00 pm. Para el servicio de emergencia debe presentarse directamente a la emergencia de LA PRESTADORA DE SERVICIO e identificarse con (cedula de identidad y/o partida de nacimiento según el caso) e indicar que es afiliado de SIRCA y de acuerdo a las condiciones del servicio de su plan se le prestarán el servicio.
+  
+      <br>
       <div class="clause-header">7. 1. PREEXISTENCIA:</div>
+      <br>
       El Plan contratado no cubre preexistencias de ningún tipo, declaradas o no. En caso de la atención de una emergencia derivada de alguna preexistencia, se le dará al beneficiario la consulta de emergencia y se remitirá a su médico tratante particular; si requiriere el beneficiario una atención inmediata en relación o derivada de la preexistencia, correrá por su única y exclusiva cuenta, y la Prestadora de Servicio no se hará responsable por la atención ni SIRCA.
-
+      <br>
       <div class="clause-header">8. CESION DE DERECHOS:</div>
+      <br>
       No son transferibles los derechos de los afiliados.
 
+      <br>
       <div class="clause-header">9. CUOTA MENSUAL DE AFILIACIÓN:</div>
+      <br>
       La cuota mensual debe ser pagada dentro de los cinco (5) primeros días de cada mes, independientemente de la fecha en que se haya afiliado. Dicha cuota por efecto inflacionario podrá ser incrementada, previa notificación al afiliado de treinta (30) días. La falta de pago suspenderá el servicio; su reactivación será a los siguientes siete (7) días hábiles siguientes al pago pendiente. El Afiliado perderá su condición transcurridos sesenta (60) días en mora; es decir, dos cuotas no pagadas. El Afiliado podrá excluir beneficiarios, lo cual deberá notificar por escrito a SIRCA, por lo menos (03) días antes del vencimiento de la cuota mensual.
-
+      <br>
       <div class="clause-header">10. RESPONSABILIDAD DE LAS PARTES:</div>
+      <br>
       SIRCA no tendrá responsabilidad sobre preexistencias declaradas o no y exclusiones establecidas en la cláusula 12 del presente condicionado. El beneficiario tendrá diez (10) días continuos para indicar cualquier reclamación sobre los servicios, pasado este este tiempo se entenderá que desiste de cualquier reclamación.
-
+      <br>
       <div class="clause-header">11. MOTIVOS DE ANULACIÓN DEL CONTRATO:</div>
+      <br>
       1. La omisión y/o alteración de información o suministro de información falsa o fraudulenta del Afiliado y/o beneficiarios en el contrato, Anexo 1 o documentos que forman parte de él, serán causa suficiente para anular el contrato, por cuanto configuran un acto de mala fe del Afiliado y/o beneficiarios, considerándose este tipo de conducta como dolosa. Constituyéndose así, en una circunstancia eximente de responsabilidad de la cobertura que ofrece SIRCA.<br>
       2. La existencia y/o preexistencia, de una enfermedad grave (cardiopatías crónicas, enfermedades coronarias agudas o crónicas, enfermedades cerebrovasculares agudas, enfermedades digestivas hemorrágicas, enfermedades metabólicas, enfermedades renales crónicas y reagudizada, enfermedades pulmonares crónicas EBOP y EPOP, enfermedades neurológicas crónicas), no declarada al momento de la suscripción del contrato, aun conociéndola o no el afiliado y/o sus beneficiarios. De igual manera, el diagnostico de este tipo de enfermedad durante la vigencia del contrato, será causa de anulación, por cuanto SIRCA expresamente deja constancia que no ofrece la cobertura para diagnósticos ni tratamientos de cualquier tipo de enfermedad grave. Se destaca que SIRCA no cuenta con los recursos, materiales, ni médicos, ni medios suficientes para asumir la cobertura de una enfermedad grave y su tratamiento.<br>
       3. La existencia y/o preexistencia, de enfermedades oncológicas no declarada al momento de la suscripción del contrato, aun conociéndola o no la TITULAR y/o sus beneficiarios. De igual manera, el diagnostico de este tipo de enfermedad durante la vigencia del contrato, será causa de anulación, por cuanto SIRCA expresamente deja constancia que no ofrece la cobertura para diagnósticos ni tratamientos de cualquier tipo de enfermedad oncológica. Se destaca que SIRCA no cuenta con los recursos, materiales, ni médicos, ni medios suficientes para asumir la cobertura de una enfermedad oncológica y su tratamiento.<br>
@@ -659,8 +664,9 @@
       8. Por causas imputables al Afiliado o beneficiarios ocurra la anulación del presente contrato.<br>
       9. Cuando la utilización del servicio supere el monto pagado, en el caso el Afiliado esta cancelando su plan por cuotas, deberá cancelar a SIRCA, la diferencia entre lo pagado a través de sus cuotas mensuales y lo consumido por asistencia médica prestada.<br>
       10. Si el Afiliado le fuera anulado el contrato y no hubiese usado el servicio los beneficiarios, se considerará consumido el monto total de la cobertura, como indemnización por daños y perjuicios a favor de SIRCA. En cualquiera de los casos, SIRCA, tendrá potestad y derecho de suspender el servicio médico objeto del contrato, y relevará ala Prestadora de Servicio de cualquier compromiso de atención de asistencia médica, hasta tanto SIRCA, convenga en la reactivación del mismo.
-
+      <br>
       <div class="clause-header">12. EXCLUSIONES DEL SERVICIO:</div>
+      <br>
       Se establece de manera clara y precisa, y queda en conocimiento del Afiliado y/o beneficiarios, que SIRCA ha determinado, por razones de materiales, y disponibilidad, la exclusión de la prestación del servicio médico directa o indirectamente, próxima o remotamente, de las patologías, enfermedades, cirugías, tratamientos, entre otros procedimientos médicos y estudios que a continuación se detallan:<br>
       1º Preexistencias declaradas o no por el Afiliado y/o beneficiarios en la Declaración de Salud de la Planilla de Afiliación.<br>
       2º Embarazos concebidos antes y durante el primer año de contrato. Aclarándose que la cobertura, luego del primer año de contrato será para partos simple, quedando excluidos los partos múltiples. El recién nacido no está amparado por el plan.<br>
@@ -674,11 +680,8 @@
       9.1. Dispositivos Intrauterinos.
     </div>
 
-    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 9px;">Página 4 de 5</div>
-  </div>
-
-  <!-- ==================== HOJA 7: CONDICIONES GENERALES (PAG 3) ==================== -->
-  <div class="page conditions-page" style="padding: 15px 20px;">
+    
+  
     <div style="text-align: justify;">
       10º Trasplantes de órganos y cirugías con rayos láser.<br>
       11º Litotricia.<br>
@@ -696,7 +699,7 @@
       22º Fisioterapia y rehabilitación.<br>
       23º Lentes correctivos.<br>
       24º Tratamientos quirúrgicos para la obesidad.<br>
-      25º Enfermedades, padecimientos, lesiones o accidentes derivados de: a) Ingesta de alcohol. b) Participación en hechos delictivos, riñas o alteraciones del orden público. c) Actos de guerra declarada o no. d) Actos en servicio militar o policial. e) Motines, insurrecciones, conmoción civil, revoluciones, tumultos populares, rebeliones. f) Actos contrarios a lo establecido en providencias gubernamentales y leyes del país. g) Tratamientos y enfermedades que requieran diálisis peritoneal o por vía sanguínea en forma sucesiva y permanente. h) Tratamientos, enfermedades con condiciones que ameriten el uso de sangre y/o hemoderivados.<br>
+      25º Enfermedades, padecimientos, lesiones o accidentes derivados de: a) Ingesta de alcohol. b) Participación en hechos delictivos, riñas o alteraciones del orden público. c) Actos de guerra declarada o no. d) Actors en servicio militar o policial. e) Motines, insurrecciones, conmoción civil, revoluciones, tumultos populares, rebeliones. f) Actos contrarios a lo establecido en providencias gubernamentales y leyes del país. g) Tratamientos y enfermedades que requieran diálisis peritoneal o por vía sanguínea en forma sucesiva y permanente. h) Tratamientos, enfermedades con condiciones que ameriten el uso de sangre y/o hemoderivados.<br>
       26ºEnfermedades Graves (cardiopatías crónicas, enfermedades coronarias agudas o crónicas, enfermedades cerebrovasculares agudas, enfermedades digestivas hemorrágicas, enfermedades metabólicas, enfermedades pulmonares crónicas EBOP y EPOP, enfermedades neurológicas crónicas).<br>
       27º Procedimientos o exámenes de diagnóstico requeridos rutinariamente a los titulares de un colectivo por normas de seguridad industrial (Pre y Post vacacional).<br>
       28º Enfermedad Neoplásica benigna o maligna y sus complicaciones en cualquier tipo o grado (diagnosticado, con síntomas o sospecha)<br>
@@ -736,21 +739,21 @@
       Del presente contrato se hacen dos (2) ejemplares con un mismo tenor y a un solo efecto. En Cabimas, a los {{ dayNumber }} días del mes de {{ monthText }} del 2026.
     </div>
 
-    <!-- Signatures -->
-    <div class="signature-container" style="margin-top: 25px;">
-      <div class="signature-box">
-        <strong>POR SIRCA</strong>
+    
+  <div class="signature-container" style="margin-top: 60px; page-break-inside: avoid;">
+      <div class="signature-box" style="text-align: center;">
+        <strong>POR SIRCA (ASESOR)</strong><br>
+        <span style="font-size: 10px;">{{#if advisorName}}{{advisorName}}{{else}}-{{/if}}</span>
       </div>
-      <div class="signature-box">
-        <strong>EL AFILIADO</strong>
+      <div class="signature-box" style="text-align: center;">
+        <strong>EL AFILIADO (TITULAR)</strong><br>
+        <span style="font-size: 10px;">{{titular.name}}</span>
       </div>
     </div>
-
-    <div style="position: absolute; bottom: 10px; right: 20px; font-size: 9px;">Página 5 de 5</div>
   </div>
 
   <!-- ==================== HOJA 8: ANEXO 1 ==================== -->
-  <div class="page" style="padding: 20px;">
+  <div class="page" style="padding: 20px; clear: both;">
     <div style="text-align: center; margin-bottom: 20px;">
       <span style="font-size: 14px; font-weight: bold;">ANEXO 1</span><br>
       <span style="font-size: 12px; font-weight: bold;">CUADRO DEL PLAN PARA TITULAR Y/O FAMILIARES</span>
@@ -795,6 +798,107 @@
         {{/each}}
       </tbody>
     </table>
+  </div>
+
+  <!-- ==================== HOJA 9: DOCUMENTOS CONSIGNADOS ==================== -->
+  <div class="page" style="padding: 20px;">
+    <table class="header-table">
+      <tr>
+        <td class="logo-container">
+          {{#if logoBase64}}
+            <img src="{{logoBase64}}" alt="SIRCA LOGO" class="logo-img" />
+          {{/if}}
+        </td>
+        <td class="title-container" style="font-size: 16px;">DOCUMENTOS CONSIGNADOS</td>
+        <td class="contract-info-container">
+          <strong>Nº DE CONTRATO:</strong><br>
+          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span>
+        </td>
+      </tr>
+    </table>
+
+    <div class="section-title" style="margin-top: 20px;">DOCUMENTOS GENERALES DE LA SOLICITUD</div>
+    <table class="data-table" style="margin-bottom: 20px;">
+      <tbody>
+        <tr>
+          <td style="width: 5%; text-align: center; vertical-align: middle;"><div style="width: 12px; height: 12px; border: 1px solid #000; margin: 0 auto;"></div></td>
+          <td style="width: 45%; font-weight: bold;">PLANILLA DE AFILIACIÓN</td>
+          <td style="width: 5%; text-align: center; vertical-align: middle;"><div style="width: 12px; height: 12px; border: 1px solid #000; margin: 0 auto;"></div></td>
+          <td style="width: 45%; border-bottom: 1px solid #999;"></td>
+        </tr>
+        <tr>
+          <td style="text-align: center; vertical-align: middle;"><div style="width: 12px; height: 12px; border: 1px solid #000; margin: 0 auto;"></div></td>
+          <td style="font-weight: bold;">CONTRATO FIRMADO</td>
+          <td style="text-align: center; vertical-align: middle;"><div style="width: 12px; height: 12px; border: 1px solid #000; margin: 0 auto;"></div></td>
+          <td style="border-bottom: 1px solid #999;"></td>
+        </tr>
+        <tr>
+          <td style="text-align: center; vertical-align: middle;"><div style="width: 12px; height: 12px; border: 1px solid #000; margin: 0 auto;"></div></td>
+          <td style="font-weight: bold;">CUADRO DE RECIBO</td>
+          <td style="text-align: center; vertical-align: middle;"><div style="width: 12px; height: 12px; border: 1px solid #000; margin: 0 auto;"></div></td>
+          <td style="border-bottom: 1px solid #999;"></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">DOCUMENTOS POR BENEFICIARIO</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 35%;">NOMBRE DEL BENEFICIARIO</th>
+          <th style="width: 30%;">DOCUMENTO PRINCIPAL</th>
+          <th style="width: 35%;">OTROS DOCUMENTOS REQUERIDOS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each allMembers}}
+        <tr>
+          <td class="bold" style="vertical-align: top; padding-top: 8px;">{{name}}</td>
+          <td style="vertical-align: top; padding-top: 8px;">
+            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+              <div style="width: 12px; height: 12px; border: 1px solid #000; margin-right: 5px;"></div>
+              {{#if isPN}}PARTIDA DE NACIMIENTO{{else}}CÉDULA DE IDENTIDAD{{/if}}
+            </div>
+            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+              <div style="width: 12px; height: 12px; border: 1px solid #000; margin-right: 5px;"></div>
+              <div style="border-bottom: 1px solid #999; flex-grow: 1; height: 10px;"></div>
+            </div>
+            <div style="display: flex; align-items: center;">
+              <div style="width: 12px; height: 12px; border: 1px solid #000; margin-right: 5px;"></div>
+              <div style="border-bottom: 1px solid #999; flex-grow: 1; height: 10px;"></div>
+            </div>
+          </td>
+          <td style="vertical-align: top; padding-top: 8px;">
+            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+              <div style="width: 12px; height: 12px; border: 1px solid #000; margin-right: 5px;"></div>
+              <div style="border-bottom: 1px solid #999; flex-grow: 1; height: 10px;"></div>
+            </div>
+            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+              <div style="width: 12px; height: 12px; border: 1px solid #000; margin-right: 5px;"></div>
+              <div style="border-bottom: 1px solid #999; flex-grow: 1; height: 10px;"></div>
+            </div>
+            <div style="display: flex; align-items: center;">
+              <div style="width: 12px; height: 12px; border: 1px solid #000; margin-right: 5px;"></div>
+              <div style="border-bottom: 1px solid #999; flex-grow: 1; height: 10px;"></div>
+            </div>
+          </td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div style="margin-top: 60px; display: flex; justify-content: space-around;">
+      <div style="text-align: center; width: 40%;">
+        <div style="border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
+        <span class="bold" style="font-size: 10px;">POR SIRCA (ASESOR)</span><br>
+        <span style="font-size: 10px;">{{#if advisorName}}{{advisorName}}{{else}}-{{/if}}</span>
+      </div>
+      <div style="text-align: center; width: 40%;">
+        <div style="border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
+        <span class="bold" style="font-size: 10px;">EL AFILIADO (TITULAR)</span><br>
+        <span style="font-size: 10px;">{{titular.name}}</span>
+      </div>
+    </div>
   </div>
 
 </body>

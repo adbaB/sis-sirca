@@ -1,16 +1,25 @@
-import { IsDateString, IsNotEmpty, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateContractDto {
+  @IsOptional()
+  @IsString()
+  legacyCode?: string;
   @IsDateString()
   @IsNotEmpty()
   affiliationDate: string;
 
   @IsNotEmpty()
-  code: string;
-
-  @IsOptional()
   @IsUUID()
-  advisorId?: string;
+  advisorId: string;
 
   @IsOptional()
   @IsUUID()

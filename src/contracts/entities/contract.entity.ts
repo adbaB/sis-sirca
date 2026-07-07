@@ -55,6 +55,9 @@ export class Contract {
   @Column({ type: 'varchar', length: 255, unique: true, nullable: false })
   code: string;
 
+  @Column({ type: 'varchar', length: 255, unique: true, nullable: true, name: 'legacy_code' })
+  legacyCode?: string | null;
+
   @OneToMany('ContractPerson', (contractPerson: ContractPerson) => contractPerson.contract)
   contractPersons: ContractPerson[];
 

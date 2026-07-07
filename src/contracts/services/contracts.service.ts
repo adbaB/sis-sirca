@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
+import { SystemCounter } from '../../common/entities/system-counter.entity';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
@@ -264,22 +265,37 @@ export class ContractsService {
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
-    const existingContract = await this.contractsRepository.findOne({
-      where: { code: createContractDto.code },
-    });
-    if (existingContract) {
-      throw new BadRequestException(
-        `El código de contrato "${createContractDto.code}" ya está registrado.`,
-      );
-    }
-
     const { advisorId, portfolioId, ...rest } = createContractDto;
-    const contract = this.contractsRepository.create({
-      ...rest,
-      ...(advisorId ? { advisor: { id: advisorId } } : {}),
-      ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
+
+    return this.contractsRepository.manager.transaction(async (manager) => {
+      const advisor = await manager.getRepository(Advisor).findOne({ where: { id: advisorId } });
+      if (!advisor) {
+        throw new NotFoundException(`El asesor proporcionado no existe.`);
+      }
+
+      let counter = await manager.getRepository(SystemCounter).findOne({
+        where: { key: 'contract_code' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!counter) {
+        counter = manager.getRepository(SystemCounter).create({ key: 'contract_code', value: 1 });
+      }
+      const serial = counter.value;
+      counter.value += 1;
+      await manager.getRepository(SystemCounter).save(counter);
+
+      const serialNumber = String(serial).padStart(5, '0');
+      const generatedCode = `${advisor.code}-${serialNumber}`;
+
+      const contract = manager.getRepository(Contract).create({
+        ...rest,
+        code: generatedCode,
+        legacyCode: createContractDto.legacyCode ?? undefined,
+        advisor,
+        ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
+      });
+      return manager.getRepository(Contract).save(contract);
     });
-    return this.contractsRepository.save(contract);
   }
 
   /**
@@ -293,13 +309,6 @@ export class ContractsService {
    * - If a person's document already exists as AFILIADO in another active contract → rejected
    */
   async createFull(dto: CreateContractFullDto): Promise<Contract> {
-    const existingContract = await this.contractsRepository.findOne({
-      where: { code: dto.code },
-    });
-    if (existingContract) {
-      throw new BadRequestException(`El código de contrato "${dto.code}" ya está registrado.`);
-    }
-
     const { advisorId, portfolioId, affiliates, ...contractData } = dto;
 
     // ── 1. Validate TITULAR count (optional, but at most one) ──────────────
@@ -332,10 +341,32 @@ export class ContractsService {
       const cpRepo = manager.getRepository(ContractPerson);
       const historyRepo = manager.getRepository(AffiliationHistory);
 
-      // ── 4.1. Create the contract ──────────────────────────────────────
+      // ── 4.1. Get advisor and generate code ────────────────────────────
+      const advisorRepo = manager.getRepository(Advisor);
+      const advisor = await advisorRepo.findOne({ where: { id: advisorId } });
+      if (!advisor) {
+        throw new NotFoundException(`El asesor proporcionado no existe.`);
+      }
+
+      let counter = await manager.getRepository(SystemCounter).findOne({
+        where: { key: 'contract_code' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!counter) {
+        counter = manager.getRepository(SystemCounter).create({ key: 'contract_code', value: 1 });
+      }
+      const serial = counter.value;
+      counter.value += 1;
+      await manager.getRepository(SystemCounter).save(counter);
+
+      const serialNumber = String(serial).padStart(5, '0');
+      const generatedCode = `SIR-${advisor.code}-${serialNumber}`;
+
+      // ── 4.2. Create the contract ──────────────────────────────────────
       const contract = contractRepo.create({
         ...contractData,
-        ...(advisorId ? { advisor: { id: advisorId } } : {}),
+        code: generatedCode,
+        advisor,
         ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
       });
       const savedContract = await contractRepo.save(contract);
@@ -548,7 +579,20 @@ export class ContractsService {
       });
     });
 
-    // ── 5. PDF Generation & S3 Upload (after transaction commits) ──────────
+    // ── 5. Invoice Generation (after transaction commits) ──────────
+    try {
+      // Create initial invoice as "AFILIACION" instead of default "MENSUALIDAD"
+      await this.billingService.generateInvoiceForContract(savedContract.id, undefined, true);
+      this.logger.log(`Invoice generated for contract ${savedContract.code}`);
+    } catch (invoiceError) {
+      const errorMessage =
+        invoiceError instanceof Error ? invoiceError.message : String(invoiceError);
+      this.logger.error(
+        `Failed to generate invoice for contract ${savedContract.code}: ${errorMessage}`,
+      );
+    }
+
+    // ── 6. PDF Generation & S3 Upload (after transaction commits) ──────────
     this.generateAndUploadContractPdf(savedContract.id).catch((pdfError) => {
       const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
       this.logger.error(
@@ -717,32 +761,40 @@ export class ContractsService {
         };
       });
 
-      const titularRow = titularCp
-        ? {
-            name: titularCp.person.name,
-            typeIdentityCard: titularCp.person.typeIdentityCard,
-            identityCard: titularCp.person.identityCard,
-            age: getAge(titularCp.person.birthDate),
-            planName: titularCp.person.plan?.name || 'TITULAR',
-            coverage: titularCp.person.plan
-              ? titularCp.person.plan.amount === 17
-                ? '5,000.00'
-                : titularCp.person.plan.amount === 21
-                  ? '12,000.00'
-                  : '20,000.00'
-              : '0.00',
-            monthlyCost: '0.00',
-          }
-        : null;
+      const isTitularAlsoBeneficiary = affiliateCps.some(
+        (cp) =>
+          titularCp &&
+          cp.person?.typeIdentityCard === titularCp.person?.typeIdentityCard &&
+          cp.person?.identityCard === titularCp.person?.identityCard,
+      );
+
+      const titularRow =
+        titularCp && !isTitularAlsoBeneficiary
+          ? {
+              name: titularCp.person.name,
+              typeIdentityCard: titularCp.person.typeIdentityCard,
+              identityCard: titularCp.person.identityCard,
+              age: getAge(titularCp.person.birthDate),
+              planName: titularCp.person.plan?.name || 'TITULAR',
+              coverage: titularCp.person.plan?.coverage
+                ? Number(titularCp.person.plan.coverage).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : '0.00',
+              monthlyCost: titularCp.person.plan?.amount
+                ? Number(titularCp.person.plan.amount).toFixed(2)
+                : '0.00',
+            }
+          : null;
 
       const beneficiariesRow = affiliateCps.map((cp) => {
         const plan = cp.person?.plan;
-        const coverage = plan
-          ? plan.amount === 17
-            ? '5,000.00'
-            : plan.amount === 21
-              ? '12,000.00'
-              : '20,000.00'
+        const coverage = plan?.coverage
+          ? Number(plan.coverage).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
           : '0.00';
         return {
           name: cp.person.name,
@@ -755,6 +807,46 @@ export class ContractsService {
         };
       });
 
+      const contractedPlansMap = new Map<
+        string,
+        { count: number; coverage: string; unitCost: number; totalCost: number }
+      >();
+
+      for (const cp of fullContract.contractPersons) {
+        const plan = cp.person?.plan;
+        if (plan) {
+          const planName = plan.name.toUpperCase();
+          const unitCost = Number(plan.amount) || 0;
+          const coverage = plan.coverage
+            ? Number(plan.coverage).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : '0.00';
+
+          const existing = contractedPlansMap.get(planName);
+          if (existing) {
+            existing.count += 1;
+            existing.totalCost += unitCost;
+          } else {
+            contractedPlansMap.set(planName, {
+              count: 1,
+              coverage,
+              unitCost,
+              totalCost: unitCost,
+            });
+          }
+        }
+      }
+
+      const contractedPlansList = Array.from(contractedPlansMap.entries()).map(([name, data]) => ({
+        name,
+        count: data.count,
+        coverage: data.coverage,
+        unitCost: data.unitCost.toFixed(2),
+        totalCost: data.totalCost.toFixed(2),
+      }));
+
       const { day: dayNumber, monthIndex } = getCalendarDateComponents(
         fullContract.affiliationDate || new Date(),
       );
@@ -762,6 +854,20 @@ export class ContractsService {
       const monthText = SPANISH_MONTHS[monthIndex];
 
       const logoBase64 = await loadLogoBase64(this.logger);
+      const allMembers = [];
+      if (titularRow) {
+        allMembers.push({
+          name: titularRow.name,
+          isPN: titularRow.typeIdentityCard === 'PN',
+        });
+      }
+      for (const cp of beneficiariesRow) {
+        allMembers.push({
+          name: cp.name,
+          isPN: cp.typeIdentityCard === 'PN',
+        });
+      }
+
       const pdfData = {
         contractCode: fullContract.code,
         affiliationDateFormatted: formatDate(fullContract.affiliationDate),
@@ -775,14 +881,14 @@ export class ContractsService {
         emptyRows,
         healthQuestions,
         advisorName: fullContract.advisor?.name || '',
-        advisorCode: fullContract.advisor?.id
-          ? fullContract.advisor.id.substring(0, 8).toUpperCase()
-          : '',
+        advisorCode: fullContract.advisor?.code || '',
         dayText,
         dayNumber,
         monthText,
         titularRow,
         beneficiariesRow,
+        contractedPlansList,
+        allMembers,
       };
 
       return this.pdfService.generatePdf('contract-affiliation', pdfData);
@@ -909,7 +1015,7 @@ export class ContractsService {
   private applySearchFilter(qb: SelectQueryBuilder<Contract>, search?: string): void {
     if (!search) return;
     qb.andWhere(
-      '(contract.code ILIKE :search OR (contractPersons.isBillingOwner = true AND (person.name ILIKE :search OR person.identityCard ILIKE :search)))',
+      '(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR (contractPersons.isBillingOwner = true AND (person.name ILIKE :search OR person.identityCard ILIKE :search)))',
       { search: `%${search}%` },
     );
   }
@@ -1243,7 +1349,7 @@ export class ContractsService {
 
   async findByCode(code: string): Promise<Contract> {
     return this.contractsRepository.findOne({
-      where: { code },
+      where: [{ code }, { legacyCode: code }],
       relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
     });
   }
@@ -1271,18 +1377,6 @@ export class ContractsService {
   async update(id: string, updateContractDto: UpdateContractDto): Promise<Contract> {
     const contract = await this.findOne(id);
     const { advisorId, portfolioId, ...rest } = updateContractDto;
-
-    if (updateContractDto.code) {
-      const existing = await this.contractsRepository
-        .createQueryBuilder('contract')
-        .where('contract.code = :code AND contract.id != :id', { code: updateContractDto.code, id })
-        .getOne();
-      if (existing) {
-        throw new BadRequestException(
-          `El código de contrato "${updateContractDto.code}" ya está registrado en otro contrato.`,
-        );
-      }
-    }
 
     Object.assign(contract, rest);
 

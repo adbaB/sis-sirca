@@ -73,7 +73,11 @@ export class PdfService {
         format: 'Letter',
         landscape: options?.landscape ?? false,
         printBackground: true,
-        margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
+        margin: { top: '20px', right: '20px', bottom: '50px', left: '20px' },
+        displayHeaderFooter: true,
+        headerTemplate: '<div></div>',
+        footerTemplate:
+          '<div style="width: 100%; text-align: right; padding-right: 20px; font-size: 8px; color: #555;">Página <span class="pageNumber"></span> de <span class="totalPages"></span></div>',
       });
 
       await browser.close();

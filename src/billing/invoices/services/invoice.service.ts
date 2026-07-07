@@ -150,6 +150,7 @@ export class InvoiceService {
   async generateInvoiceForContract(
     contractId: string,
     billingMonthInput?: string,
+    isAffiliation: boolean = false,
   ): Promise<Invoice> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -251,7 +252,7 @@ export class InvoiceService {
       const invoiceLines = invoiceDetailsData.map((data) => {
         return queryRunner.manager.create(InvoiceLine, {
           invoice: savedInvoice,
-          category: InvoiceLineCategory.MENSUALIDAD,
+          category: isAffiliation ? InvoiceLineCategory.INCLUSION : InvoiceLineCategory.MENSUALIDAD,
           description: `${data.person.name} - ${data.plan.name}`,
           amount: data.chargedAmount,
           quantity: 1,
@@ -658,12 +659,12 @@ export class InvoiceService {
 
     if (!invoice) return;
 
-    // Buscar y soft-delete la línea MENSUALIDAD
+    // Buscar y soft-delete la línea MENSUALIDAD o AFILIACION
     const mensualidadLine = await invoiceLineRepo.findOne({
       where: {
         invoice: { id: invoice.id },
         person: { id: personId },
-        category: InvoiceLineCategory.MENSUALIDAD,
+        category: In([InvoiceLineCategory.MENSUALIDAD, InvoiceLineCategory.INCLUSION]),
         deletedAt: IsNull(),
       },
     });
