@@ -466,7 +466,7 @@ export class PaymentService {
       }
       payment.metadata = metadata;
 
-      const saved = await paymentRepo.save(payment);
+      await paymentRepo.save(payment);
 
       // Find and restore associated surpluses (from cancelled to pending)
       const associatedSurpluses = await surplusRepo.find({
@@ -485,23 +485,23 @@ export class PaymentService {
       }
 
       await queryRunner.commitTransaction();
-
-      const reloadedPayment = await this.paymentRepository.findOne({
-        where: { id: saved.id },
-        relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
-      });
-
-      if (!reloadedPayment) {
-        throw new NotFoundException(`Pago con ID ${saved.id} no encontrado tras guardar`);
-      }
-
-      return reloadedPayment;
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
+
+    const reloadedPayment = await this.paymentRepository.findOne({
+      where: { id },
+      relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
+    });
+
+    if (!reloadedPayment) {
+      throw new NotFoundException(`Pago con ID ${id} no encontrado tras guardar`);
+    }
+
+    return reloadedPayment;
   }
 
   async rejectPayment(id: string, reason: string): Promise<Payment> {
@@ -533,7 +533,7 @@ export class PaymentService {
       metadata.rejectionReason = reason;
       payment.metadata = metadata;
 
-      const saved = await paymentRepo.save(payment);
+      await paymentRepo.save(payment);
 
       // Find and cancel associated surpluses
       const associatedSurpluses = await surplusRepo.find({
@@ -552,23 +552,23 @@ export class PaymentService {
       }
 
       await queryRunner.commitTransaction();
-
-      const reloadedPayment = await this.paymentRepository.findOne({
-        where: { id: saved.id },
-        relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
-      });
-
-      if (!reloadedPayment) {
-        throw new NotFoundException(`Pago con ID ${saved.id} no encontrado tras guardar`);
-      }
-
-      return reloadedPayment;
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
+
+    const reloadedPayment = await this.paymentRepository.findOne({
+      where: { id },
+      relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
+    });
+
+    if (!reloadedPayment) {
+      throw new NotFoundException(`Pago con ID ${id} no encontrado tras guardar`);
+    }
+
+    return reloadedPayment;
   }
 
   async updatePaymentDate(id: string, newDateStr: string): Promise<Payment> {
@@ -691,22 +691,22 @@ export class PaymentService {
       await this.invoiceService.recalculateInvoicePaidAmount(invoice.id, queryRunner);
 
       await queryRunner.commitTransaction();
-
-      const reloadedPayment = await this.paymentRepository.findOne({
-        where: { id: savedPayment.id },
-        relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
-      });
-
-      if (!reloadedPayment) {
-        throw new NotFoundException(`Pago con ID ${savedPayment.id} no encontrado tras guardar`);
-      }
-
-      return reloadedPayment;
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
+
+    const reloadedPayment = await this.paymentRepository.findOne({
+      where: { id },
+      relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
+    });
+
+    if (!reloadedPayment) {
+      throw new NotFoundException(`Pago con ID ${id} no encontrado tras guardar`);
+    }
+
+    return reloadedPayment;
   }
 }
