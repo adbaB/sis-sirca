@@ -285,7 +285,11 @@ export class ContractsService {
       await manager.getRepository(SystemCounter).save(counter);
 
       const serialNumber = String(serial).padStart(5, '0');
-      const generatedCode = `${advisor.code}-${serialNumber}`;
+      let advisorCodeStr = '000';
+      if (advisor?.code) {
+        advisorCodeStr = String(advisor.code).padStart(3, '0');
+      }
+      const generatedCode = `SIR-${advisorCodeStr}-${serialNumber}`;
 
       const contract = manager.getRepository(Contract).create({
         ...rest,
@@ -708,22 +712,29 @@ export class ContractsService {
       const isOro = planName.toUpperCase().includes('ORO');
       const isPlatino = planName.toUpperCase().includes('PLATINO');
 
-      const beneficiaries = affiliateCps.map((cp, idx) => {
-        const person = cp.person;
-        return {
-          index: String(idx + 1).padStart(2, '0'),
-          name: person.name,
-          typeIdentityCard: person.typeIdentityCard,
-          identityCard: person.identityCard,
-          relationship: cp.relationship || '-',
-          birthDateFormatted: formatDate(person.birthDate),
-          age: getAge(person.birthDate),
-          genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
-          weight: person.weight || '-',
-          height: person.height || '-',
-          planName: person.plan?.name || '-',
-        };
-      });
+      const beneficiaries = affiliateCps
+        .filter(
+          (cp) =>
+            !titularCp ||
+            cp.person?.typeIdentityCard !== titularCp.person?.typeIdentityCard ||
+            cp.person?.identityCard !== titularCp.person?.identityCard,
+        )
+        .map((cp, idx) => {
+          const person = cp.person;
+          return {
+            index: String(idx + 1).padStart(2, '0'),
+            name: person.name,
+            typeIdentityCard: person.typeIdentityCard,
+            identityCard: person.identityCard,
+            relationship: cp.relationship || '-',
+            birthDateFormatted: formatDate(person.birthDate),
+            age: getAge(person.birthDate),
+            genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
+            weight: person.weight || '-',
+            height: person.height || '-',
+            planName: person.plan?.name || '-',
+          };
+        });
 
       const emptyRows: string[] = [];
       for (let i = beneficiaries.length + 1; i <= 7; i++) {
@@ -788,24 +799,31 @@ export class ContractsService {
             }
           : null;
 
-      const beneficiariesRow = affiliateCps.map((cp) => {
-        const plan = cp.person?.plan;
-        const coverage = plan?.coverage
-          ? Number(plan.coverage).toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })
-          : '0.00';
-        return {
-          name: cp.person.name,
-          typeIdentityCard: cp.person.typeIdentityCard,
-          identityCard: cp.person.identityCard,
-          age: getAge(cp.person.birthDate),
-          planName: plan?.name || '-',
-          coverage,
-          monthlyCost: plan ? Number(plan.amount).toFixed(2) : '0.00',
-        };
-      });
+      const beneficiariesRow = affiliateCps
+        .filter(
+          (cp) =>
+            !titularCp ||
+            cp.person?.typeIdentityCard !== titularCp.person?.typeIdentityCard ||
+            cp.person?.identityCard !== titularCp.person?.identityCard,
+        )
+        .map((cp) => {
+          const plan = cp.person?.plan;
+          const coverage = plan?.coverage
+            ? Number(plan.coverage).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : '0.00';
+          return {
+            name: cp.person.name,
+            typeIdentityCard: cp.person.typeIdentityCard,
+            identityCard: cp.person.identityCard,
+            age: getAge(cp.person.birthDate),
+            planName: plan?.name || '-',
+            coverage,
+            monthlyCost: plan ? Number(plan.amount).toFixed(2) : '0.00',
+          };
+        });
 
       const contractedPlansMap = new Map<
         string,
@@ -847,18 +865,20 @@ export class ContractsService {
         totalCost: data.totalCost.toFixed(2),
       }));
 
-      const { day: dayNumber, monthIndex } = getCalendarDateComponents(
-        fullContract.affiliationDate || new Date(),
-      );
+      const {
+        day: dayNumber,
+        monthIndex,
+        year: yearNumber,
+      } = getCalendarDateComponents(fullContract.affiliationDate || new Date());
       const dayText = SPANISH_DAYS[dayNumber] || String(dayNumber);
       const monthText = SPANISH_MONTHS[monthIndex];
 
       const logoBase64 = await loadLogoBase64(this.logger);
       const allMembers = [];
-      if (titularRow) {
+      if (titularData && titularData.name) {
         allMembers.push({
-          name: titularRow.name,
-          isPN: titularRow.typeIdentityCard === 'PN',
+          name: titularData.name,
+          isPN: titularData.typeIdentityCard === 'PN',
         });
       }
       for (const cp of beneficiariesRow) {
@@ -885,6 +905,7 @@ export class ContractsService {
         dayText,
         dayNumber,
         monthText,
+        yearNumber,
         titularRow,
         beneficiariesRow,
         contractedPlansList,

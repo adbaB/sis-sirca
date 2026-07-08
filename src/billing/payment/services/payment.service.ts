@@ -510,7 +510,17 @@ export class PaymentService {
       }
 
       await queryRunner.commitTransaction();
-      return saved;
+
+      const reloadedPayment = await this.paymentRepository.findOne({
+        where: { id: saved.id },
+        relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
+      });
+
+      if (!reloadedPayment) {
+        throw new NotFoundException(`Pago con ID ${saved.id} no encontrado tras guardar`);
+      }
+
+      return reloadedPayment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -567,7 +577,17 @@ export class PaymentService {
       }
 
       await queryRunner.commitTransaction();
-      return saved;
+
+      const reloadedPayment = await this.paymentRepository.findOne({
+        where: { id: saved.id },
+        relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
+      });
+
+      if (!reloadedPayment) {
+        throw new NotFoundException(`Pago con ID ${saved.id} no encontrado tras guardar`);
+      }
+
+      return reloadedPayment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;

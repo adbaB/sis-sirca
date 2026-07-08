@@ -135,4 +135,9 @@ export class CreateContractFullDto {
   @ArrayMinSize(1)
   @Type(() => AffiliatePersonDto)
   affiliates: AffiliatePersonDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
 }

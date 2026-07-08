@@ -89,4 +89,7 @@ export class Contract {
 
   @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
   deletedAt: Date;
+
+  @Column({ type: 'text', array: true, nullable: true })
+  attachments?: string[] | null;
 }

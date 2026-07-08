@@ -7,6 +7,7 @@ import {
   IsUUID,
   Max,
   Min,
+  IsArray,
 } from 'class-validator';
 
 export class CreateContractDto {
@@ -30,4 +31,9 @@ export class CreateContractDto {
   @Min(0)
   @Max(100)
   retentionPercentage?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
 }

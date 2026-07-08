@@ -109,15 +109,7 @@ export class PersonsService {
           });
           const savedCp = await this.contractPersonRepository.save(contractPerson);
 
-          if (healthDeclarations && healthDeclarations.length > 0) {
-            const hdEntities = healthDeclarations.map((hd) =>
-              this.healthDeclarationRepository.create({
-                ...hd,
-                contractPerson: savedCp,
-              }),
-            );
-            await this.healthDeclarationRepository.save(hdEntities);
-          }
+          await this.saveHealthDeclarations(healthDeclarations, savedCp);
 
           if (resolvedRole === PersonRole.AFILIADO) {
             // Registrar en historial
@@ -179,15 +171,7 @@ export class PersonsService {
       });
       const savedCp = await this.contractPersonRepository.save(contractPerson);
 
-      if (healthDeclarations && healthDeclarations.length > 0) {
-        const hdEntities = healthDeclarations.map((hd) =>
-          this.healthDeclarationRepository.create({
-            ...hd,
-            contractPerson: savedCp,
-          }),
-        );
-        await this.healthDeclarationRepository.save(hdEntities);
-      }
+      await this.saveHealthDeclarations(healthDeclarations, savedCp);
 
       await this.contractsService.recalculateMonthlyAmount(contractId);
 
@@ -465,5 +449,19 @@ export class PersonsService {
     }
 
     await this.invoiceRepository.save(invoice);
+  }
+  private async saveHealthDeclarations(
+    healthDeclarations: Partial<HealthDeclaration>[] | undefined,
+    contractPerson: ContractPerson,
+  ) {
+    if (healthDeclarations && healthDeclarations.length > 0) {
+      const hdEntities = healthDeclarations.map((hd) =>
+        this.healthDeclarationRepository.create({
+          ...hd,
+          contractPerson,
+        }),
+      );
+      await this.healthDeclarationRepository.save(hdEntities);
+    }
   }
 }
