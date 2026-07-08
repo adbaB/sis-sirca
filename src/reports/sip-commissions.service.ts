@@ -1,7 +1,11 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { DataSource } from 'typeorm';
-import { formatToISODateString, getCaracasDateTime } from '../common/utils/date.util';
+import {
+  formatToISODateString,
+  getCaracasDateTime,
+  getEndOfMonth,
+} from '../common/utils/date.util';
 import { PdfService } from '../pdf/services/pdf.service';
 import {
   applyGrandTotalStyle,
@@ -80,7 +84,7 @@ export class SipCommissionsService {
     const billingMonth = `${year}-${monthStr}`;
 
     const startDate = `${year}-${monthStr}-01`;
-    const lastDay = new Date(year, month, 0).getDate();
+    const lastDay = getEndOfMonth(startDate).getDate();
     const endDate = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
 
     // 1. Get all active portfolio codes for column headers

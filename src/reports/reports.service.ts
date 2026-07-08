@@ -18,7 +18,7 @@ import {
   loadLogoBase64,
   MONTH_NAMES_ES,
 } from './report-utils';
-import { formatDateES } from '../common/utils/date.util';
+import { formatDateES, getCaracasDateTime } from '../common/utils/date.util';
 
 interface ContractReportRow {
   contractCode: string;
@@ -87,7 +87,11 @@ export class ReportsService {
       // Last completed payment date
       const lastPayment = completedPayments
         .filter((p) => p.paymentDate)
-        .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())[0];
+        .sort(
+          (a, b) =>
+            getCaracasDateTime(b.paymentDate).toMillis() -
+            getCaracasDateTime(a.paymentDate).toMillis(),
+        )[0];
       const paymentDate = lastPayment ? formatDateES(lastPayment.paymentDate, 'dd/MM/yyyy') : null;
 
       // Status class for PDF styling

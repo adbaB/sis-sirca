@@ -31,7 +31,12 @@ import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DateTime } from 'luxon';
-import { parseBirthDate, CARACAS_ZONE } from '../../common/utils/date.util';
+import {
+  parseBirthDate,
+  CARACAS_ZONE,
+  getCaracasTodayJSDate,
+  getCaracasDateTime,
+} from '../../common/utils/date.util';
 import { Plan } from '../../plans/entities/plan.entity';
 import { HealthDeclaration, HealthCategory } from '../entities/health-declaration.entity';
 import { PdfService } from '../../pdf/services/pdf.service';
@@ -114,9 +119,9 @@ function getCalendarDateComponents(dateInput: Date | string): {
         year: Number(match[1]),
       };
     }
-    const d = new Date(dateInput);
+    const d = getCaracasDateTime(dateInput).toJSDate();
     if (isNaN(d.getTime())) {
-      const today = new Date();
+      const today = getCaracasTodayJSDate();
       return { day: today.getDate(), monthIndex: today.getMonth(), year: today.getFullYear() };
     }
     return {
@@ -141,7 +146,7 @@ function getCalendarDateComponents(dateInput: Date | string): {
     };
   }
 
-  const today = new Date();
+  const today = getCaracasTodayJSDate();
   return {
     day: today.getDate(),
     monthIndex: today.getMonth(),
@@ -152,7 +157,7 @@ function getCalendarDateComponents(dateInput: Date | string): {
 function getAge(birthDate?: Date | string): number {
   if (!birthDate) return 0;
   const { day, monthIndex, year } = getCalendarDateComponents(birthDate);
-  const today = new Date();
+  const today = getCaracasTodayJSDate();
   let age = today.getFullYear() - year;
   const m = today.getMonth() - monthIndex;
   if (m < 0 || (m === 0 && today.getDate() < day)) {
@@ -871,7 +876,7 @@ export class ContractsService {
         day: dayNumber,
         monthIndex,
         year: yearNumber,
-      } = getCalendarDateComponents(fullContract.affiliationDate || new Date());
+      } = getCalendarDateComponents(fullContract.affiliationDate || getCaracasTodayJSDate());
       const dayText = SPANISH_DAYS[dayNumber] || String(dayNumber);
       const monthText = SPANISH_MONTHS[monthIndex];
 

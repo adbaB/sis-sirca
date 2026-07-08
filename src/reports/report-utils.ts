@@ -1,7 +1,11 @@
 import ExcelJS from 'exceljs';
 import { readFile, access } from 'fs/promises';
 import { Logger } from '@nestjs/common';
-import { formatDateES as centralFormatDateES, getCaracasNow } from '../common/utils/date.util';
+import {
+  formatDateES as centralFormatDateES,
+  getCaracasNow,
+  getCaracasTodayJSDate,
+} from '../common/utils/date.util';
 import { join } from 'path';
 import { DataSource } from 'typeorm';
 
@@ -154,7 +158,7 @@ export const createWorkbook = (
 } => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SIRCA - Sistema Integral';
-  workbook.created = new Date();
+  workbook.created = getCaracasTodayJSDate();
 
   const ws = workbook.addWorksheet(sheetName, {
     properties: { defaultColWidth: 15 },

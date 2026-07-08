@@ -22,6 +22,7 @@ import {
   getCaracasNow,
   getCaracasTodayJSDate,
   formatDateES,
+  getCaracasDateTime,
 } from '../../../common/utils/date.util';
 import { Surplus, SurplusStatus } from '../../entities/surplus.entity';
 import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
@@ -931,7 +932,11 @@ export class InvoiceService {
     // Sort payments newest first
     const completedPayments = (invoice.payments ?? [])
       .filter((p) => p.status === PaymentStatus.COMPLETED)
-      .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+      .sort(
+        (a, b) =>
+          getCaracasDateTime(b.paymentDate).toMillis() -
+          getCaracasDateTime(a.paymentDate).toMillis(),
+      );
 
     // Build one page per COMPLETED payment (shows its receipt image)
     // If no completed payments exist, build a single summary page
