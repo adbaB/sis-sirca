@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { GoogleSheetsService } from '../../google/services/google-sheets.service';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { BillingService } from '../services/billing.service';
+import { getCaracasTodayJSDate } from '../../common/utils/date.util';
 
 /**
  * Maps a Google Sheets status string to the corresponding PaymentStatus
@@ -98,7 +99,7 @@ export class PaymentCronService {
 
       this.eventEmitter.emit(target.event, {
         reference: referencia,
-        detectedAt: new Date(),
+        detectedAt: getCaracasTodayJSDate(),
       });
     }
   }

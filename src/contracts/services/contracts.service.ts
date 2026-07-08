@@ -30,6 +30,8 @@ import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { DateTime } from 'luxon';
+import { parseBirthDate, CARACAS_ZONE } from '../../common/utils/date.util';
 import { Plan } from '../../plans/entities/plan.entity';
 import { HealthDeclaration, HealthCategory } from '../entities/health-declaration.entity';
 import { PdfService } from '../../pdf/services/pdf.service';
@@ -479,7 +481,7 @@ export class ContractsService {
           // Update person details
           person.name = name;
           if (birthDate) {
-            person.birthDate = new Date(birthDate);
+            person.birthDate = parseBirthDate(birthDate);
           }
           if (gender !== undefined) {
             person.gender = gender;
@@ -508,7 +510,7 @@ export class ContractsService {
             typeIdentityCard,
             identityCard,
             name,
-            birthDate: birthDate ? new Date(birthDate) : undefined,
+            birthDate: parseBirthDate(birthDate),
             gender,
             plan,
             phone,
@@ -1568,8 +1570,12 @@ export class ContractsService {
   }
 
   async getAffiliationStats(month: number, year: number) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const start = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE }).startOf(
+      'day',
+    );
+    const end = start.endOf('month');
+    const startDate = start.toJSDate();
+    const endDate = end.toJSDate();
 
     const stats = await this.affiliationHistoryRepository
       .createQueryBuilder('h')

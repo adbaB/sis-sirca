@@ -7,7 +7,6 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DateTime } from 'luxon';
 import { DataSource, EntityManager, In, IsNull, QueryRunner, Repository } from 'typeorm';
 import { ContractPerson } from '../../../contracts/entities/contract-person.entity';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
@@ -18,7 +17,12 @@ import { SurplusService } from '../../services/surplus.service';
 import { InvoiceLine } from '../entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Payment, PaymentStatus } from '../../entities/payment.entity';
-import { getBillingMonth } from '../../utils/billing-month.util';
+import {
+  getBillingMonth,
+  getCaracasNow,
+  getCaracasTodayJSDate,
+  formatDateES,
+} from '../../../common/utils/date.util';
 import { Surplus, SurplusStatus } from '../../entities/surplus.entity';
 import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
 import { Plan } from '../../../plans/entities/plan.entity';
@@ -228,8 +232,8 @@ export class InvoiceService {
         };
       });
 
-      const now = new Date();
-      const dueDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5);
+      const now = getCaracasNow();
+      const dueDate = now.plus({ days: 5 }).toJSDate();
 
       const retentionPercentage = Number(contract.retentionPercentage || 0);
       const retentionAmount = totalAmount * (retentionPercentage / 100);
@@ -237,7 +241,7 @@ export class InvoiceService {
       const invoice = invoiceRepo.create({
         contract: contract,
         billingMonth: billingMonth,
-        issueDate: new Date(),
+        issueDate: getCaracasTodayJSDate(),
         dueDate: dueDate,
         baseAmount: totalAmount,
         totalAmount: totalAmount,
@@ -308,7 +312,7 @@ export class InvoiceService {
 
     const normalizedMethod = paymentMethod ? paymentMethod.toLowerCase() : '';
     if (normalizedMethod === 'transferencia' || normalizedMethod === 'pago_movil') {
-      const fechaVe = DateTime.now().setZone('America/Caracas').toJSDate();
+      const fechaVe = getCaracasTodayJSDate();
       const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
 
       if (!exchangeRate) {
@@ -737,7 +741,7 @@ export class InvoiceService {
         surplusRepo.create({
           amountUsd: excessUsd,
           amountBs: null,
-          date: new Date(),
+          date: getCaracasTodayJSDate(),
           payment: lastPayment,
           invoice: null,
           contract: invoice.contract,
@@ -871,12 +875,7 @@ export class InvoiceService {
       throw new NotFoundException(`Invoice "${invoiceId}" has no associated contract`);
     }
 
-    const today = new Date().toLocaleDateString('es-VE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      timeZone: 'America/Caracas',
-    });
+    const today = formatDateES(getCaracasNow(), 'dd/MM/yyyy');
 
     // Titular info
     const titularCp = contract.contractPersons?.find((cp) => cp.isBillingOwner);

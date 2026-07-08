@@ -21,6 +21,7 @@ import { PdfService } from '../../pdf/services/pdf.service';
 import { CreateAdditionalChargeDto } from '../dto/create-additional-charge.dto';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { BillingService } from '../services/billing.service';
+import { parseOcrDateToISO } from '../../common/utils/date.util';
 
 @Controller('billing')
 export class BillingController {
@@ -140,13 +141,7 @@ export class BillingController {
 
     const s3Url = await this.awsService.uploadFile(file);
     const ocrResult = await this.ocrService.extractReceiptData(s3Url);
-    let formattedDate = '';
-    if (ocrResult.fecha) {
-      const parts = ocrResult.fecha.split('/');
-      if (parts.length === 3) {
-        formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
+    const formattedDate = parseOcrDateToISO(ocrResult.fecha);
 
     const currency = ocrResult.moneda ? ocrResult.moneda.trim().toUpperCase() : '';
     let mappedMethod = 'PAGO_MOVIL';
