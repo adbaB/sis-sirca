@@ -379,7 +379,11 @@ export class ContractsService {
       await manager.getRepository(SystemCounter).save(counter);
 
       const serialNumber = String(serial).padStart(5, '0');
-      const generatedCode = `SIR-${advisor.code}-${serialNumber}`;
+      let advisorCodeStr = '000';
+      if (advisor?.code) {
+        advisorCodeStr = String(advisor.code).padStart(3, '0');
+      }
+      const generatedCode = `SIR-${advisorCodeStr}-${serialNumber}`;
 
       // ── 4.2. Create the contract ──────────────────────────────────────
       const contract = contractRepo.create({
@@ -499,17 +503,17 @@ export class ContractsService {
           if (gender !== undefined) {
             person.gender = gender;
           }
-          person.phone = phone;
-          person.alternatePhone = alternatePhone;
-          person.email = email;
-          person.address = address;
-          person.city = city;
-          person.state = state;
-          person.postalCode = postalCode;
-          person.weight = weight;
-          person.height = height;
-          person.occupation = occupation;
-          person.legalRepresentative = legalRepresentative;
+          if (phone !== undefined) person.phone = phone;
+          if (alternatePhone !== undefined) person.alternatePhone = alternatePhone;
+          if (email !== undefined) person.email = email;
+          if (address !== undefined) person.address = address;
+          if (city !== undefined) person.city = city;
+          if (state !== undefined) person.state = state;
+          if (postalCode !== undefined) person.postalCode = postalCode;
+          if (weight !== undefined) person.weight = weight;
+          if (height !== undefined) person.height = height;
+          if (occupation !== undefined) person.occupation = occupation;
+          if (legalRepresentative !== undefined) person.legalRepresentative = legalRepresentative;
 
           // Only update the plan if they are an AFILIADO in the new contract
           if (role === PersonRole.AFILIADO) {
