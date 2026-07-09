@@ -28,10 +28,7 @@ export enum TypeIdentityCard {
   PN = 'PN',
 }
 
-const decimalTransformer = {
-  to: (value: number | null) => value,
-  from: (value: string | null) => (value === null ? null : Number(value)),
-};
+import { nullableDecimalTransformer } from '../../common/transformers/decimal.transformer';
 
 @Entity('persons')
 @Unique(['typeIdentityCard', 'identityCard'])
@@ -80,7 +77,7 @@ export class Person {
     precision: 5,
     scale: 2,
     nullable: true,
-    transformer: decimalTransformer,
+    transformer: nullableDecimalTransformer,
   })
   weight?: number;
 
@@ -89,7 +86,7 @@ export class Person {
     precision: 4,
     scale: 2,
     nullable: true,
-    transformer: decimalTransformer,
+    transformer: nullableDecimalTransformer,
   })
   height?: number;
 

@@ -13,6 +13,8 @@ import {
   IsNumber,
   Min,
   Max,
+  IsEmail,
+  MaxLength,
 } from 'class-validator';
 import { PersonRole, Parentesco } from '../entities/contract-person.entity';
 import { HealthDeclarationDto } from './health-declaration.dto';
@@ -64,7 +66,7 @@ export class AffiliatePersonDto {
   @IsOptional()
   alternatePhone?: string;
 
-  @IsString()
+  @IsEmail()
   @IsOptional()
   email?: string;
 
@@ -85,10 +87,12 @@ export class AffiliatePersonDto {
   postalCode?: string;
 
   @IsNumber()
+  @Min(0.01)
   @IsOptional()
   weight?: number;
 
   @IsNumber()
+  @Min(0.01)
   @IsOptional()
   height?: number;
 
@@ -110,6 +114,7 @@ export class AffiliatePersonDto {
 export class CreateContractFullDto {
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   legacyCode?: string;
 
   @IsDateString()

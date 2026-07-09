@@ -251,6 +251,14 @@ const HEALTH_CATEGORIES_METADATA = [
   },
 ];
 
+function isSamePerson(cp1?: ContractPerson | null, cp2?: ContractPerson | null): boolean {
+  if (!cp1 || !cp2) return false;
+  return (
+    cp1.person?.typeIdentityCard === cp2.person?.typeIdentityCard &&
+    cp1.person?.identityCard === cp2.person?.identityCard
+  );
+}
+
 @Injectable()
 export class ContractsService {
   private readonly logger = new Logger(ContractsService.name);
@@ -715,17 +723,9 @@ export class ContractsService {
       const planPerson = fullContract.contractPersons.find((cp) => cp.person?.plan)?.person;
       const contractPlan = planPerson?.plan;
       const planName = contractPlan?.name || '';
-      const isPlata = planName.toUpperCase().includes('PLATA');
-      const isOro = planName.toUpperCase().includes('ORO');
-      const isPlatino = planName.toUpperCase().includes('PLATINO');
 
       const beneficiaries = affiliateCps
-        .filter(
-          (cp) =>
-            !titularCp ||
-            cp.person?.typeIdentityCard !== titularCp.person?.typeIdentityCard ||
-            cp.person?.identityCard !== titularCp.person?.identityCard,
-        )
+        .filter((cp) => !isSamePerson(cp, titularCp))
         .map((cp, idx) => {
           const person = cp.person;
           return {
@@ -779,12 +779,7 @@ export class ContractsService {
         };
       });
 
-      const isTitularAlsoBeneficiary = affiliateCps.some(
-        (cp) =>
-          titularCp &&
-          cp.person?.typeIdentityCard === titularCp.person?.typeIdentityCard &&
-          cp.person?.identityCard === titularCp.person?.identityCard,
-      );
+      const isTitularAlsoBeneficiary = affiliateCps.some((cp) => isSamePerson(cp, titularCp));
 
       const titularRow =
         titularCp && !isTitularAlsoBeneficiary
@@ -807,12 +802,7 @@ export class ContractsService {
           : null;
 
       const beneficiariesRow = affiliateCps
-        .filter(
-          (cp) =>
-            !titularCp ||
-            cp.person?.typeIdentityCard !== titularCp.person?.typeIdentityCard ||
-            cp.person?.identityCard !== titularCp.person?.identityCard,
-        )
+        .filter((cp) => !isSamePerson(cp, titularCp))
         .map((cp) => {
           const plan = cp.person?.plan;
           const coverage = plan?.coverage
@@ -881,34 +871,17 @@ export class ContractsService {
       const monthText = SPANISH_MONTHS[monthIndex];
 
       const logoBase64 = await loadLogoBase64(this.logger);
-      const allMembers = [];
-      if (titularData && titularData.name) {
-        allMembers.push({
-          name: titularData.name,
-          isPN: titularData.typeIdentityCard === 'PN',
-        });
-      }
-      for (const cp of beneficiariesRow) {
-        allMembers.push({
-          name: cp.name,
-          isPN: cp.typeIdentityCard === 'PN',
-        });
-      }
 
       const pdfData = {
         contractCode: fullContract.code,
         affiliationDateFormatted: formatDate(fullContract.affiliationDate),
         logoBase64,
         titular: titularData,
-        isPlata,
-        isOro,
-        isPlatino,
         planName,
         beneficiaries,
         emptyRows,
         healthQuestions,
         advisorName: fullContract.advisor?.name || '',
-        advisorCode: fullContract.advisor?.code || '',
         dayText,
         dayNumber,
         monthText,
@@ -916,7 +889,6 @@ export class ContractsService {
         titularRow,
         beneficiariesRow,
         contractedPlansList,
-        allMembers,
       };
 
       return this.pdfService.generatePdf('contract-affiliation', pdfData);

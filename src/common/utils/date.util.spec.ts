@@ -58,6 +58,26 @@ describe('Date Utilities', () => {
     dt = parseDateToCaracas('03-07-2026');
     expect(dt.isValid).toBe(true);
     expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-07-03');
+
+    // non-Zelle MM/DD/YYYY fallback (fails DD/MM, succeeds MM/DD)
+    dt = parseDateToCaracas('07/13/2026');
+    expect(dt.isValid).toBe(true);
+    expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-07-13');
+
+    // non-Zelle MM-DD-YYYY fallback
+    dt = parseDateToCaracas('07-13-2026');
+    expect(dt.isValid).toBe(true);
+    expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-07-13');
+
+    // Zelle MM-DD-YYYY
+    dt = parseDateToCaracas('07-13-2026', true);
+    expect(dt.isValid).toBe(true);
+    expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-07-13');
+
+    // Invalid/Null
+    expect(parseDateToCaracas(null as unknown as string).isValid).toBe(false);
+    expect(parseDateToCaracas(undefined as unknown as string).isValid).toBe(false);
+    expect(parseDateToCaracas('').isValid).toBe(false);
   });
 
   it('should parse birth dates without day shifting', () => {
@@ -95,5 +115,9 @@ describe('Date Utilities', () => {
   it('should parse OCR dates safely', () => {
     expect(parseOcrDateToISO('10/10/2023')).toBe('2023-10-10');
     expect(parseOcrDateToISO('10-10-23')).toBe('2023-10-10');
+    expect(parseOcrDateToISO('10.10.2023')).toBe('2023-10-10');
+    expect(parseOcrDateToISO(null)).toBe('');
+    expect(parseOcrDateToISO('')).toBe('');
+    expect(parseOcrDateToISO('invalid-date')).toBe('');
   });
 });

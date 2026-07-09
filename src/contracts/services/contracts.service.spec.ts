@@ -159,14 +159,77 @@ describe('ContractsService', () => {
           };
         }),
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      jest.spyOn(repository.manager, 'transaction').mockImplementation(async (cb: any) => {
-        return cb(mockManager);
-      });
+      jest
+        .spyOn(repository.manager, 'transaction')
+        .mockImplementation(
+          (
+            isolationLevelOrRunInTransaction: unknown,
+            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
+          ) => {
+            const cb =
+              typeof isolationLevelOrRunInTransaction === 'function'
+                ? (isolationLevelOrRunInTransaction as (
+                    entityManager: EntityManager,
+                  ) => Promise<unknown>)
+                : runInTransaction!;
+            return cb(mockManager as unknown as EntityManager) as Promise<unknown>;
+          },
+        );
 
       const result = await service.create(createContractDto);
 
       expect(result).toEqual(mockContract);
+    });
+
+    it('should create SystemCounter if it does not exist and increment it', async () => {
+      const mockCounter = { key: 'contract_code', value: 1 };
+      const mockSystemCounterRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockReturnValue(mockCounter),
+        save: jest.fn().mockResolvedValue(mockCounter),
+      };
+
+      const customManager = {
+        getRepository: jest.fn().mockImplementation((entityClass: unknown) => {
+          if (entityClass === SystemCounter) return mockSystemCounterRepo;
+          return {
+            findOne: jest.fn().mockResolvedValue({ id: 'adv-1', code: '001' }),
+            create: jest.fn().mockReturnValue({}),
+            save: jest.fn().mockResolvedValue({}),
+          };
+        }),
+      };
+
+      jest
+        .spyOn(repository.manager, 'transaction')
+        .mockImplementation(
+          (
+            isolationLevelOrRunInTransaction: unknown,
+            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
+          ) => {
+            const cb =
+              typeof isolationLevelOrRunInTransaction === 'function'
+                ? (isolationLevelOrRunInTransaction as (
+                    entityManager: EntityManager,
+                  ) => Promise<unknown>)
+                : runInTransaction!;
+            return cb(customManager as unknown as EntityManager) as Promise<unknown>;
+          },
+        );
+
+      const dto: CreateContractDto = {
+        affiliationDate: '2023-01-01',
+        advisorId: 'adv-1',
+      };
+
+      await service.create(dto);
+
+      expect(mockSystemCounterRepo.findOne).toHaveBeenCalledWith({
+        where: { key: 'contract_code' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockSystemCounterRepo.create).toHaveBeenCalledWith({ key: 'contract_code', value: 1 });
+      expect(mockSystemCounterRepo.save).toHaveBeenCalledWith({ key: 'contract_code', value: 2 });
     });
   });
 
@@ -507,7 +570,7 @@ describe('ContractsService', () => {
                     entityManager: EntityManager,
                   ) => Promise<unknown>)
                 : runInTransaction!;
-            return cb(mockManager as EntityManager) as Promise<unknown>; // return as Promise<unknown> since transaction is typed dynamically
+            return cb(mockManager as unknown as EntityManager) as Promise<unknown>; // return as Promise<unknown> since transaction is typed dynamically
           },
         );
       jest.spyOn(repository, 'findOne').mockResolvedValue(null);
@@ -539,6 +602,64 @@ describe('ContractsService', () => {
       expect(mockPersonRepo.save).toHaveBeenCalled();
       expect(mockCpRepo.save).toHaveBeenCalled();
       expect(result).toEqual(mockContract);
+    });
+
+    it('should create SystemCounter if it does not exist and increment it', async () => {
+      const mockCounter = { key: 'contract_code', value: 1 };
+      const mockSystemCounterRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockReturnValue(mockCounter),
+        save: jest.fn().mockResolvedValue(mockCounter),
+      };
+
+      const customManager = {
+        ...mockManager,
+        getRepository: jest.fn().mockImplementation((entityClass: unknown) => {
+          if (entityClass === SystemCounter)
+            return mockSystemCounterRepo as unknown as Repository<SystemCounter>;
+          return (mockManager.getRepository as jest.Mock)(entityClass);
+        }),
+      };
+
+      jest
+        .spyOn(repository.manager, 'transaction')
+        .mockImplementation(
+          (
+            isolationLevelOrRunInTransaction: unknown,
+            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
+          ) => {
+            const cb =
+              typeof isolationLevelOrRunInTransaction === 'function'
+                ? (isolationLevelOrRunInTransaction as (
+                    entityManager: EntityManager,
+                  ) => Promise<unknown>)
+                : runInTransaction!;
+            return cb(customManager as unknown as EntityManager) as Promise<unknown>;
+          },
+        );
+
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2023-01-01',
+        advisorId: 'adv-1',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Juan Perez',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+        ],
+      };
+
+      await service.createFull(dto);
+
+      expect(mockSystemCounterRepo.findOne).toHaveBeenCalledWith({
+        where: { key: 'contract_code' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockSystemCounterRepo.create).toHaveBeenCalledWith({ key: 'contract_code', value: 1 });
+      expect(mockSystemCounterRepo.save).toHaveBeenCalledWith({ key: 'contract_code', value: 2 });
     });
 
     it('should throw BadRequestException if there is more than one titular', async () => {
@@ -662,7 +783,7 @@ describe('ContractsService', () => {
                     entityManager: EntityManager,
                   ) => Promise<unknown>)
                 : runInTransaction!;
-            return cb(mockManager as EntityManager) as Promise<unknown>; // return as Promise<unknown> instead of any
+            return cb(mockManager as unknown as EntityManager) as Promise<unknown>; // return as Promise<unknown> instead of any
           },
         );
     });

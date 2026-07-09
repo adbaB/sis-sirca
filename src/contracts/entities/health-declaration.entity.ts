@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -28,6 +29,7 @@ export class HealthDeclaration {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index()
   @ManyToOne('ContractPerson', { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'contract_person_id' })
   contractPerson: ContractPerson;

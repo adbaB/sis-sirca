@@ -20,10 +20,7 @@ export enum ContractStatus {
   INACTIVE = 'INACTIVE',
 }
 
-const decimalTransformer = {
-  to: (value: number) => value,
-  from: (value: string | null) => (value === null ? 0 : Number(value)),
-};
+import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 
 @Entity('contracts')
 export class Contract {

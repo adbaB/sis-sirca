@@ -8,11 +8,13 @@ import {
   Max,
   Min,
   IsArray,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateContractDto {
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   legacyCode?: string;
   @IsDateString()
   @IsNotEmpty()

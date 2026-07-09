@@ -49,8 +49,7 @@ export function formatDateES(dateVal: Date | string | DateTime, format = 'dd-MM-
   } else {
     dt = DateTime.fromISO(dateVal).setZone(CARACAS_ZONE);
     if (!dt.isValid) {
-      const parsedDate = new Date(`${dateVal}T00:00:00`);
-      dt = DateTime.fromJSDate(parsedDate).setZone(CARACAS_ZONE);
+      dt = DateTime.fromSQL(dateVal as string).setZone(CARACAS_ZONE);
     }
   }
   return dt.isValid ? dt.toFormat(format) : '';

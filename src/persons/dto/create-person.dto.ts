@@ -9,6 +9,8 @@ import {
   IsUUID,
   IsArray,
   ValidateNested,
+  IsEmail,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PersonStatus, TypeIdentityCard } from '../entities/person.entity';
@@ -64,7 +66,7 @@ export class CreatePersonDto {
   @IsOptional()
   alternatePhone?: string;
 
-  @IsString()
+  @IsEmail()
   @IsOptional()
   email?: string;
 
@@ -85,10 +87,12 @@ export class CreatePersonDto {
   postalCode?: string;
 
   @IsNumber()
+  @Min(0.01)
   @IsOptional()
   weight?: number;
 
   @IsNumber()
+  @Min(0.01)
   @IsOptional()
   height?: number;
 
