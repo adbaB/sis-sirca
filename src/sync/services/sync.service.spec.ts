@@ -410,7 +410,7 @@ describe('SyncService', () => {
       await save([baseItem]);
 
       expect(mockContractsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'CON-001' }),
+        expect.objectContaining({ legacyCode: 'CON-001' }),
       );
     });
 

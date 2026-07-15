@@ -17,11 +17,12 @@ import { InvoiceLineCategory } from '../../billing/enums/invoice-line-category.e
 import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { BillingService } from '../../billing/services/billing.service';
-import { getBillingMonth } from '../../billing/utils/billing-month.util';
+import { getBillingMonth } from '../../common/utils/date.util';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
 
 @Injectable()
 export class PersonsService {
@@ -36,6 +37,8 @@ export class PersonsService {
     private invoiceRepository: Repository<Invoice>,
     @InjectRepository(InvoiceLine)
     private invoiceLineRepository: Repository<InvoiceLine>,
+    @InjectRepository(HealthDeclaration)
+    private healthDeclarationRepository: Repository<HealthDeclaration>,
     private plansService: PlansService,
     @Inject(forwardRef(() => ContractsService))
     private contractsService: ContractsService,
@@ -44,7 +47,15 @@ export class PersonsService {
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
-    const { planId, contractId, role, isBillingOwner, ...personData } = createPersonDto;
+    const {
+      planId,
+      contractId,
+      role,
+      isBillingOwner,
+      relationship,
+      healthDeclarations,
+      ...personData
+    } = createPersonDto;
     const resolvedRole = role || PersonRole.AFILIADO;
 
     // Check if a person with this identityCard already exists
@@ -94,8 +105,11 @@ export class PersonsService {
             person,
             role: resolvedRole,
             isBillingOwner: isBillingOwner ?? false,
+            relationship,
           });
-          await this.contractPersonRepository.save(contractPerson);
+          const savedCp = await this.contractPersonRepository.save(contractPerson);
+
+          await this.saveHealthDeclarations(healthDeclarations, savedCp);
 
           if (resolvedRole === PersonRole.AFILIADO) {
             // Registrar en historial
@@ -153,8 +167,11 @@ export class PersonsService {
         person: savedPerson,
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
+        relationship,
       });
-      await this.contractPersonRepository.save(contractPerson);
+      const savedCp = await this.contractPersonRepository.save(contractPerson);
+
+      await this.saveHealthDeclarations(healthDeclarations, savedCp);
 
       await this.contractsService.recalculateMonthlyAmount(contractId);
 
@@ -432,5 +449,19 @@ export class PersonsService {
     }
 
     await this.invoiceRepository.save(invoice);
+  }
+  private async saveHealthDeclarations(
+    healthDeclarations: Partial<HealthDeclaration>[] | undefined,
+    contractPerson: ContractPerson,
+  ) {
+    if (healthDeclarations && healthDeclarations.length > 0) {
+      const hdEntities = healthDeclarations.map((hd) =>
+        this.healthDeclarationRepository.create({
+          ...hd,
+          contractPerson,
+        }),
+      );
+      await this.healthDeclarationRepository.save(hdEntities);
+    }
   }
 }

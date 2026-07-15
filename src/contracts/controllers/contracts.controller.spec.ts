@@ -57,7 +57,7 @@ describe('ContractsController', () => {
     it('should create a contract with affiliates', async () => {
       const dto: CreateContractFullDto = {
         affiliationDate: '2023-01-01',
-        code: '1',
+        advisorId: '1',
         affiliates: [
           {
             typeIdentityCard: TypeIdentityCard.V,

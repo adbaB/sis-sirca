@@ -8,7 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  NotFoundException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { RequirePermissions } from '../../auth/decorators';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
@@ -65,6 +68,21 @@ export class ContractsController {
   @RequirePermissions('read:contracts', 'read:pipeline')
   findOne(@Param('id') id: string) {
     return this.contractsService.findOne(id);
+  }
+
+  @Get(':id/pdf')
+  @RequirePermissions('read:contracts')
+  async getContractPdf(@Param('id') id: string, @Res() res: Response) {
+    const buffer = await this.contractsService.generateContractPdfBuffer(id);
+    if (!buffer) {
+      throw new NotFoundException('No se pudo generar el PDF del contrato.');
+    }
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="contrato-${id}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Patch(':id')

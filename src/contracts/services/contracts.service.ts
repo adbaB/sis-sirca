@@ -3,11 +3,13 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Logger,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
+import { SystemCounter } from '../../common/entities/system-counter.entity';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
@@ -28,7 +30,18 @@ import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { DateTime } from 'luxon';
+import {
+  parseBirthDate,
+  CARACAS_ZONE,
+  getCaracasTodayJSDate,
+  getCaracasDateTime,
+} from '../../common/utils/date.util';
 import { Plan } from '../../plans/entities/plan.entity';
+import { HealthDeclaration, HealthCategory } from '../entities/health-declaration.entity';
+import { PdfService } from '../../pdf/services/pdf.service';
+import { AwsService } from '../../aws/aws.service';
+import { loadLogoBase64 } from '../../reports/report-utils';
 
 export interface PipelineTotals {
   totalPipeline: number;
@@ -43,8 +56,213 @@ export interface PipelineCounts {
   paid: number;
 }
 
+const SPANISH_MONTHS = [
+  'ENERO',
+  'FEBRERO',
+  'MARZO',
+  'ABRIL',
+  'MAYO',
+  'JUNIO',
+  'JULIO',
+  'AGOSTO',
+  'SEPTIEMBRE',
+  'OCTUBRE',
+  'NOVIEMBRE',
+  'DICIEMBRE',
+];
+
+const SPANISH_DAYS: Record<number, string> = {
+  1: 'UN',
+  2: 'DOS',
+  3: 'TRES',
+  4: 'CUATRO',
+  5: 'CINCO',
+  6: 'SEIS',
+  7: 'SIETE',
+  8: 'OCHO',
+  9: 'NUEVE',
+  10: 'DIEZ',
+  11: 'ONCE',
+  12: 'DOCE',
+  13: 'TRECE',
+  14: 'CATORCE',
+  15: 'QUINCE',
+  16: 'DIECISEIS',
+  17: 'DIECISIETE',
+  18: 'DIECIOCHO',
+  19: 'DIECINUEVE',
+  20: 'VEINTE',
+  21: 'VEINTIUNO',
+  22: 'VEINTIDOS',
+  23: 'VEINTITRES',
+  24: 'VEINTICUATRO',
+  25: 'VEINTICINCO',
+  26: 'VEINTISEIS',
+  27: 'VEINTISIETE',
+  28: 'VEINTIOCHO',
+  29: 'VEINTINUEVE',
+  30: 'TREINTA',
+  31: 'TREINTA Y UNO',
+};
+
+function getCalendarDateComponents(dateInput: Date | string): {
+  day: number;
+  monthIndex: number;
+  year: number;
+} {
+  if (typeof dateInput === 'string') {
+    const match = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return {
+        day: Number(match[3]),
+        monthIndex: Number(match[2]) - 1,
+        year: Number(match[1]),
+      };
+    }
+    const d = getCaracasDateTime(dateInput).toJSDate();
+    if (isNaN(d.getTime())) {
+      const today = getCaracasTodayJSDate();
+      return { day: today.getDate(), monthIndex: today.getMonth(), year: today.getFullYear() };
+    }
+    return {
+      day: d.getUTCDate(),
+      monthIndex: d.getUTCMonth(),
+      year: d.getUTCFullYear(),
+    };
+  }
+
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    if (dateInput.getUTCHours() === 0 && dateInput.getUTCMinutes() === 0) {
+      return {
+        day: dateInput.getUTCDate(),
+        monthIndex: dateInput.getUTCMonth(),
+        year: dateInput.getUTCFullYear(),
+      };
+    }
+    return {
+      day: dateInput.getDate(),
+      monthIndex: dateInput.getMonth(),
+      year: dateInput.getFullYear(),
+    };
+  }
+
+  const today = getCaracasTodayJSDate();
+  return {
+    day: today.getDate(),
+    monthIndex: today.getMonth(),
+    year: today.getFullYear(),
+  };
+}
+
+function getAge(birthDate?: Date | string): number {
+  if (!birthDate) return 0;
+  const { day, monthIndex, year } = getCalendarDateComponents(birthDate);
+  const today = getCaracasTodayJSDate();
+  let age = today.getFullYear() - year;
+  const m = today.getMonth() - monthIndex;
+  if (m < 0 || (m === 0 && today.getDate() < day)) {
+    age--;
+  }
+  return age;
+}
+
+function formatDate(date?: Date | string): string {
+  if (!date) return '-';
+  const { day, monthIndex, year } = getCalendarDateComponents(date);
+  const dayStr = String(day).padStart(2, '0');
+  const monthStr = String(monthIndex + 1).padStart(2, '0');
+  return `${dayStr}-${monthStr}-${year}`;
+}
+
+const HEALTH_CATEGORIES_METADATA = [
+  {
+    id: 1,
+    category: HealthCategory.CARDIOVASCULAR,
+    title: 'ENFERMEDADES CARDIOVASCULARES',
+    description:
+      'Hipertensión Arterial, infarto al Miocardio, Arritmia Cardiaca, Aneurisma, Palitaciones, Angina de Pecho, Fiebre Reumática, Arteriosclerosis, Trastornos Valvulares, Tromboflebitis, Varices.',
+  },
+  {
+    id: 2,
+    category: HealthCategory.RESPIRATORIA,
+    title: 'ENFERMEDADES DE LAS VÍAS RESPIRATORIAS',
+    description:
+      'Ronquera, tos Persistente, bronquitis, asma, enfisema, tuberculosis, pleuresía, neumonía, bronconeumonía.',
+  },
+  {
+    id: 3,
+    category: HealthCategory.DIGESTIVA,
+    title: 'ENFERMEDADES DE LAS VÍAS DIGESTIVAS',
+    description:
+      'Gastritis, Ulceras, Hepatitis, Cirrosis, Hemorroides o similares, Apendicitis, colitis, Litiasis Vesicular, hernias hiatales, fisura anal.',
+  },
+  {
+    id: 4,
+    category: HealthCategory.ENDOCRINA,
+    title: 'ENFERMEDADES DEL SISTEMA ENDOCRINO',
+    description: 'Diabetes, Obesidad, Tiroides, Paratiroides.',
+  },
+  {
+    id: 5,
+    category: HealthCategory.OSTEOMUSCULAR,
+    title: 'ENFERMEDADES OSTEOMUSCULARES',
+    description:
+      'Neuritis, Ciática, Reumatismo, Hernias Discales, Artritis, Osteoporosis, Desviación de la Columna Vertebral, Problemas en las Articulaciones.',
+  },
+  {
+    id: 6,
+    category: HealthCategory.GENITOURINARIA,
+    title: 'ENFERMEDADES GENITO-URINARIAS',
+    description:
+      'Cálculos u otra alteración en los riñones, vejiga o próstata, prostatitis, varicocele.',
+  },
+  {
+    id: 7,
+    category: HealthCategory.PIEL_OJOS_OIDOS,
+    title: 'ENFERMEDADES DE LA PIEL, OJOS, OIDOS, NARIZ, GARGANTA',
+    description:
+      'Desviación del Tabique Nasal, Sinusitis, Amigdalitis, Rinitis, Otitis, Cataratas, Hipertrofia de Cornetes.',
+  },
+  {
+    id: 8,
+    category: HealthCategory.CRONICA_TRANSITORIA,
+    title: 'ENFERMEDADES TRANSITORIAS CRÓNICAS O ALGÚN DEFECTOS NO MENCIONADOS ANTERIORMENTE',
+    description: 'Cualquier otra condición o defecto crónico o transitorio.',
+  },
+  {
+    id: 9,
+    category: HealthCategory.GINECOLOGICA,
+    title: 'ENFERMEDADES PROPIAS DE LA MUJER',
+    description:
+      'Fibroma Uterino, Prolapso, Obstrucción en las Trompas, Ovarios Poliquísticos, Patologías Mamarias, Endometriosis.',
+  },
+  {
+    id: 10,
+    category: HealthCategory.QUIRURGICA,
+    title:
+      'LE HA SIDO INDICADA O PRACTICADA ALGUNA INTERVENCIÓN QUIRÚRGICA O SE HA SOMETIDO A TRATAMIENTO MÉDICO POR ALGUNA ENFERMEDAD O LESIÓN ADICIONAL A LAS ANTERIORES',
+    description: 'Cualquier cirugía, hospitalización o tratamiento médico adicional.',
+  },
+  {
+    id: 11,
+    category: HealthCategory.OTROS,
+    title: 'OTROS',
+    description: 'Cualquier otra enfermedad o síntoma no especificado (Alergias, asma, etc.).',
+  },
+];
+
+function isSamePerson(cp1?: ContractPerson | null, cp2?: ContractPerson | null): boolean {
+  if (!cp1 || !cp2) return false;
+  return (
+    cp1.person?.typeIdentityCard === cp2.person?.typeIdentityCard &&
+    cp1.person?.identityCard === cp2.person?.identityCard
+  );
+}
+
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+
   constructor(
     @InjectRepository(Contract)
     private contractsRepository: Repository<Contract>,
@@ -57,25 +275,46 @@ export class ContractsService {
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
     private plansService: PlansService,
+    private readonly pdfService: PdfService,
+    private readonly awsService: AwsService,
   ) {}
 
   async create(createContractDto: CreateContractDto): Promise<Contract> {
-    const existingContract = await this.contractsRepository.findOne({
-      where: { code: createContractDto.code },
-    });
-    if (existingContract) {
-      throw new BadRequestException(
-        `El código de contrato "${createContractDto.code}" ya está registrado.`,
-      );
-    }
-
     const { advisorId, portfolioId, ...rest } = createContractDto;
-    const contract = this.contractsRepository.create({
-      ...rest,
-      ...(advisorId ? { advisor: { id: advisorId } } : {}),
-      ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
+
+    return this.contractsRepository.manager.transaction(async (manager) => {
+      const advisor = await manager.getRepository(Advisor).findOne({ where: { id: advisorId } });
+      if (!advisor) {
+        throw new NotFoundException(`El asesor proporcionado no existe.`);
+      }
+
+      let counter = await manager.getRepository(SystemCounter).findOne({
+        where: { key: 'contract_code' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!counter) {
+        counter = manager.getRepository(SystemCounter).create({ key: 'contract_code', value: 1 });
+      }
+      const serial = counter.value;
+      counter.value += 1;
+      await manager.getRepository(SystemCounter).save(counter);
+
+      const serialNumber = String(serial).padStart(5, '0');
+      let advisorCodeStr = '000';
+      if (advisor?.code) {
+        advisorCodeStr = String(advisor.code).padStart(3, '0');
+      }
+      const generatedCode = `SIR-${advisorCodeStr}-${serialNumber}`;
+
+      const contract = manager.getRepository(Contract).create({
+        ...rest,
+        code: generatedCode,
+        legacyCode: createContractDto.legacyCode ?? undefined,
+        advisor,
+        ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
+      });
+      return manager.getRepository(Contract).save(contract);
     });
-    return this.contractsRepository.save(contract);
   }
 
   /**
@@ -89,13 +328,6 @@ export class ContractsService {
    * - If a person's document already exists as AFILIADO in another active contract → rejected
    */
   async createFull(dto: CreateContractFullDto): Promise<Contract> {
-    const existingContract = await this.contractsRepository.findOne({
-      where: { code: dto.code },
-    });
-    if (existingContract) {
-      throw new BadRequestException(`El código de contrato "${dto.code}" ya está registrado.`);
-    }
-
     const { advisorId, portfolioId, affiliates, ...contractData } = dto;
 
     // ── 1. Validate TITULAR count (optional, but at most one) ──────────────
@@ -122,17 +354,42 @@ export class ContractsService {
       }
     }
 
-    // ── 4. Execute within a transaction ────────────────────────────────────
-    return this.contractsRepository.manager.transaction(async (manager) => {
+    const savedContract = await this.contractsRepository.manager.transaction(async (manager) => {
       const personRepo = manager.getRepository(Person);
       const contractRepo = manager.getRepository(Contract);
       const cpRepo = manager.getRepository(ContractPerson);
       const historyRepo = manager.getRepository(AffiliationHistory);
 
-      // ── 4.1. Create the contract ──────────────────────────────────────
+      // ── 4.1. Get advisor and generate code ────────────────────────────
+      const advisorRepo = manager.getRepository(Advisor);
+      const advisor = await advisorRepo.findOne({ where: { id: advisorId } });
+      if (!advisor) {
+        throw new NotFoundException(`El asesor proporcionado no existe.`);
+      }
+
+      let counter = await manager.getRepository(SystemCounter).findOne({
+        where: { key: 'contract_code' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!counter) {
+        counter = manager.getRepository(SystemCounter).create({ key: 'contract_code', value: 1 });
+      }
+      const serial = counter.value;
+      counter.value += 1;
+      await manager.getRepository(SystemCounter).save(counter);
+
+      const serialNumber = String(serial).padStart(5, '0');
+      let advisorCodeStr = '000';
+      if (advisor?.code) {
+        advisorCodeStr = String(advisor.code).padStart(3, '0');
+      }
+      const generatedCode = `SIR-${advisorCodeStr}-${serialNumber}`;
+
+      // ── 4.2. Create the contract ──────────────────────────────────────
       const contract = contractRepo.create({
         ...contractData,
-        ...(advisorId ? { advisor: { id: advisorId } } : {}),
+        code: generatedCode,
+        advisor,
         ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
       });
       const savedContract = await contractRepo.save(contract);
@@ -148,13 +405,20 @@ export class ContractsService {
           planId,
           role,
           isBillingOwner,
+          relationship,
+          phone,
+          alternatePhone,
+          email,
+          address,
+          city,
+          state,
+          postalCode,
+          weight,
+          height,
+          occupation,
+          legalRepresentative,
+          healthDeclarations,
         } = affiliate;
-
-        // Resolve plan for AFILIADO
-        let plan: Plan | null = null;
-        if (role === PersonRole.AFILIADO && planId) {
-          plan = await this.plansService.findOne(planId);
-        }
 
         // Check if person already exists by document (lock row for updates to avoid race conditions)
         // NOTE: We must NOT load relations alongside pessimistic_write because
@@ -170,6 +434,12 @@ export class ContractsService {
             where: { id: person.id },
             relations: ['plan', 'contractPersons', 'contractPersons.contract'],
           });
+        }
+
+        // Resolve plan for AFILIADO
+        let plan: Plan | null = null;
+        if (role === PersonRole.AFILIADO && planId) {
+          plan = await this.plansService.findOne(planId);
         }
 
         let affiliationReason: string | null = null;
@@ -228,11 +498,22 @@ export class ContractsService {
           // Update person details
           person.name = name;
           if (birthDate) {
-            person.birthDate = new Date(birthDate);
+            person.birthDate = parseBirthDate(birthDate);
           }
           if (gender !== undefined) {
             person.gender = gender;
           }
+          if (phone !== undefined) person.phone = phone;
+          if (alternatePhone !== undefined) person.alternatePhone = alternatePhone;
+          if (email !== undefined) person.email = email;
+          if (address !== undefined) person.address = address;
+          if (city !== undefined) person.city = city;
+          if (state !== undefined) person.state = state;
+          if (postalCode !== undefined) person.postalCode = postalCode;
+          if (weight !== undefined) person.weight = weight;
+          if (height !== undefined) person.height = height;
+          if (occupation !== undefined) person.occupation = occupation;
+          if (legalRepresentative !== undefined) person.legalRepresentative = legalRepresentative;
 
           // Only update the plan if they are an AFILIADO in the new contract
           if (role === PersonRole.AFILIADO) {
@@ -246,9 +527,20 @@ export class ContractsService {
             typeIdentityCard,
             identityCard,
             name,
-            birthDate: birthDate ? new Date(birthDate) : undefined,
+            birthDate: parseBirthDate(birthDate),
             gender,
             plan,
+            phone,
+            alternatePhone,
+            email,
+            address,
+            city,
+            state,
+            postalCode,
+            weight,
+            height,
+            occupation,
+            legalRepresentative,
           });
           person = await personRepo.save(person);
         }
@@ -263,8 +555,21 @@ export class ContractsService {
           person,
           role,
           isBillingOwner: resolvedIsBillingOwner,
+          relationship,
         });
-        await cpRepo.save(contractPerson);
+        const savedCp = await cpRepo.save(contractPerson);
+
+        // Process health declarations
+        if (healthDeclarations && healthDeclarations.length > 0) {
+          const hdRepo = manager.getRepository(HealthDeclaration);
+          const hdEntities = healthDeclarations.map((hd) =>
+            hdRepo.create({
+              ...hd,
+              contractPerson: savedCp,
+            }),
+          );
+          await hdRepo.save(hdEntities);
+        }
 
         // ── 4.4. Record affiliation history for AFILIADOs ───────────────
         if (role === PersonRole.AFILIADO) {
@@ -296,6 +601,308 @@ export class ContractsService {
         ],
       });
     });
+
+    // ── 5. Invoice Generation (after transaction commits) ──────────
+    try {
+      // Create initial invoice as "AFILIACION" instead of default "MENSUALIDAD"
+      await this.billingService.generateInvoiceForContract(savedContract.id, undefined, true);
+      this.logger.log(`Invoice generated for contract ${savedContract.code}`);
+    } catch (invoiceError) {
+      const errorMessage =
+        invoiceError instanceof Error ? invoiceError.message : String(invoiceError);
+      this.logger.error(
+        `Failed to generate invoice for contract ${savedContract.code}: ${errorMessage}`,
+      );
+    }
+
+    // ── 6. PDF Generation & S3 Upload (after transaction commits) ──────────
+    this.generateAndUploadContractPdf(savedContract.id).catch((pdfError) => {
+      const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
+      this.logger.error(
+        `Failed to generate or upload PDF for contract ${savedContract.code}: ${errorMessage}`,
+      );
+    });
+
+    return savedContract;
+  }
+
+  async generateAndUploadContractPdf(contractId: string): Promise<string | null> {
+    try {
+      const pdfBuffer = await this.generateContractPdfBuffer(contractId);
+      if (!pdfBuffer) {
+        return null;
+      }
+      const fullContract = await this.contractsRepository.findOne({
+        where: { id: contractId },
+        select: ['code'],
+      });
+      if (!fullContract) {
+        return null;
+      }
+      const filename = `${fullContract.code}.pdf`;
+      const pdfUrl = await this.awsService.uploadFile(
+        { buffer: pdfBuffer, originalname: filename, mimetype: 'application/pdf' },
+        'contracts',
+        fullContract.code,
+      );
+      this.logger.log(`PDF generated and uploaded to S3: ${pdfUrl}`);
+      return pdfUrl;
+    } catch (pdfError) {
+      const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
+      this.logger.error(
+        `Failed to generate or upload PDF for contract ${contractId}: ${errorMessage}`,
+      );
+      return null;
+    }
+  }
+
+  async generateContractPdfBuffer(contractId: string): Promise<Buffer | null> {
+    try {
+      const fullContract = await this.contractsRepository.findOne({
+        where: { id: contractId },
+        relations: [
+          'contractPersons',
+          'contractPersons.person',
+          'contractPersons.person.plan',
+          'contractPersons.healthDeclarations',
+          'contractPersons.healthDeclarations.contractPerson',
+          'advisor',
+          'portfolio',
+        ],
+      });
+
+      if (!fullContract) {
+        this.logger.warn(`Contract with ID ${contractId} not found for PDF buffer generation.`);
+        return null;
+      }
+
+      let titularCp = fullContract.contractPersons.find((cp) => cp.role === PersonRole.TITULAR);
+      if (!titularCp) {
+        titularCp = fullContract.contractPersons.find((cp) => cp.isBillingOwner === true);
+      }
+      const affiliateCps = fullContract.contractPersons.filter(
+        (cp) => cp.role === PersonRole.AFILIADO,
+      );
+
+      const titularPerson = titularCp?.person;
+      const titularData = titularPerson
+        ? {
+            name: titularPerson.name,
+            typeIdentityCard: titularPerson.typeIdentityCard,
+            identityCard: titularPerson.identityCard,
+            birthDateFormatted: formatDate(titularPerson.birthDate),
+            age: getAge(titularPerson.birthDate),
+            weight: titularPerson.weight || '',
+            height: titularPerson.height || '',
+            address: titularPerson.address || '',
+            city: titularPerson.city || '',
+            state: titularPerson.state || '',
+            postalCode: titularPerson.postalCode || '',
+            phone: titularPerson.phone || '',
+            alternatePhone: titularPerson.alternatePhone || '',
+            email: titularPerson.email || '',
+            occupation: titularPerson.occupation || '',
+            legalRepresentative: titularPerson.legalRepresentative || '',
+          }
+        : {
+            name: '',
+            typeIdentityCard: '',
+            identityCard: '',
+            birthDateFormatted: '',
+            age: '',
+            weight: '',
+            height: '',
+            address: '',
+            city: '',
+            state: '',
+            postalCode: '',
+            phone: '',
+            alternatePhone: '',
+            email: '',
+            occupation: '',
+            legalRepresentative: '',
+          };
+
+      // Find the first plan in the contract (either from titular or affiliates)
+      const planPerson = fullContract.contractPersons.find((cp) => cp.person?.plan)?.person;
+      const contractPlan = planPerson?.plan;
+      const planName = contractPlan?.name || '';
+
+      const beneficiaries = affiliateCps
+        .filter((cp) => !isSamePerson(cp, titularCp))
+        .map((cp, idx) => {
+          const person = cp.person;
+          return {
+            index: String(idx + 1).padStart(2, '0'),
+            name: person.name,
+            typeIdentityCard: person.typeIdentityCard,
+            identityCard: person.identityCard,
+            relationship: cp.relationship || '-',
+            birthDateFormatted: formatDate(person.birthDate),
+            age: getAge(person.birthDate),
+            genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
+            weight: person.weight || '-',
+            height: person.height || '-',
+            planName: person.plan?.name || '-',
+          };
+        });
+
+      const emptyRows: string[] = [];
+      for (let i = beneficiaries.length + 1; i <= 7; i++) {
+        emptyRows.push(String(i).padStart(2, '0'));
+      }
+
+      const allDeclarations: HealthDeclaration[] = [];
+      for (const cp of fullContract.contractPersons) {
+        if (cp.healthDeclarations) {
+          allDeclarations.push(...cp.healthDeclarations);
+        }
+      }
+
+      const healthQuestions = HEALTH_CATEGORIES_METADATA.map((meta) => {
+        const matchingDecls = allDeclarations.filter(
+          (d) => d.category === meta.category && d.hasCondition,
+        );
+        const hasCondition = matchingDecls.length > 0;
+
+        const affectedDetailsList = matchingDecls.map((d) => {
+          const cp = fullContract.contractPersons.find((c) => c.id === d.contractPerson?.id);
+          const name = cp?.person?.name || 'Desconocido';
+          const detailsStr = d.details ? `: ${d.details}` : '';
+          return `${name}${detailsStr}`;
+        });
+
+        const affectedDetails = affectedDetailsList.join(', ');
+
+        return {
+          id: meta.id,
+          title: meta.title,
+          description: meta.description,
+          hasCondition,
+          affectedDetails,
+        };
+      });
+
+      const isTitularAlsoBeneficiary = affiliateCps.some((cp) => isSamePerson(cp, titularCp));
+
+      const titularRow =
+        titularCp && !isTitularAlsoBeneficiary
+          ? {
+              name: titularCp.person.name,
+              typeIdentityCard: titularCp.person.typeIdentityCard,
+              identityCard: titularCp.person.identityCard,
+              age: getAge(titularCp.person.birthDate),
+              planName: titularCp.person.plan?.name || 'TITULAR',
+              coverage: titularCp.person.plan?.coverage
+                ? Number(titularCp.person.plan.coverage).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : '0.00',
+              monthlyCost: titularCp.person.plan?.amount
+                ? Number(titularCp.person.plan.amount).toFixed(2)
+                : '0.00',
+            }
+          : null;
+
+      const beneficiariesRow = affiliateCps
+        .filter((cp) => !isSamePerson(cp, titularCp))
+        .map((cp) => {
+          const plan = cp.person?.plan;
+          const coverage = plan?.coverage
+            ? Number(plan.coverage).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : '0.00';
+          return {
+            name: cp.person.name,
+            typeIdentityCard: cp.person.typeIdentityCard,
+            identityCard: cp.person.identityCard,
+            age: getAge(cp.person.birthDate),
+            planName: plan?.name || '-',
+            coverage,
+            monthlyCost: plan ? Number(plan.amount).toFixed(2) : '0.00',
+          };
+        });
+
+      const contractedPlansMap = new Map<
+        string,
+        { count: number; coverage: string; unitCost: number; totalCost: number }
+      >();
+
+      for (const cp of fullContract.contractPersons) {
+        const plan = cp.person?.plan;
+        if (plan) {
+          const planName = plan.name.toUpperCase();
+          const unitCost = Number(plan.amount) || 0;
+          const coverage = plan.coverage
+            ? Number(plan.coverage).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : '0.00';
+
+          const existing = contractedPlansMap.get(planName);
+          if (existing) {
+            existing.count += 1;
+            existing.totalCost += unitCost;
+          } else {
+            contractedPlansMap.set(planName, {
+              count: 1,
+              coverage,
+              unitCost,
+              totalCost: unitCost,
+            });
+          }
+        }
+      }
+
+      const contractedPlansList = Array.from(contractedPlansMap.entries()).map(([name, data]) => ({
+        name,
+        count: data.count,
+        coverage: data.coverage,
+        unitCost: data.unitCost.toFixed(2),
+        totalCost: data.totalCost.toFixed(2),
+      }));
+
+      const {
+        day: dayNumber,
+        monthIndex,
+        year: yearNumber,
+      } = getCalendarDateComponents(fullContract.affiliationDate || getCaracasTodayJSDate());
+      const dayText = SPANISH_DAYS[dayNumber] || String(dayNumber);
+      const monthText = SPANISH_MONTHS[monthIndex];
+
+      const logoBase64 = await loadLogoBase64(this.logger);
+
+      const pdfData = {
+        contractCode: fullContract.code,
+        affiliationDateFormatted: formatDate(fullContract.affiliationDate),
+        logoBase64,
+        titular: titularData,
+        planName,
+        beneficiaries,
+        emptyRows,
+        healthQuestions,
+        advisorName: fullContract.advisor?.name || '',
+        dayText,
+        dayNumber,
+        monthText,
+        yearNumber,
+        titularRow,
+        beneficiariesRow,
+        contractedPlansList,
+      };
+
+      return this.pdfService.generatePdf('contract-affiliation', pdfData);
+    } catch (pdfError) {
+      const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
+      this.logger.error(
+        `Failed to generate or upload PDF for contract ${contractId}: ${errorMessage}`,
+      );
+      return null;
+    }
   }
 
   async inactivate(contractId: string, dto: InactivateContractDto): Promise<Contract> {
@@ -412,7 +1019,7 @@ export class ContractsService {
   private applySearchFilter(qb: SelectQueryBuilder<Contract>, search?: string): void {
     if (!search) return;
     qb.andWhere(
-      '(contract.code ILIKE :search OR (contractPersons.isBillingOwner = true AND (person.name ILIKE :search OR person.identityCard ILIKE :search)))',
+      '(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR (contractPersons.isBillingOwner = true AND (person.name ILIKE :search OR person.identityCard ILIKE :search)))',
       { search: `%${search}%` },
     );
   }
@@ -746,7 +1353,7 @@ export class ContractsService {
 
   async findByCode(code: string): Promise<Contract> {
     return this.contractsRepository.findOne({
-      where: { code },
+      where: [{ code }, { legacyCode: code }],
       relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
     });
   }
@@ -774,18 +1381,6 @@ export class ContractsService {
   async update(id: string, updateContractDto: UpdateContractDto): Promise<Contract> {
     const contract = await this.findOne(id);
     const { advisorId, portfolioId, ...rest } = updateContractDto;
-
-    if (updateContractDto.code) {
-      const existing = await this.contractsRepository
-        .createQueryBuilder('contract')
-        .where('contract.code = :code AND contract.id != :id', { code: updateContractDto.code, id })
-        .getOne();
-      if (existing) {
-        throw new BadRequestException(
-          `El código de contrato "${updateContractDto.code}" ya está registrado en otro contrato.`,
-        );
-      }
-    }
 
     Object.assign(contract, rest);
 
@@ -956,8 +1551,12 @@ export class ContractsService {
   }
 
   async getAffiliationStats(month: number, year: number) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const start = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE }).startOf(
+      'day',
+    );
+    const end = start.endOf('month');
+    const startDate = start.toJSDate();
+    const endDate = end.toJSDate();
 
     const stats = await this.affiliationHistoryRepository
       .createQueryBuilder('h')

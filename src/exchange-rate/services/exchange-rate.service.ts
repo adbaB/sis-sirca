@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ExchangeRate } from '../entities/Exchange-rate.entity';
-import { DateTime } from 'luxon';
+import { formatToISODateString } from '../../common/utils/date.util';
 
 @Injectable()
 export class ExchangeRateService {
@@ -12,10 +12,7 @@ export class ExchangeRateService {
   ) {}
 
   async getExchangeRateByDate(date: Date | string): Promise<ExchangeRate | null> {
-    const dateStr =
-      typeof date === 'string'
-        ? date
-        : DateTime.fromJSDate(date).setZone('America/Caracas').toFormat('yyyy-MM-dd');
+    const dateStr = formatToISODateString(date);
     return this.exchangeRateRepository.findOne({ where: { date: dateStr as unknown as Date } });
   }
 }

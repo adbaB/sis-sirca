@@ -207,8 +207,7 @@ export class AdvisorPaymentsService {
    * Helper to map a raw database query row to an AdvisorPaymentRow.
    */
   private mapQueryRowToPaymentRow(row: AdvisorPaymentQueryRow): AdvisorPaymentRow {
-    const pDate = new Date(row.payment_date);
-    const paymentDateES = formatDateES(pDate);
+    const paymentDateES = formatDateES(row.payment_date);
 
     const invoiceStatusLabel =
       row.invoice_status === 'PAID'

@@ -167,7 +167,7 @@ describe('BillingService (Delegation)', () => {
         'generateInvoiceForContract-res' as unknown as Invoice,
       );
       const res = await service.generateInvoiceForContract('id', 'month');
-      expect(invoiceService.generateInvoiceForContract).toHaveBeenCalledWith('id', 'month');
+      expect(invoiceService.generateInvoiceForContract).toHaveBeenCalledWith('id', 'month', false);
       expect(res).toBe('generateInvoiceForContract-res');
     });
 

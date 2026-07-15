@@ -11,6 +11,7 @@ import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.en
 import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DataCleaned } from '../interface/data-cleaned.interface';
+import { excelDateToDateString } from '../../common/utils/date.util';
 
 @Injectable()
 export class SyncService {
@@ -158,9 +159,7 @@ export class SyncService {
   }
 
   excelDateToJSDate(serial: number): string | null {
-    if (!serial || isNaN(serial)) return null;
-    const date = new Date((serial - 25569) * 86400 * 1000);
-    return date.toISOString().split('T')[0]; // Retorna YYYY-MM-DD
+    return excelDateToDateString(serial);
   }
 
   private async saveDataToDatabase(data: DataCleaned[]): Promise<void> {
@@ -208,9 +207,9 @@ export class SyncService {
             `[CONTRACT] Creating new contract with code "${item.contract}" (fila=${item.rowNumber}).`,
           );
           contract = await this.contractsService.create({
-            code: item.contract,
+            legacyCode: item.contract,
             affiliationDate: item.affiliationDate,
-            advisorId: advisor?.id ?? undefined,
+            advisorId: advisor ? advisor.id : '00000000-0000-0000-0000-000000000000', // Use a dummy UUID or let the service fail if advisor is strictly required
           });
         } else {
           // Update advisor on existing contract if it changed

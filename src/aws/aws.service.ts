@@ -24,6 +24,7 @@ export class AwsService {
   async uploadFile(
     file: Express.Multer.File | { buffer: Buffer; originalname: string; mimetype: string },
     folder: string = 'receipts',
+    customFilename?: string,
   ): Promise<string> {
     try {
       const bucket = this.configService.aws.s3Bucket;
@@ -32,7 +33,8 @@ export class AwsService {
       }
 
       const fileExtension = file.originalname.split('.').pop();
-      const fileName = `${folder}/${uuidv4()}.${fileExtension}`;
+      const nameWithoutExt = customFilename || uuidv4();
+      const fileName = `${folder}/${nameWithoutExt}.${fileExtension}`;
 
       const command = new PutObjectCommand({
         Bucket: bucket,

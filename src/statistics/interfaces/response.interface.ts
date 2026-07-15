@@ -22,6 +22,8 @@ export interface StatisticsSummary {
   totalInvoiceAmount: number;
   /** SUM(paid_amount) for PAID + PARTIAL invoices — everything collected so far */
   totalCollected: number;
+  /** SUM(quantity) of MENSUALIDAD and INCLUSION invoice lines for the billing month */
+  totalAffiliates: number;
 }
 
 /** Payment status breakdown row */

@@ -20,10 +20,7 @@ export enum ContractStatus {
   INACTIVE = 'INACTIVE',
 }
 
-const decimalTransformer = {
-  to: (value: number) => value,
-  from: (value: string | null) => (value === null ? 0 : Number(value)),
-};
+import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 
 @Entity('contracts')
 export class Contract {
@@ -54,6 +51,9 @@ export class Contract {
 
   @Column({ type: 'varchar', length: 255, unique: true, nullable: false })
   code: string;
+
+  @Column({ type: 'varchar', length: 255, unique: true, nullable: true, name: 'legacy_code' })
+  legacyCode?: string | null;
 
   @OneToMany('ContractPerson', (contractPerson: ContractPerson) => contractPerson.contract)
   contractPersons: ContractPerson[];
@@ -86,4 +86,7 @@ export class Contract {
 
   @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
   deletedAt: Date;
+
+  @Column({ type: 'text', array: true, nullable: true })
+  attachments?: string[] | null;
 }

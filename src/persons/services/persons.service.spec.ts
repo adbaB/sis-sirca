@@ -9,6 +9,7 @@ import { BillingService } from '../../billing/services/billing.service';
 import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
+import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
@@ -60,6 +61,7 @@ describe('PersonsService', () => {
   const AFH_REPOSITORY_TOKEN = getRepositoryToken(AffiliationHistory);
   const INVOICE_REPOSITORY_TOKEN = getRepositoryToken(Invoice);
   const INVOICE_LINE_REPOSITORY_TOKEN = getRepositoryToken(InvoiceLine);
+  const HD_REPOSITORY_TOKEN = getRepositoryToken(HealthDeclaration);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -124,6 +126,13 @@ describe('PersonsService', () => {
           useValue: {
             find: jest.fn(),
             findOne: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation((dto) => dto),
+            save: jest.fn().mockImplementation(async (entity) => entity),
+          },
+        },
+        {
+          provide: HD_REPOSITORY_TOKEN,
+          useValue: {
             create: jest.fn().mockImplementation((dto) => dto),
             save: jest.fn().mockImplementation(async (entity) => entity),
           },

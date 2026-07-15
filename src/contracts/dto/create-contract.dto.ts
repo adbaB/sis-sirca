@@ -1,16 +1,28 @@
-import { IsDateString, IsNotEmpty, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+  IsArray,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateContractDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  legacyCode?: string;
   @IsDateString()
   @IsNotEmpty()
   affiliationDate: string;
 
   @IsNotEmpty()
-  code: string;
-
-  @IsOptional()
   @IsUUID()
-  advisorId?: string;
+  advisorId: string;
 
   @IsOptional()
   @IsUUID()
@@ -21,4 +33,9 @@ export class CreateContractDto {
   @Min(0)
   @Max(100)
   retentionPercentage?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
 }

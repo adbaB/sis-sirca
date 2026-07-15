@@ -22,10 +22,7 @@ export enum InvoiceStatus {
   PAID = 'PAID',
   CANCELLED = 'CANCELLED',
 }
-const decimalTransformer = {
-  to: (value: number) => value,
-  from: (value: string | null) => (value === null ? 0 : Number(value)),
-};
+import { decimalTransformer } from '../../../common/transformers/decimal.transformer';
 
 @Entity('invoices')
 @Check('"total_amount" >= 0')

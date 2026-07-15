@@ -52,12 +52,13 @@ export class StatisticsService {
    * @param advisorUuid – opcional; si se omite, incluye todos los asesores.
    */
   async getStatistics(billingMonth: string, advisorUuid?: string): Promise<StatisticsResponse> {
-    const [kpiRaw, summaryRaw] = await Promise.all([
+    const [kpiRaw, summaryRaw, totalAffiliates] = await Promise.all([
       this.queryVerificationKpi(billingMonth, advisorUuid),
       this.queryInvoiceSummary(billingMonth, advisorUuid),
+      this.queryTotalAffiliates(billingMonth, advisorUuid),
     ]);
 
-    const summary = this.buildSummary(kpiRaw, summaryRaw);
+    const summary = this.buildSummary(kpiRaw, summaryRaw, totalAffiliates);
     const breakdown = this.buildBreakdown(kpiRaw, summaryRaw);
 
     return { summary, breakdown };
@@ -199,10 +200,38 @@ export class StatisticsService {
   }
 
   /* ──────────────────────────────────────────────────────────────────────
+     Query 4 — Total de afiliados (sumatoria de quantity en lines MENSUALIDAD e INCLUSION)
+     ────────────────────────────────────────────────────────────────────── */
+  private async queryTotalAffiliates(billingMonth: string, advisorUuid?: string): Promise<number> {
+    const params: unknown[] = [billingMonth];
+    const advisorFilter = advisorUuid ? `AND c.advisor_id = $${params.push(advisorUuid)}` : '';
+
+    const sql = `
+      SELECT COALESCE(SUM(il.quantity), 0) AS total_affiliates
+      FROM invoice_lines il
+      INNER JOIN invoices i ON i.id = il.invoice_id
+      INNER JOIN contracts c ON c.id = i.contract_id
+      WHERE il.category IN ('INCLUSION', 'MENSUALIDAD')
+        AND i.billing_month = $1
+        AND c.status = 'ACTIVE'
+        AND c.deleted_at IS NULL
+        AND i.deleted_at IS NULL
+        AND il.deleted_at IS NULL
+        ${advisorFilter};
+    `;
+    const rows = await this.datasource.query<{ total_affiliates: string | number }[]>(sql, params);
+    return Number(rows[0]?.total_affiliates ?? 0);
+  }
+
+  /* ──────────────────────────────────────────────────────────────────────
      Mappers — convierten raw rows a las interfaces del dashboard
      ────────────────────────────────────────────────────────────────────── */
 
-  private buildSummary(kpi: VerificationKpiRaw, inv: InvoiceSummaryRaw): StatisticsSummary {
+  private buildSummary(
+    kpi: VerificationKpiRaw,
+    inv: InvoiceSummaryRaw,
+    totalAffiliates: number,
+  ): StatisticsSummary {
     const partialRemaining = Number(inv.total_partial_to_paid) - Number(inv.total_partial);
 
     return {
@@ -218,6 +247,7 @@ export class StatisticsService {
       totalInvoiceAmount: Number(inv.grand_total_amount),
       /** Total actually collected: paid_amount of PAID + PARTIAL invoices */
       totalCollected: Number(inv.total_collected),
+      totalAffiliates,
     };
   }
 

@@ -11,9 +11,18 @@ import { PersonsController } from './controllers/persons.controller';
 import { Person } from './entities/person.entity';
 import { PersonsService } from './services/persons.service';
 
+import { HealthDeclaration } from '../contracts/entities/health-declaration.entity';
+
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Person, ContractPerson, AffiliationHistory, Invoice, InvoiceLine]),
+    TypeOrmModule.forFeature([
+      Person,
+      ContractPerson,
+      AffiliationHistory,
+      Invoice,
+      InvoiceLine,
+      HealthDeclaration,
+    ]),
     forwardRef(() => ContractsModule),
     forwardRef(() => BillingModule),
     PlansModule,

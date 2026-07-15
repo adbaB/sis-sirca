@@ -83,8 +83,12 @@ export class BillingService {
     return this.invoiceService.recalculateInvoiceAmountFromContract(invoiceId);
   }
 
-  async generateInvoiceForContract(contractId: string, billingMonth?: string) {
-    return this.invoiceService.generateInvoiceForContract(contractId, billingMonth);
+  async generateInvoiceForContract(
+    contractId: string,
+    billingMonth?: string,
+    isAffiliation: boolean = false,
+  ) {
+    return this.invoiceService.generateInvoiceForContract(contractId, billingMonth, isAffiliation);
   }
 
   async buildInvoicePdf(
