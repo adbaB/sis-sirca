@@ -4,9 +4,14 @@ export class AddRelationshipToContractPersons1783438272048 implements MigrationI
   name = 'AddRelationshipToContractPersons1783438272048';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `CREATE TYPE "public"."contract_persons_relationship_enum" AS ENUM('PADRE', 'MADRE', 'HIJO', 'HIJA', 'HERMANO', 'HERMANA', 'ESPOSO', 'ESPOSA', 'ABUELO', 'ABUELA', 'TIO', 'TIA', 'SOBRINO', 'SOBRINA', 'PRIMO', 'PRIMA', 'OTRO')`,
+    const hasEnum = await queryRunner.query(
+      `SELECT 1 FROM pg_type WHERE typname = 'contract_persons_relationship_enum'`,
     );
+    if (!hasEnum.length) {
+      await queryRunner.query(
+        `CREATE TYPE "public"."contract_persons_relationship_enum" AS ENUM('PADRE', 'MADRE', 'HIJO', 'HIJA', 'HERMANO', 'HERMANA', 'ESPOSO', 'ESPOSA', 'ABUELO', 'ABUELA', 'TIO', 'TIA', 'SOBRINO', 'SOBRINA', 'PRIMO', 'PRIMA', 'OTRO')`,
+      );
+    }
     await queryRunner.query(
       `ALTER TABLE "contract_persons" ADD "relationship" "public"."contract_persons_relationship_enum"`,
     );
