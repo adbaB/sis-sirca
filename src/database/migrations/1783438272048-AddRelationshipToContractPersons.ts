@@ -12,9 +12,14 @@ export class AddRelationshipToContractPersons1783438272048 implements MigrationI
         `CREATE TYPE "public"."contract_persons_relationship_enum" AS ENUM('PADRE', 'MADRE', 'HIJO', 'HIJA', 'HERMANO', 'HERMANA', 'ESPOSO', 'ESPOSA', 'ABUELO', 'ABUELA', 'TIO', 'TIA', 'SOBRINO', 'SOBRINA', 'PRIMO', 'PRIMA', 'OTRO')`,
       );
     }
-    await queryRunner.query(
-      `ALTER TABLE "contract_persons" ADD "relationship" "public"."contract_persons_relationship_enum"`,
+    const hasColumn = await queryRunner.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'contract_persons' AND column_name = 'relationship'`,
     );
+    if (!hasColumn.length) {
+      await queryRunner.query(
+        `ALTER TABLE "contract_persons" ADD "relationship" "public"."contract_persons_relationship_enum"`,
+      );
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
