@@ -9,6 +9,7 @@ import { BillingService } from '../billing/services/billing.service';
 import { PersonsService } from '../persons/services/persons.service';
 import config from '../config/configurations';
 import { DataSource } from 'typeorm';
+import { MetaWhatsappService } from './services/meta-whatsapp.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -100,6 +101,7 @@ describe('ChatbotService', () => {
         { provide: BillingService, useValue: mockBillingService },
         { provide: PersonsService, useValue: mockPersonsService },
         { provide: DataSource, useValue: mockDataSource },
+        MetaWhatsappService,
       ],
     }).compile();
 

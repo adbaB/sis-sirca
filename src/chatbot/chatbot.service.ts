@@ -3,7 +3,6 @@ import { ConfigType } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import axios from 'axios';
-import * as crypto from 'crypto';
 import { AwsService } from '../aws/aws.service';
 import { BillingService } from '../billing/services/billing.service';
 import config from '../config/configurations';
@@ -13,6 +12,7 @@ import { PersonsService } from '../persons/services/persons.service';
 import { FlowsCryptoUtil } from './utils/flows-crypto.util';
 import { DataSource } from 'typeorm';
 import { DateTime } from 'luxon';
+import { MetaWhatsappService } from './services/meta-whatsapp.service';
 
 interface UserState {
   step:
@@ -53,140 +53,8 @@ export class ChatbotService {
     private billingService: BillingService,
     private personsService: PersonsService,
     private dataSource: DataSource,
+    private metaWhatsappService: MetaWhatsappService,
   ) {}
-
-  private async sendMessage(to: string, text: string): Promise<void> {
-    const accessToken = this.configService.meta.accessToken;
-    const phoneNumberId = this.configService.meta.phoneNumberId;
-
-    if (!accessToken || !phoneNumberId) {
-      this.logger.error('Missing Meta access token or phone number ID in configuration.');
-      return;
-    }
-
-    try {
-      await axios.post(
-        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to,
-          text: { body: text },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-    } catch (error) {
-      this.logger.error(`Error sending message to ${to}:`, error?.response?.data || error.message);
-    }
-  }
-
-  private async sendInteractiveMessage(
-    to: string,
-    text: string,
-    buttons: Array<{ type: string; reply: { id: string; title: string } }>,
-  ): Promise<void> {
-    const accessToken = this.configService.meta.accessToken;
-    const phoneNumberId = this.configService.meta.phoneNumberId;
-
-    if (!accessToken || !phoneNumberId) {
-      this.logger.error('Missing Meta access token or phone number ID in configuration.');
-      return;
-    }
-
-    try {
-      await axios.post(
-        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to,
-          type: 'interactive',
-          interactive: {
-            type: 'button',
-            body: { text },
-            action: { buttons },
-          },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-    } catch (error) {
-      this.logger.error(
-        `Error sending interactive message to ${to}:`,
-        error?.response?.data || error.message,
-      );
-    }
-  }
-
-  private async sendFlowMessage(to: string, text: string): Promise<boolean> {
-    const accessToken = this.configService.meta.accessToken;
-    const phoneNumberId = this.configService.meta.phoneNumberId;
-    const flowId = this.configService.meta.flowId;
-
-    if (!accessToken || !phoneNumberId || !flowId) {
-      this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
-      return false;
-    }
-
-    try {
-      await axios.post(
-        `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to,
-          type: 'interactive',
-          interactive: {
-            type: 'flow',
-            header: {
-              type: 'text',
-              text: 'Pago de Facturas',
-            },
-            body: {
-              text,
-            },
-            footer: {
-              text: 'Sirca Plan de salud',
-            },
-            action: {
-              name: 'flow',
-              parameters: {
-                flow_message_version: '3',
-                flow_token: crypto.randomUUID(),
-                flow_id: flowId,
-                flow_cta: 'Realizar pago',
-                flow_action: 'navigate',
-                flow_action_payload: {
-                  screen: 'SCREEN_IDENTIFICATION',
-                },
-              },
-            },
-          },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-      return true;
-    } catch (error) {
-      this.logger.error(
-        `Error sending flow message to ${to}:`,
-        error?.response?.data || error.message,
-      );
-      return false;
-    }
-  }
 
   async handleEncryptedFlowDataExchange(body: {
     encrypted_aes_key: string;
@@ -442,7 +310,7 @@ export class ChatbotService {
             'EX',
             this.STATE_TTL_SECONDS,
           );
-          await this.sendMessage(
+          await this.metaWhatsappService.sendMessage(
             recipientId,
             'Tuvimos problemas para enviar o abrir el formulario seguro en tu dispositivo. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
           );
@@ -490,7 +358,7 @@ export class ChatbotService {
           { type: 'reply', reply: { id: 'realizar_pago', title: 'Pagar mi Plan 💳' } },
         ];
 
-        await this.sendInteractiveMessage(
+        await this.metaWhatsappService.sendInteractiveMessage(
           fromNumber,
           '¡Hola! Soy Helena de SIRCA Plan de Salud. ✨ Qué gusto saludarte, ¿en qué puedo apoyarte hoy?',
           buttons,
@@ -524,7 +392,7 @@ export class ChatbotService {
             'EX',
             this.STATE_TTL_SECONDS,
           );
-          await this.sendMessage(
+          await this.metaWhatsappService.sendMessage(
             fromNumber,
             '¡Perfecto! Para completar tu registro, por favor envíame por aquí una captura o foto de tu comprobante de pago. ✨',
           );
@@ -536,7 +404,7 @@ export class ChatbotService {
 
       // Handle Interactive button replies for the Main Menu
       if (incomingText === 'info_planes') {
-        await this.sendMessage(
+        await this.metaWhatsappService.sendMessage(
           fromNumber,
           '¡Claro! Te pongo en contacto con nuestros asesores comerciales para que te dé todos los detalles de los planes. ✨\n\nEllos te esperan por aquí:\n📱 *WhatsApp:* +58 424-6537074 / +58 412-1201012\n\n¡Seguro encontrará el plan ideal para ti! 😊',
         );
@@ -545,7 +413,7 @@ export class ChatbotService {
       }
 
       if (incomingText === 'realizar_pago') {
-        const success = await this.sendFlowMessage(
+        const success = await this.metaWhatsappService.sendFlowMessage(
           fromNumber,
           '¡Perfecto! Para que sea más rápido, he preparado un pequeño formulario aquí mismo. Haz clic abajo para completar tus datos de pago de forma segura. ✨',
         );
@@ -559,7 +427,7 @@ export class ChatbotService {
             'EX',
             this.STATE_TTL_SECONDS,
           );
-          await this.sendMessage(
+          await this.metaWhatsappService.sendMessage(
             fromNumber,
             'Tuvimos problemas para iniciar el formulario seguro. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
           );
@@ -580,13 +448,15 @@ export class ChatbotService {
         case 'AWAITING_CAPTURE':
           if (mediaId) {
             try {
-              await this.sendMessage(
+              await this.metaWhatsappService.sendMessage(
                 fromNumber,
                 '¡Recibido! 📥 Dame tan solo un momento mientras valido los datos de tu comprobante. ¡Ya casi terminamos!',
               );
 
               const accessToken = this.configService.meta.accessToken;
 
+              // TODO enviado a meta-whatsapp.service.ts: Consider moving this media handling logic to a dedicated service method for better separation of concerns.
+              // ------------ start --------------------
               // 1. Get media URL
               const mediaResponse = await axios.get(`https://graph.facebook.com/v25.0/${mediaId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -599,7 +469,7 @@ export class ChatbotService {
                 headers: { Authorization: `Bearer ${accessToken}` },
               });
               const buffer = Buffer.from(response.data, 'binary');
-
+              // ------------ finish --------------------
               // Upload to S3
               const ext = contentType.split('/')[1] || 'jpg';
               const originalname = `comprobante.${ext}`;
@@ -632,7 +502,7 @@ export class ChatbotService {
                   },
                 ];
 
-                await this.sendInteractiveMessage(
+                await this.metaWhatsappService.sendInteractiveMessage(
                   fromNumber,
                   `¡Listo! He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n💰 *Monto:* ${extractedData.monto || 'No detectado'}${extractedData.moneda || ''}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
                   buttons,
@@ -646,20 +516,26 @@ export class ChatbotService {
                   'EX',
                   this.STATE_TTL_SECONDS,
                 );
-                await this.sendMessage(
+                await this.metaWhatsappService.sendMessage(
                   fromNumber,
                   '¡Uy! No logré leer todos los datos de tu comprobante automáticamente. 📝\n\n¿Podrías escribirlos tú mismo para avanzar? Usa este formato, por favor:\n\nReferencia, Banco, Monto\n\n*(Ejemplo: 123456, Mercantil, 100)*',
                 );
               }
             } catch (error) {
-              this.logger.error('Error processing media:', error?.response?.data || error.message);
-              await this.sendMessage(
+              let errorMsg = '';
+              if (axios.isAxiosError(error)) {
+                errorMsg = error.response?.data || error.message;
+              } else {
+                errorMsg = error instanceof Error ? error.message : String(error);
+              }
+              this.logger.error('Error processing media:', errorMsg);
+              await this.metaWhatsappService.sendMessage(
                 fromNumber,
                 '¡Lo siento! Hubo un pequeño problema al procesar la imagen de tu comprobante. 🔄\n\n¿Podrías intentar enviarla de nuevo? Asegúrate de que se vea clarito. ✨',
               );
             }
           } else {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Aún no me ha llegado la imagen. 🧐\n\nRecuerda adjuntar la captura de tu comprobante de pago por aquí para que pueda ayudarte a registrarlo.',
             );
@@ -686,7 +562,7 @@ export class ChatbotService {
               'EX',
               this.STATE_TTL_SECONDS,
             );
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Para que el sistema lo reconozca rápido, por favor escribe los datos separados por comas, así: ✍️\n\nReferencia, Banco, Monto\n\n💡 Ejemplo: 123456, Mercantil, 100',
             );
@@ -695,7 +571,7 @@ export class ChatbotService {
 
         case 'AWAITING_MANUAL_INPUT': {
           if (!incomingText || !incomingText.includes(',')) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               '¡Casi lo tenemos! Pero el formato no es el correcto. ✨\n\nInténtalo de nuevo así: Referencia, Banco, Monto\n(Por ejemplo: 123456, Mercantil, 100)',
             );
@@ -726,7 +602,7 @@ export class ChatbotService {
               'EX',
               this.STATE_TTL_SECONDS,
             );
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Parece que tuviste problemas con el formulario. Continuaremos con el proceso por aquí.\n\nPor favor, ingresa tu tipo y número de documento (Ejemplo: V-1234567).',
             );
@@ -735,7 +611,7 @@ export class ChatbotService {
 
         case 'AWAITING_DOC_INFO_MANUAL': {
           if (!incomingText) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Por favor, envía texto con tu tipo y número de documento.',
             );
@@ -743,7 +619,7 @@ export class ChatbotService {
           }
           const docMatch = incomingText.match(/^([VvEeJjGg])[-]*(\d+)$/);
           if (!docMatch) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Formato inválido. Por favor ingresa el documento en este formato: V-1234567',
             );
@@ -760,7 +636,7 @@ export class ChatbotService {
             );
 
             if (!invoices || invoices.length === 0) {
-              await this.sendMessage(
+              await this.metaWhatsappService.sendMessage(
                 fromNumber,
                 'No se encontraron facturas pendientes para este documento. Escribe "Hola" para reiniciar.',
               );
@@ -793,10 +669,10 @@ export class ChatbotService {
             invoiceText +=
               '\nPor favor, responde con los números de las facturas que deseas pagar, separados por comas (Ejemplo: 1, 2).';
 
-            await this.sendMessage(fromNumber, invoiceText);
+            await this.metaWhatsappService.sendMessage(fromNumber, invoiceText);
           } catch (error) {
             this.logger.error('Error fetching invoices manually', error);
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Hubo un error al buscar tus facturas. Inténtalo más tarde.',
             );
@@ -807,7 +683,7 @@ export class ChatbotService {
 
         case 'AWAITING_INVOICE_SELECTION_MANUAL': {
           if (!incomingText) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Por favor, responde con los números de las facturas.',
             );
@@ -824,7 +700,7 @@ export class ChatbotService {
           ];
 
           if (selections.length === 0 || !state.pending_invoices) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Selección inválida. Por favor, responde con los números de las facturas separados por comas.',
             );
@@ -846,7 +722,7 @@ export class ChatbotService {
           }
 
           if (selectedInvoices.length === 0) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'No ingresaste números de factura válidos. Inténtalo de nuevo.',
             );
@@ -870,7 +746,7 @@ export class ChatbotService {
             { type: 'reply', reply: { id: 'pm_zelle', title: 'Zelle' } },
           ];
 
-          await this.sendInteractiveMessage(
+          await this.metaWhatsappService.sendInteractiveMessage(
             fromNumber,
             `Has seleccionado ${selectedInvoices.length} factura(s).\nTotal a pagar: ${state.total_amount}\n\nSelecciona tu método de pago:`,
             buttons,
@@ -880,7 +756,7 @@ export class ChatbotService {
 
         case 'AWAITING_PAYMENT_METHOD_MANUAL': {
           if (!incomingText) {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Por favor, selecciona una opción válida usando los botones.',
             );
@@ -908,7 +784,7 @@ export class ChatbotService {
             paymentInfo =
               'Zelle: platinumclubadmon2@gmail.com\nTitular: Platinum Club Corp\n Cuenta citibank: 9154165049';
           } else {
-            await this.sendMessage(
+            await this.metaWhatsappService.sendMessage(
               fromNumber,
               'Por favor, selecciona una opción válida usando los botones.',
             );
@@ -924,7 +800,7 @@ export class ChatbotService {
             this.STATE_TTL_SECONDS,
           );
 
-          await this.sendMessage(
+          await this.metaWhatsappService.sendMessage(
             fromNumber,
             `Aquí tienes los datos para tu pago:\n\n${paymentInfo}\n\nUna vez realizado el pago, por favor envía la imagen del comprobante (capture) por aquí.`,
           );
@@ -933,7 +809,7 @@ export class ChatbotService {
 
         default:
           await this.redis.del(`chatbot_state:${fromNumber}`);
-          await this.sendMessage(
+          await this.metaWhatsappService.sendMessage(
             fromNumber,
             'Lo siento, no entendí eso. Escribe "Hola" para reiniciar.',
           );
@@ -1083,7 +959,7 @@ export class ChatbotService {
         `Error saving payment for ${fromNumber} after ${paymentsCreated} successful invoice payments. Transaction rolled back.`,
         e,
       );
-      await this.sendMessage(
+      await this.metaWhatsappService.sendMessage(
         fromNumber,
         '¡Oh, no! Tuve un inconveniente al intentar guardar los datos de tu pago. 😰\n\nPor favor, contacta a nuestro equipo Administrativo para solucionarlo de inmediato. ¡Lamentamos las molestias!',
       );
@@ -1094,7 +970,7 @@ export class ChatbotService {
 
     try {
       await this.redis.del(`chatbot_state:${fromNumber}`);
-      await this.sendMessage(
+      await this.metaWhatsappService.sendMessage(
         fromNumber,
         '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
       );
