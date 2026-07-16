@@ -19,6 +19,7 @@ import { AwaitingFlowInteractionStep } from '../steps/stepsImp/AwaitingFlowInter
 import { AwaitingInvoiceSelectionManualStep } from '../steps/stepsImp/AwaitingInvoiceSelectionManual.step';
 import { AwaitingManualInputStep } from '../steps/stepsImp/AwaitingManualInput.step';
 import { AwaitingPaymentMethodManualStep } from '../steps/stepsImp/AwaitingPaymentMethodManual.step';
+import { IStepHandler } from '../steps/step-handler.interface';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -122,7 +123,7 @@ describe('ChatbotService', () => {
         AwaitingPaymentMethodManualStep,
         {
           provide: 'STEP_HANDLERS',
-          useFactory: (...steps: any[]) => steps,
+          useFactory: (...steps: IStepHandler[]) => steps,
           inject: [
             AwaitingCaptureStep,
             AwaitingConfirmationStep,

@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import config from '../../config/configurations';
 import { MetaWhatsappService } from './meta-whatsapp.service';
 import { UserState } from '../interfaces/userState.interface';
 import { ChatbotStateService } from './chatbot-state.service';
