@@ -1364,6 +1364,7 @@ export class ContractsService {
         'contractPersons',
         'contractPersons.person',
         'contractPersons.person.plan',
+        'contractPersons.healthDeclarations',
         'invoices',
         'invoices.payments',
         'surpluses',
