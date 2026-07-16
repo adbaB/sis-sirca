@@ -1,15 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Request, Response } from 'express';
 import { ChatbotController } from './chatbot.controller';
-import { ChatbotService } from './chatbot.service';
+import { ChatbotService } from './services/chatbot.service';
 import config from '../config/configurations';
+import { MetaFlowService } from './services/meta-flow.service';
 
 describe('ChatbotController', () => {
   let controller: ChatbotController;
   let service: ChatbotService;
+  let metaFlowService: MetaFlowService;
 
   const mockChatbotService = {
     handleIncomingMessage: jest.fn(),
+  };
+
+  const mockMetaFlowService = {
     handleEncryptedFlowDataExchange: jest.fn(),
   };
 
@@ -20,6 +25,10 @@ describe('ChatbotController', () => {
         {
           provide: ChatbotService,
           useValue: mockChatbotService,
+        },
+        {
+          provide: MetaFlowService,
+          useValue: mockMetaFlowService,
         },
         {
           provide: config.KEY,
@@ -34,6 +43,7 @@ describe('ChatbotController', () => {
 
     controller = module.get<ChatbotController>(ChatbotController);
     service = module.get<ChatbotService>(ChatbotService);
+    metaFlowService = module.get<MetaFlowService>(MetaFlowService);
   });
 
   it('should be defined', () => {
@@ -105,11 +115,11 @@ describe('ChatbotController', () => {
         initial_vector: 'iv',
       };
 
-      mockChatbotService.handleEncryptedFlowDataExchange.mockResolvedValue('encrypted_payload');
+      mockMetaFlowService.handleEncryptedFlowDataExchange.mockResolvedValue('encrypted_payload');
 
       await controller.handleFlowEndpoint(body, mockResponse);
 
-      expect(service.handleEncryptedFlowDataExchange).toHaveBeenCalledWith(body);
+      expect(metaFlowService.handleEncryptedFlowDataExchange).toHaveBeenCalledWith(body);
       expect(mockResponse.status).toHaveBeenCalledWith(200);
       expect(mockResponse.send).toHaveBeenCalledWith('encrypted_payload');
     });
@@ -125,7 +135,7 @@ describe('ChatbotController', () => {
         initial_vector: 'iv',
       };
 
-      mockChatbotService.handleEncryptedFlowDataExchange.mockRejectedValue(
+      mockMetaFlowService.handleEncryptedFlowDataExchange.mockRejectedValue(
         new Error('Decrypt error'),
       );
 

@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { FlowResponse } from '../interfaces/flow.interface';
 
 /**
  * Utility functions for encrypting and decrypting WhatsApp Flows Data Exchange requests.
@@ -90,11 +91,7 @@ export class FlowsCryptoUtil {
    * @param iv Base64 encoded IV (will be inverted as per Meta spec).
    * @returns Base64 encoded string containing the encrypted response payload.
    */
-  static encryptResponse(
-    payloadObj: Record<string, unknown>,
-    decryptedAesKey: Buffer,
-    iv: string,
-  ): string {
+  static encryptResponse(payloadObj: FlowResponse, decryptedAesKey: Buffer, iv: string): string {
     const ivBuffer = FlowsCryptoUtil.decodeBase64OrBase64Url(iv);
     if (!FlowsCryptoUtil.ALLOWED_IV_LENGTHS.has(ivBuffer.length)) {
       throw new Error(`Invalid IV length. Expected 12 or 16 bytes, got ${ivBuffer.length}`);

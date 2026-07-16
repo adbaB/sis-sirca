@@ -12,11 +12,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { ChatbotService } from './chatbot.service';
+import { ChatbotService } from './services/chatbot.service';
 import { MetaSignatureGuard } from './guards/meta-signature.guard';
 import { ConfigType } from '@nestjs/config';
 import config from '../config/configurations';
 import { Public } from '../auth/decorators';
+import { MetaFlowService } from './services/meta-flow.service';
 
 interface FlowEndpointBody {
   encrypted_aes_key: string;
@@ -33,6 +34,7 @@ export class ChatbotController {
     private readonly chatbotService: ChatbotService,
     @Inject(config.KEY)
     private readonly configService: ConfigType<typeof config>,
+    private readonly metaFlowService: MetaFlowService,
   ) {}
 
   @Get('webhook')
@@ -76,7 +78,7 @@ export class ChatbotController {
   async handleFlowEndpoint(@Body() body: FlowEndpointBody, @Res() response: Response) {
     // Flow endpoints are decrypted and encrypted using the ChatbotService
     try {
-      const encryptedResponse = await this.chatbotService.handleEncryptedFlowDataExchange(body);
+      const encryptedResponse = await this.metaFlowService.handleEncryptedFlowDataExchange(body);
       response.status(HttpStatus.OK).send(encryptedResponse);
     } catch (error) {
       this.logger.error('Error in encrypted flow endpoint:', error);
