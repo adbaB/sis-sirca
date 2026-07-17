@@ -12,6 +12,12 @@ export interface WebhookBody {
 export interface MetaMessage {
   from: string;
   type?: string;
+  errors?: Array<{
+    code: number;
+    title: string;
+    message?: string;
+    error_data?: Record<string, unknown>;
+  }>;
   text?: { body: string };
   image?: { id: string; mime_type: string };
   document?: { id: string; mime_type: string };

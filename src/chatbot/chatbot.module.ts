@@ -18,6 +18,9 @@ import { AwaitingInvoiceSelectionManualStep } from './steps/stepsImp/AwaitingInv
 import { AwaitingManualInputStep } from './steps/stepsImp/AwaitingManualInput.step';
 import { AwaitingPaymentMethodManualStep } from './steps/stepsImp/AwaitingPaymentMethodManual.step';
 import { IStepHandler } from './steps/step-handler.interface';
+import { MetaFlowService } from './services/meta-flow.service';
+import { FetchPaymentDetailHandler } from './steps/flowHandlersImp/fetchPaymentDetail.handler';
+import { FetchInvoiceHandler } from './steps/flowHandlersImp/fetchInvoice.handler';
 
 const stepHandlersProvider = {
   provide: 'STEP_HANDLERS',
@@ -31,6 +34,12 @@ const stepHandlersProvider = {
     AwaitingManualInputStep,
     AwaitingPaymentMethodManualStep,
   ],
+};
+
+const flowHandlersProvider = {
+  provide: 'FLOW_HANDLERS',
+  useFactory: (...handlers: IStepHandler[]) => handlers,
+  inject: [FetchInvoiceHandler, FetchPaymentDetailHandler],
 };
 
 @Module({
@@ -49,6 +58,10 @@ const stepHandlersProvider = {
     AwaitingManualInputStep,
     AwaitingPaymentMethodManualStep,
     stepHandlersProvider,
+    MetaFlowService,
+    FetchInvoiceHandler,
+    FetchPaymentDetailHandler,
+    flowHandlersProvider,
   ],
 })
 export class ChatbotModule {}

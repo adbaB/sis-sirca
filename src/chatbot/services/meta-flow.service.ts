@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import configurations from '../../config/configurations';
+import config from '../../config/configurations';
 import { ConfigType } from '@nestjs/config';
 import { FlowsCryptoUtil } from '../utils/flows-crypto.util';
 import {
@@ -14,13 +14,13 @@ export class MetaFlowService {
   private readonly logger = new Logger(MetaFlowService.name);
 
   constructor(
-    @Inject(configurations.KEY) private readonly config: ConfigType<typeof configurations>,
-    private readonly flowHandlers: FlowActionHandler[],
+    @Inject(config.KEY) private readonly configService: ConfigType<typeof config>,
+    @Inject('FLOW_HANDLERS') private readonly flowHandlers: FlowActionHandler[],
   ) {}
 
   async handleEncryptedFlowDataExchange(body: FlowEncryptedRequest): Promise<string> {
-    const privateKey = this.config.meta.flowPrivateKey;
-    const passphrase = this.config.meta.flowPassphrase;
+    const privateKey = this.configService.meta.flowPrivateKey;
+    const passphrase = this.configService.meta.flowPassphrase;
 
     if (!privateKey) {
       this.logger.warn(

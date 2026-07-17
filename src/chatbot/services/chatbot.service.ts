@@ -29,6 +29,11 @@ export class ChatbotService {
         return;
       }
 
+      if (message.errors && message.errors.length > 0) {
+        this.logger.error(`Received error inside message from Meta API:`, message.errors);
+        return;
+      }
+
       const fromNumber = message.from;
       const incomingText = this.extractText(message);
 

@@ -130,6 +130,7 @@ export class MetaWhatsappService {
             action: {
               name: 'flow',
               parameters: {
+                mode: this.configService.meta.flowMode,
                 flow_message_version: '3',
                 flow_token: crypto.randomUUID(),
                 flow_id: flowId,

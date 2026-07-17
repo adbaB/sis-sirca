@@ -22,7 +22,15 @@ export class AwaitingConfirmationStep implements IStepHandler {
   }
 
   async execute(phone: string, message: MetaMessage, state: UserState): Promise<void> {
-    const text = message.text?.body?.trim().toLowerCase() || '';
+    const text = (message.text?.body || message.interactive?.button_reply?.id || '').trim();
+
+    if (!text) {
+      await this.metaWhatsappService.sendMessage(
+        phone,
+        'Por favor, selecciona una opción válida usando los botones.',
+      );
+      return;
+    }
     if (text === 'datos_correctos') {
       // Create payment
       const ref = (state.extracted_data?.referencia as string) || 'N/A';
