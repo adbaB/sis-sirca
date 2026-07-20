@@ -6,19 +6,23 @@ import {
 } from '../../interfaces/flow.interface';
 import { FlowActionHandler } from '../flow-handler.interface';
 import { BillingService } from '../../../billing/services/billing.service';
+import { TypeIdentityCard } from '../../../persons/entities/person.entity';
 
 @Injectable()
 export class FetchPaymentDetailHandler implements FlowActionHandler {
   constructor(private readonly billingService: BillingService) {}
   canHandle(payload: FlowDecryptedPayload): boolean {
     const dataAction = payload.data?.action;
-    return dataAction === 'fetch_payment_details' || payload.screen === 'SCREEN_PAYMENT_METHOD';
+    return (
+      dataAction === 'fetch_payment_details' ||
+      (!dataAction && payload.screen === 'SCREEN_PAYMENT_METHOD')
+    );
   }
   async handle(data: Record<string, unknown>): Promise<FlowResponse> {
     const { payment_method, selected_invoices, doc_number, doc_type } =
       data as unknown as FetchPaymentData;
 
-    if (selected_invoices.length === 0) {
+    if (!selected_invoices || selected_invoices.length === 0) {
       return {
         screen: 'SCREEN_INVOICES',
         data: {
@@ -26,6 +30,24 @@ export class FetchPaymentDetailHandler implements FlowActionHandler {
           error_message: 'Debes seleccionar al menos una factura.',
         },
       };
+    }
+
+    // Security: Scope selected invoices to the supplied identity
+    const userInvoices = await this.billingService.findPendingInvoicesByIdentityCard(
+      doc_number,
+      doc_type as TypeIdentityCard,
+    );
+    const validInvoiceIds = new Set((userInvoices || []).map((inv) => inv.id));
+    for (const invId of selected_invoices) {
+      if (!validInvoiceIds.has(invId)) {
+        return {
+          screen: 'SCREEN_INVOICES',
+          data: {
+            error: true,
+            error_message: 'Una o más facturas seleccionadas no son válidas o no te pertenecen.',
+          },
+        };
+      }
     }
 
     const totalAmount = await this.billingService.calculateAmountByInvoicesIds(

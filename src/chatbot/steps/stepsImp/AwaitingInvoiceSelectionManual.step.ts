@@ -24,17 +24,37 @@ export class AwaitingInvoiceSelectionManualStep implements IStepHandler {
       );
       return;
     }
-    // Deduplicate the choices to prevent double-charging for the same invoice selection (e.g. "1, 1")
-    const selections = [
-      ...new Set(
-        text
-          .split(',')
-          .map((s) => parseInt(s.trim(), 10))
-          .filter((n) => !isNaN(n)),
-      ),
-    ];
+    // Validate all tokens and boundaries strictly
+    const rawParts = text.split(',').map((s) => s.trim());
+    const validSelections: number[] = [];
 
-    if (selections.length === 0 || !state.pending_invoices) {
+    for (const part of rawParts) {
+      if (!/^\d+$/.test(part)) {
+        await this.metaWhatsappService.sendMessage(
+          phone,
+          'Selección inválida. Por favor, asegúrate de ingresar solo números separados por comas.',
+        );
+        return;
+      }
+
+      const num = parseInt(part, 10);
+      const idx = num - 1;
+
+      if (!state.pending_invoices || idx < 0 || idx >= state.pending_invoices.length) {
+        await this.metaWhatsappService.sendMessage(
+          phone,
+          `El número ${num} no corresponde a ninguna factura válida. Inténtalo de nuevo.`,
+        );
+        return;
+      }
+
+      validSelections.push(num);
+    }
+
+    // Deduplicate the choices to prevent double-charging
+    const selections = [...new Set(validSelections)];
+
+    if (selections.length === 0) {
       await this.metaWhatsappService.sendMessage(
         phone,
         'Selección inválida. Por favor, responde con los números de las facturas separados por comas.',
@@ -48,20 +68,10 @@ export class AwaitingInvoiceSelectionManualStep implements IStepHandler {
 
     for (const selection of selections) {
       const idx = selection - 1;
-      if (idx >= 0 && idx < state.pending_invoices.length) {
-        const inv = state.pending_invoices[idx];
-        selectedInvoices.push(inv.id);
-        selectedInvoicesDetails.push({ id: inv.id, amount: inv.amount });
-        totalAmount += inv.amount;
-      }
-    }
-
-    if (selectedInvoices.length === 0) {
-      await this.metaWhatsappService.sendMessage(
-        phone,
-        'No ingresaste números de factura válidos. Inténtalo de nuevo.',
-      );
-      return;
+      const inv = state.pending_invoices![idx];
+      selectedInvoices.push(inv.id);
+      selectedInvoicesDetails.push({ id: inv.id, amount: inv.amount });
+      totalAmount += inv.amount;
     }
 
     state.step = Steps.AWAITING_PAYMENT_METHOD_MANUAL;

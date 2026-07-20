@@ -331,6 +331,13 @@ describe('ChatbotService', () => {
 
     it('should handle webhook failed statuses by initiating manual payment automatically', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+
+      // Mock successful flow message send
+      mockedAxios.post.mockResolvedValueOnce({
+        data: {
+          messages: [{ id: 'flow-msg-123' }],
+        },
+      });
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
       const failedStatusMessage = {
@@ -341,6 +348,7 @@ describe('ChatbotService', () => {
                 value: {
                   statuses: [
                     {
+                      id: 'flow-msg-123',
                       status: 'failed',
                       recipient_id: '123',
                       errors: [{ code: 130429, title: 'Rate limit hit' }],
@@ -374,6 +382,7 @@ describe('ChatbotService', () => {
                 value: {
                   statuses: [
                     {
+                      id: 'some-other-msg-id',
                       status: 'failed',
                       recipient_id: '456',
                       errors: [{ code: 1, title: 'error' }],

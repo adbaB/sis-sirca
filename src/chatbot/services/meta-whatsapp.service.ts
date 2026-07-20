@@ -27,8 +27,7 @@ export class MetaWhatsappService {
     const phoneNumberId = this.configService.meta.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
-      this.logger.error('Missing Meta access token or phone number ID in configuration.');
-      return;
+      throw new Error('Missing Meta access token or phone number ID in configuration.');
     }
 
     try {
@@ -41,6 +40,7 @@ export class MetaWhatsappService {
         },
         {
           headers: this.getHeaders(),
+          timeout: 15000,
         },
       );
     } catch (error) {
@@ -50,6 +50,7 @@ export class MetaWhatsappService {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`Error sending message to ${to}:`, message);
       }
+      throw error;
     }
   }
 
@@ -62,8 +63,7 @@ export class MetaWhatsappService {
     const phoneNumberId = this.configService.meta.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
-      this.logger.error('Missing Meta access token or phone number ID in configuration.');
-      return;
+      throw new Error('Missing Meta access token or phone number ID in configuration.');
     }
 
     try {
@@ -82,6 +82,7 @@ export class MetaWhatsappService {
         },
         {
           headers: this.getHeaders(),
+          timeout: 15000,
         },
       );
     } catch (error) {
@@ -94,21 +95,22 @@ export class MetaWhatsappService {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`Error sending interactive message to ${to}:`, message);
       }
+      throw error;
     }
   }
 
-  public async sendFlowMessage(to: string, text: string): Promise<boolean> {
+  public async sendFlowMessage(to: string, text: string): Promise<string | null> {
     const accessToken = this.configService.meta.accessToken;
     const phoneNumberId = this.configService.meta.phoneNumberId;
     const flowId = this.configService.meta.flowId;
 
     if (!accessToken || !phoneNumberId || !flowId) {
       this.logger.error('Missing Meta access token, phone number ID or flow ID in configuration.');
-      return false;
+      return null;
     }
 
     try {
-      await axios.post(
+      const response = await axios.post(
         this.baseUrl,
         {
           messaging_product: 'whatsapp',
@@ -145,9 +147,10 @@ export class MetaWhatsappService {
         },
         {
           headers: this.getHeaders(),
+          timeout: 15000,
         },
       );
-      return true;
+      return response.data?.messages?.[0]?.id || null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         this.logger.error(
@@ -158,7 +161,7 @@ export class MetaWhatsappService {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.error(`Error sending flow message to ${to}:`, message);
       }
-      return false;
+      return null;
     }
   }
 

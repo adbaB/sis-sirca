@@ -114,6 +114,24 @@ export class ChatbotPaymentService {
           ) || 1;
 
         for (const invoice of invoices) {
+          // Idempotency check
+          const existingPayment = await queryRunner.manager
+            .createQueryBuilder()
+            .select('payment.id')
+            .from('payments', 'payment')
+            .where('payment.invoice_id = :invoiceId AND payment.reference_number = :ref', {
+              invoiceId: invoice.id,
+              ref: referenceNumber,
+            })
+            .getRawOne();
+
+          if (existingPayment) {
+            this.logger.warn(
+              `Payment for invoice ${invoice.id} with ref ${referenceNumber} already exists. Skipping.`,
+            );
+            continue;
+          }
+
           const pendingUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
           const weight = pendingUsd / fallbackTotalUsd;
 

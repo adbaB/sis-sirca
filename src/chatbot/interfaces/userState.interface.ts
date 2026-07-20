@@ -14,4 +14,5 @@ export interface UserState {
   full_name?: string;
   identity_card?: string;
   type_identity_card?: TypeIdentityCard;
+  flow_message_id?: string;
 }

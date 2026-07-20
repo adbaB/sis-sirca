@@ -14,7 +14,9 @@ export class FetchInvoiceHandler implements FlowActionHandler {
 
   canHandle(payload: FlowDecryptedPayload): boolean {
     const dataAction = payload.data?.action;
-    return dataAction === 'fetch_invoices' || payload.screen === 'SCREEN_IDENTIFICATION';
+    return (
+      dataAction === 'fetch_invoices' || (!dataAction && payload.screen === 'SCREEN_IDENTIFICATION')
+    );
   }
   async handle(data: Record<string, unknown>): Promise<FlowResponse> {
     const { doc_number, doc_type } = data as unknown as FetchInvoicesData;

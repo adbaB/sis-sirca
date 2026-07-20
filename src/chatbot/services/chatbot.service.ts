@@ -18,17 +18,35 @@ export class ChatbotService {
 
   async handleIncomingMessage(body: WebhookBody): Promise<void> {
     try {
-      const message = this.extractMessage(body);
-      const status = this.extractStatus(body);
+      if (!body.entry) return;
+      for (const entry of body.entry) {
+        if (!entry.changes) continue;
+        for (const change of entry.changes) {
+          const value = change.value;
+          if (!value) continue;
 
-      if (status && status.status === 'failed' && status.errors) {
-        return this.handleStatusError(status);
+          if (value.statuses) {
+            for (const status of value.statuses) {
+              if (status.status === 'failed' && status.errors) {
+                await this.handleStatusError(status);
+              }
+            }
+          }
+
+          if (value.messages) {
+            for (const message of value.messages) {
+              await this.processMessage(message);
+            }
+          }
+        }
       }
+    } catch (error) {
+      this.logger.error('Error handling incoming message:', error);
+    }
+  }
 
-      if (!message) {
-        return;
-      }
-
+  private async processMessage(message: MetaMessage): Promise<void> {
+    try {
       if (message.errors && message.errors.length > 0) {
         this.logger.error(`Received error inside message from Meta API:`, message.errors);
         return;
@@ -72,27 +90,30 @@ export class ChatbotService {
         return this.initPaymentFlow(fromNumber, state);
       }
 
-      const handler = this.stepHandlers.find((h) => h.canHandle(state.step));
+      const handler = this.stepHandlers.find((h) => h.canHandle(state!.step));
       if (handler) {
+        // If the message has no text, no interactive reply, and no image, and it's not AWAITING_CAPTURE
+        if (!incomingText && !message.image && state.step !== Steps.AWAITING_CAPTURE) {
+          await this.metaWhatsappService.sendMessage(
+            fromNumber,
+            'Por favor, responde usando texto o las opciones del menú.',
+          );
+          return;
+        }
         await handler.execute(fromNumber, message, state);
       } else {
+        if (state.step === Steps.PROCESSING_PAYMENT) {
+          return; // Ignore concurrent clicks while processing
+        }
         await this.stateService.clearState(fromNumber);
         await this.metaWhatsappService.sendMessage(
           fromNumber,
           'Lo siento, no entendí eso. Escribe "Hola" para reiniciar.',
         );
       }
-    } catch (error) {
-      this.logger.error('Error handling incoming message:', error);
+    } catch (e) {
+      this.logger.error('Error processing individual message:', e);
     }
-  }
-
-  private extractMessage(body: WebhookBody): MetaMessage | null {
-    return body.entry?.[0]?.changes?.[0]?.value?.messages?.[0] || null;
-  }
-
-  private extractStatus(body: WebhookBody): MetaStatus | null {
-    return body.entry?.[0]?.changes?.[0]?.value?.statuses?.[0] || null;
   }
 
   private extractText(message: MetaMessage): string {
@@ -118,7 +139,10 @@ export class ChatbotService {
     const recipientState: UserState | null = await this.stateService.getState(recipientId);
 
     // Only initiate manual fallback if we specifically failed to send/deliver the Flow message
-    if (recipientState?.step === 'AWAITING_FLOW_INTERACTION') {
+    if (
+      recipientState?.step === 'AWAITING_FLOW_INTERACTION' &&
+      recipientState.flow_message_id === status.id
+    ) {
       this.logger.warn(
         `Flow message delivery failed for ${recipientId}. Initiating manual flow fallback.`,
       );
@@ -165,12 +189,12 @@ export class ChatbotService {
   }
 
   private async initPaymentFlow(phone: string, state: UserState): Promise<void> {
-    const success = await this.metaWhatsappService.sendFlowMessage(
+    const messageId = await this.metaWhatsappService.sendFlowMessage(
       phone,
       '¡Perfecto! Para que sea más rápido, he preparado un pequeño formulario aquí mismo. Haz clic abajo para completar tus datos de pago de forma segura. ✨',
     );
 
-    if (!success) {
+    if (!messageId) {
       // If flow sending synchronously fails, transition automatically
       state = { step: Steps.AWAITING_DOC_INFO_MANUAL };
       await this.stateService.setState(phone, state);
@@ -180,7 +204,7 @@ export class ChatbotService {
       );
     } else {
       // Await flow interaction or a webhook failure status
-      state = { step: Steps.AWAITING_FLOW_INTERACTION };
+      state = { step: Steps.AWAITING_FLOW_INTERACTION, flow_message_id: messageId };
       await this.stateService.setState(phone, state);
     }
   }

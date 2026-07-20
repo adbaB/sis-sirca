@@ -22,7 +22,9 @@ export class AwaitingConfirmationStep implements IStepHandler {
   }
 
   async execute(phone: string, message: MetaMessage, state: UserState): Promise<void> {
-    const text = (message.text?.body || message.interactive?.button_reply?.id || '').trim();
+    const text = (message.text?.body ?? message.interactive?.button_reply?.id ?? '')
+      .trim()
+      .toLowerCase();
 
     if (!text) {
       await this.metaWhatsappService.sendMessage(
@@ -32,7 +34,10 @@ export class AwaitingConfirmationStep implements IStepHandler {
       return;
     }
     if (text === 'datos_correctos') {
-      // Create payment
+      // Atomoically transition to PROCESSING_PAYMENT to prevent duplicate webhooks from double-charging
+      state.step = Steps.PROCESSING_PAYMENT;
+      await this.stateService.setState(phone, state);
+
       const ref = (state.extracted_data?.referencia as string) || 'N/A';
       const amount = Number(state.extracted_data?.monto);
       // Proceed to payment processing

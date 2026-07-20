@@ -29,8 +29,26 @@ export class AwaitingManualInputStep implements IStepHandler {
     }
 
     const parts = incomingText.split(',').map((s) => s.trim());
-    const ref = parts[0] || 'N/A';
-    const amount = parts[2] ? Number(parts[2]) : Number(state.total_amount);
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+      await this.metaWhatsappService.sendMessage(
+        phone,
+        '¡Casi lo tenemos! Pero el formato no es el correcto o falta información. ✨\n\nInténtalo de nuevo así: Referencia, Banco, Monto\n(Por ejemplo: 123456, Mercantil, 100)',
+      );
+      return;
+    }
+
+    const ref = parts[0];
+    const parsedAmount = Number(parts[2]);
+
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      await this.metaWhatsappService.sendMessage(
+        phone,
+        'El monto ingresado no es válido. Por favor, asegúrate de ingresar un monto numérico mayor a 0.\n\nEjemplo: 123456, Mercantil, 100',
+      );
+      return;
+    }
+
+    const amount = parsedAmount;
 
     await this.chatbotPaymentService.processPaymentForInvoices(
       phone,

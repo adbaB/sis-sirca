@@ -82,9 +82,51 @@ export class MetaFlowService {
       return { screen: 'SCREEN_IDENTIFICATION', data: {} };
     }
     if (action === 'DATA_EXCHANGE') {
+      const data = body.data || {};
+      const dataAction = data.action;
+
+      if (
+        dataAction === 'fetch_invoices' ||
+        (!dataAction && body.screen === 'SCREEN_IDENTIFICATION')
+      ) {
+        if (
+          !data.doc_number ||
+          !data.doc_type ||
+          typeof data.doc_number !== 'string' ||
+          typeof data.doc_type !== 'string'
+        ) {
+          return {
+            screen: 'SCREEN_IDENTIFICATION',
+            data: { error: true, error_message: 'Tipo y número de documento son requeridos.' },
+          };
+        }
+      }
+
+      if (
+        dataAction === 'fetch_payment_details' ||
+        (!dataAction && body.screen === 'SCREEN_PAYMENT_METHOD')
+      ) {
+        if (
+          !data.payment_method ||
+          typeof data.payment_method !== 'string' ||
+          !['transferencia', 'pago_movil', 'zelle'].includes(data.payment_method)
+        ) {
+          return {
+            screen: 'SCREEN_INVOICES',
+            data: { error: true, error_message: 'Método de pago inválido.' },
+          };
+        }
+        if (!Array.isArray(data.selected_invoices)) {
+          return {
+            screen: 'SCREEN_INVOICES',
+            data: { error: true, error_message: 'Debe seleccionar al menos una factura válida.' },
+          };
+        }
+      }
+
       for (const handler of this.flowHandlers) {
         if (handler.canHandle(body)) {
-          return handler.handle(body.data || {});
+          return handler.handle(data);
         }
       }
     }

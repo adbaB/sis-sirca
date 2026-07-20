@@ -36,6 +36,7 @@ export interface MetaMessage {
 }
 
 export interface MetaStatus {
+  id: string;
   status: string;
   recipient_id: string;
   errors?: Array<{

@@ -21,6 +21,7 @@ import { IStepHandler } from './steps/step-handler.interface';
 import { MetaFlowService } from './services/meta-flow.service';
 import { FetchPaymentDetailHandler } from './steps/flowHandlersImp/fetchPaymentDetail.handler';
 import { FetchInvoiceHandler } from './steps/flowHandlersImp/fetchInvoice.handler';
+import { FlowActionHandler } from './steps/flow-handler.interface';
 
 const stepHandlersProvider = {
   provide: 'STEP_HANDLERS',
@@ -38,7 +39,7 @@ const stepHandlersProvider = {
 
 const flowHandlersProvider = {
   provide: 'FLOW_HANDLERS',
-  useFactory: (...handlers: IStepHandler[]) => handlers,
+  useFactory: (...handlers: FlowActionHandler[]) => handlers,
   inject: [FetchInvoiceHandler, FetchPaymentDetailHandler],
 };
 
