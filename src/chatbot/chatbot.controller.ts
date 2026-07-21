@@ -45,7 +45,6 @@ export class ChatbotController {
     @Res() response: Response,
   ) {
     const verifyToken = this.configService.meta.verifyToken;
-
     if (mode && token) {
       if (mode === 'subscribe' && token === verifyToken) {
         response.status(HttpStatus.OK).send(challenge);

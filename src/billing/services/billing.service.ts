@@ -61,6 +61,10 @@ export class BillingService {
     return this.invoiceService.findInvoicesByIds(ids);
   }
 
+  async findPendingInvoicesByBillingMonth(month: string) {
+    return this.invoiceService.findPendingInvoicesByBillingMonth(month);
+  }
+
   async findPendingInvoicesByIdentityCard(
     identityCard: string,
     typeIdentityCard: TypeIdentityCard,

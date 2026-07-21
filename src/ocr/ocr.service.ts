@@ -79,7 +79,7 @@ INSTRUCCIONES PARA LA REFERENCIA:
 INSTRUCCIONES PARA EL MONTO:
 - Formato venezolano: "1.250,50" → 1250.50 (elimina puntos de miles, coma decimal se convierte en punto).
 - Formato americano/Zelle: "$108.00" → 108.00 (ya usa punto decimal).
-- Si ves "Bs.", "BS", "Bs" o "VES", la moneda es "VES".
+- Si ves "Bs.", "BS", "Bs" o "VES", la moneda es "Bs".
 - Si ves "$", "USD", "US$" o es un pago Zelle, la moneda es "USD".
 
 INSTRUCCIONES PARA IDENTIFICAR EL BANCO ORIGEN (quien envía el pago):
@@ -124,7 +124,7 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
   "origen": (string|null) Banco desde donde se realizó el pago (identificado por texto o logo),
   "descripcion": (string|null) Concepto o descripción del pago,
   "nombreBanco": (string|null) Nombre del banco que emitió el comprobante (mismo que origen),
-  "moneda": (string|null) "VES" o "USD"
+  "moneda": (string|null) "Bs" o "USD"
 }`;
 
       const completion = await this.openai.chat.completions.create(

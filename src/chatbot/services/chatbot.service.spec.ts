@@ -11,6 +11,7 @@ import config from '../../config/configurations';
 import { DataSource } from 'typeorm';
 import { MetaWhatsappService } from './meta-whatsapp.service';
 import { ChatbotPaymentService } from './chatbot-payment.service';
+import { ChatbotAnalyticsService } from './chatbot-analytics.service';
 import { ChatbotStateService } from './chatbot-state.service';
 import { AwaitingCaptureStep } from '../steps/stepsImp/AwaitingCapture.step';
 import { AwaitingConfirmationStep } from '../steps/stepsImp/AwaitingConfirmation.step';
@@ -113,6 +114,10 @@ describe('ChatbotService', () => {
         { provide: DataSource, useValue: mockDataSource },
         MetaWhatsappService,
         { provide: ChatbotPaymentService, useValue: { processPaymentForInvoices: jest.fn() } },
+        {
+          provide: ChatbotAnalyticsService,
+          useValue: { trackStep: jest.fn(), getSessionAnalytics: jest.fn() },
+        },
         ChatbotStateService,
         AwaitingCaptureStep,
         AwaitingConfirmationStep,

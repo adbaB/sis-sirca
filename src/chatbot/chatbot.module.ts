@@ -22,6 +22,10 @@ import { MetaFlowService } from './services/meta-flow.service';
 import { FetchPaymentDetailHandler } from './steps/flowHandlersImp/fetchPaymentDetail.handler';
 import { FetchInvoiceHandler } from './steps/flowHandlersImp/fetchInvoice.handler';
 import { FlowActionHandler } from './steps/flow-handler.interface';
+import { ChatbotAnalyticsService } from './services/chatbot-analytics.service';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ChatbotInteraction } from './entities/chatbot-interaction.entity';
+import { Invoice } from '../billing/invoices/entities/invoice.entity';
 
 const stepHandlersProvider = {
   provide: 'STEP_HANDLERS',
@@ -37,6 +41,9 @@ const stepHandlersProvider = {
   ],
 };
 
+import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
+import { ReminderService } from './services/reminder.service';
+
 const flowHandlersProvider = {
   provide: 'FLOW_HANDLERS',
   useFactory: (...handlers: FlowActionHandler[]) => handlers,
@@ -44,11 +51,21 @@ const flowHandlersProvider = {
 };
 
 @Module({
-  imports: [AwsModule, EmailModule, OcrModule, BillingModule, PersonsModule],
+  imports: [
+    AwsModule,
+    EmailModule,
+    OcrModule,
+    BillingModule,
+    PersonsModule,
+    ExchangeRateModule,
+    TypeOrmModule.forFeature([ChatbotInteraction, Invoice]),
+  ],
   controllers: [ChatbotController],
   providers: [
     ChatbotService,
     MetaWhatsappService,
+    ReminderService,
+    ChatbotAnalyticsService,
     ChatbotStateService,
     ChatbotPaymentService,
     AwaitingCaptureStep,

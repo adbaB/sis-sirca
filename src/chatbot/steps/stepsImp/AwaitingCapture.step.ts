@@ -30,7 +30,7 @@ export class AwaitingCaptureStep implements IStepHandler {
       try {
         await this.metaWhatsappService.sendMessage(
           phone,
-          '¡Recibido! 📥 Dame tan solo un momento mientras valido los datos de tu comprobante. ¡Ya casi terminamos!',
+          '📥 Dame tan solo un momento mientras valido los datos de tu comprobante. ¡Ya casi terminamos!',
         );
 
         const buffer = await this.metaWhatsappService.downloadMedia(mediaId);
@@ -56,7 +56,7 @@ export class AwaitingCaptureStep implements IStepHandler {
 
           await this.metaWhatsappService.sendInteractiveMessage(
             phone,
-            `¡Listo! He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n💰 *Monto:* ${extractedData.monto || 'No detectado'}${extractedData.moneda || ''}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
+            `He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n💰 *Monto:* ${extractedData.monto || 'No detectado'}${extractedData.moneda || ''}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
             buttons,
           );
         } catch (ocrError) {
