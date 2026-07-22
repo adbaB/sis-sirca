@@ -4,9 +4,8 @@ import { UserState } from '../interfaces/userState.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
-import { paginateRepository } from '../../common/utils/pagination.util';
+import { GetInteractionsQueryDto } from '../dto/get-interactions-query.dto';
 
 @Injectable()
 export class ChatbotAnalyticsService {
@@ -62,24 +61,51 @@ export class ChatbotAnalyticsService {
     );
   }
 
-  async getInteractionsByInvoice(
-    invoiceId: string,
-    paginationQuery: PaginationQueryDto,
+  async getInteractions(
+    query: GetInteractionsQueryDto,
   ): Promise<PaginatedResult<ChatbotInteraction>> {
-    return paginateRepository(
-      this.interactionRepo,
-      {
-        where: {
-          invoices: {
-            id: invoiceId,
-          },
-        },
-        order: { updated_at: 'DESC' },
-      },
-      paginationQuery,
-    );
-  }
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 10, 100);
+    const skip = (page - 1) * limit;
 
+    const qb = this.interactionRepo
+      .createQueryBuilder('interaction')
+      .leftJoinAndSelect('interaction.invoices', 'invoice')
+      .leftJoinAndSelect('invoice.contract', 'contract')
+      .leftJoinAndSelect('contract.contractPersons', 'contractPerson')
+      .leftJoinAndSelect('contractPerson.person', 'person')
+      .orderBy('interaction.updated_at', 'DESC');
+
+    if (query.invoiceId) {
+      qb.andWhere('invoice.id = :invoiceId', { invoiceId: query.invoiceId });
+    }
+
+    if (query.status && query.status !== 'ALL') {
+      qb.andWhere('interaction.status = :status', { status: query.status });
+    }
+
+    if (query.search) {
+      qb.andWhere(
+        '(interaction.phone ILIKE :search OR person.name ILIKE :search OR person.identityCard ILIKE :search OR contract.code ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [data, totalItems] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    const totalPages = Math.ceil(totalItems / limit) || 1;
+
+    return {
+      data,
+      meta: {
+        totalItems,
+        itemCount: data.length,
+        itemsPerPage: limit,
+        totalPages,
+        currentPage: page,
+      },
+    };
+  }
   async checkInvoicesWithInteractions(
     invoiceIds: string[],
   ): Promise<Record<string, { hasInteractions: boolean; hasActive: boolean }>> {
