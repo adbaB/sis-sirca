@@ -64,7 +64,7 @@ describe('AwsService', () => {
 
       expect(mockSend).toHaveBeenCalledWith(expect.any(PutObjectCommand));
       expect(result).toMatch(
-        /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\/test-folder\/.*\.png$/,
+        /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\/test\/test-folder\/.*\.png$/,
       );
     });
 

@@ -1,14 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRedisConnectionToken } from '@nestjs-modules/ioredis';
 import axios from 'axios';
-import { AwsService } from '../aws/aws.service';
-import { EmailService } from '../email/email.service';
+import { AwsService } from '../../aws/aws.service';
+import { EmailService } from '../../email/email.service';
 import { ChatbotService } from './chatbot.service';
-import { OcrService } from '../ocr/ocr.service';
-import { BillingService } from '../billing/services/billing.service';
-import { PersonsService } from '../persons/services/persons.service';
-import config from '../config/configurations';
+import { OcrService } from '../../ocr/ocr.service';
+import { BillingService } from '../../billing/services/billing.service';
+import { PersonsService } from '../../persons/services/persons.service';
+import config from '../../config/configurations';
 import { DataSource } from 'typeorm';
+import { MetaWhatsappService } from './meta-whatsapp.service';
+import { ChatbotPaymentService } from './chatbot-payment.service';
+import { ChatbotStateService } from './chatbot-state.service';
+import { AwaitingCaptureStep } from '../steps/stepsImp/AwaitingCapture.step';
+import { AwaitingConfirmationStep } from '../steps/stepsImp/AwaitingConfirmation.step';
+import { AwaitingDocInfoManualStep } from '../steps/stepsImp/AwaitingDocInfoManual.step';
+import { AwaitingFlowInteractionStep } from '../steps/stepsImp/AwaitingFlowInteraction.step';
+import { AwaitingInvoiceSelectionManualStep } from '../steps/stepsImp/AwaitingInvoiceSelectionManual.step';
+import { AwaitingManualInputStep } from '../steps/stepsImp/AwaitingManualInput.step';
+import { AwaitingPaymentMethodManualStep } from '../steps/stepsImp/AwaitingPaymentMethodManual.step';
+import { IStepHandler } from '../steps/step-handler.interface';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -100,6 +111,29 @@ describe('ChatbotService', () => {
         { provide: BillingService, useValue: mockBillingService },
         { provide: PersonsService, useValue: mockPersonsService },
         { provide: DataSource, useValue: mockDataSource },
+        MetaWhatsappService,
+        { provide: ChatbotPaymentService, useValue: { processPaymentForInvoices: jest.fn() } },
+        ChatbotStateService,
+        AwaitingCaptureStep,
+        AwaitingConfirmationStep,
+        AwaitingDocInfoManualStep,
+        AwaitingFlowInteractionStep,
+        AwaitingInvoiceSelectionManualStep,
+        AwaitingManualInputStep,
+        AwaitingPaymentMethodManualStep,
+        {
+          provide: 'STEP_HANDLERS',
+          useFactory: (...steps: IStepHandler[]) => steps,
+          inject: [
+            AwaitingCaptureStep,
+            AwaitingConfirmationStep,
+            AwaitingDocInfoManualStep,
+            AwaitingFlowInteractionStep,
+            AwaitingInvoiceSelectionManualStep,
+            AwaitingManualInputStep,
+            AwaitingPaymentMethodManualStep,
+          ],
+        },
       ],
     }).compile();
 
@@ -297,6 +331,13 @@ describe('ChatbotService', () => {
 
     it('should handle webhook failed statuses by initiating manual payment automatically', async () => {
       await service.handleIncomingMessage(createMetaMessage('123', 'hola'));
+
+      // Mock successful flow message send
+      mockedAxios.post.mockResolvedValueOnce({
+        data: {
+          messages: [{ id: 'flow-msg-123' }],
+        },
+      });
       await service.handleIncomingMessage(createButtonReplyMessage('123', 'realizar_pago'));
 
       const failedStatusMessage = {
@@ -307,6 +348,7 @@ describe('ChatbotService', () => {
                 value: {
                   statuses: [
                     {
+                      id: 'flow-msg-123',
                       status: 'failed',
                       recipient_id: '123',
                       errors: [{ code: 130429, title: 'Rate limit hit' }],
@@ -340,6 +382,7 @@ describe('ChatbotService', () => {
                 value: {
                   statuses: [
                     {
+                      id: 'some-other-msg-id',
                       status: 'failed',
                       recipient_id: '456',
                       errors: [{ code: 1, title: 'error' }],

@@ -35,6 +35,7 @@ export default registerAs('config', () => {
       verifyToken: process.env.META_VERIFY_TOKEN,
       flowPrivateKey: process.env.META_FLOW_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       flowPassphrase: process.env.META_FLOW_PASSPHRASE,
+      flowMode: process.env.META_FLOW_MODE || 'draft',
     },
 
     redis: {

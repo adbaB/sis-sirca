@@ -34,7 +34,10 @@ export class AwsService {
 
       const fileExtension = file.originalname.split('.').pop();
       const nameWithoutExt = customFilename || uuidv4();
-      const fileName = `${folder}/${nameWithoutExt}.${fileExtension}`;
+
+      const isProduction = process.env.NODE_ENV === 'production';
+      const actualFolder = isProduction ? folder : `test/${folder}`;
+      const fileName = `${actualFolder}/${nameWithoutExt}.${fileExtension}`;
 
       const command = new PutObjectCommand({
         Bucket: bucket,
