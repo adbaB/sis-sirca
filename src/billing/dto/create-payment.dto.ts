@@ -33,6 +33,10 @@ export class CreatePaymentDto {
 
   @IsString()
   @IsOptional()
+  operationDate?: string;
+
+  @IsString()
+  @IsOptional()
   url?: string;
 
   @IsUUID()

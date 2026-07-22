@@ -35,6 +35,9 @@ export class Payment {
   @Column({ type: 'timestamp', name: 'payment_date' })
   paymentDate: Date;
 
+  @Column({ type: 'timestamp', name: 'operation_date', nullable: true })
+  operationDate?: Date | null;
+
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 

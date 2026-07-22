@@ -346,8 +346,18 @@ export class PaymentService {
     split: PaymentSplit,
     paymentDate: Date,
   ): Promise<Payment> {
+    let operationDate: Date = paymentDate;
+    if (dto.operationDate) {
+      const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
+      const dt = parseDateToCaracas(dto.operationDate, isZelle);
+      if (dt.isValid) {
+        operationDate = dt.toJSDate();
+      }
+    }
+
     const payment = queryRunner.manager.create(Payment, {
       paymentDate,
+      operationDate,
       status: PaymentStatus.PROCESSING,
       invoice,
       person: dto.personId ? { id: dto.personId } : null,
