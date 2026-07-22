@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ChatbotController } from './chatbot.controller';
+import { ChatbotAnalyticsController } from './chatbot-analytics.controller';
 import { ChatbotService } from './services/chatbot.service';
 import { AwsModule } from '../aws/aws.module';
 import { EmailModule } from '../email/email.module';
@@ -43,6 +44,7 @@ const stepHandlersProvider = {
 
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 import { ReminderService } from './services/reminder.service';
+import { AbandonedTasksService } from './services/abandoned-task.service';
 
 const flowHandlersProvider = {
   provide: 'FLOW_HANDLERS',
@@ -60,8 +62,9 @@ const flowHandlersProvider = {
     ExchangeRateModule,
     TypeOrmModule.forFeature([ChatbotInteraction, Invoice]),
   ],
-  controllers: [ChatbotController],
+  controllers: [ChatbotController, ChatbotAnalyticsController],
   providers: [
+    AbandonedTasksService,
     ChatbotService,
     MetaWhatsappService,
     ReminderService,

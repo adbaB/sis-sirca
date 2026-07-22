@@ -57,6 +57,16 @@ export class ChatbotService {
 
       let state: UserState | null = await this.stateService.getState(fromNumber);
 
+      // ── PRIORITY: Flow completion (nfm_reply) ──
+      // Process Flow responses BEFORE the greeting reset, so users coming
+      // from notification templates (no prior state) don't lose their data.
+      if (message.interactive?.nfm_reply) {
+        if (!state) {
+          state = { step: Steps.AWAITING_FLOW_INTERACTION };
+        }
+        return this.handleFlowCompletion(fromNumber, message, state);
+      }
+
       // If no state or user wants to restart, initialize state.
       if (
         !state ||
@@ -69,11 +79,6 @@ export class ChatbotService {
         await this.stateService.setState(fromNumber, state);
 
         return;
-      }
-
-      // Handle Flow completion (nfm_reply)
-      if (message.interactive?.nfm_reply) {
-        return this.handleFlowCompletion(fromNumber, message, state);
       }
 
       // Handle Interactive button replies for the Main Menu
@@ -184,7 +189,10 @@ export class ChatbotService {
       );
     } catch (e) {
       this.logger.error('Error parsing flow response', e);
-      // Aquí podrías decidir si mandas un mensaje de error al usuario o lo dejas como está
+      await this.metaWhatsappService.sendMessage(
+        phone,
+        'Hubo un problema al procesar tu respuesta del formulario. Por favor, escribe "Hola" para reiniciar el proceso.',
+      );
     }
   }
 

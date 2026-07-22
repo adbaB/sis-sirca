@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MetaWhatsappService } from './meta-whatsapp.service';
+import { ChatbotStateService } from './chatbot-state.service';
 import { WHATSAPP_TEMPLATES } from '../constants/whatsapp-templates.contants';
 import { MONTH_NAMES_ES } from '../../reports/report-utils';
 import { BillingService } from '../../billing/services/billing.service';
+import { Steps } from '../enums/steps.enum';
 import { Person } from '../../persons/entities/person.entity';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { getBillingMonth } from '../../common/utils/date.util';
@@ -21,6 +23,7 @@ export class ReminderService {
   constructor(
     private readonly whatsappService: MetaWhatsappService,
     private readonly billingService: BillingService,
+    private readonly stateService: ChatbotStateService,
   ) {}
 
   // 🎯 DÍA 25: Plantilla con 2 variables (Ej: Nombre y Monto)
@@ -115,6 +118,11 @@ export class ReminderService {
           );
 
           this.logger.log(`Plantilla enviada a ${debt.person.phone}`);
+
+          // Pre-set state so the chatbot knows a Flow response is expected
+          await this.stateService.setState(debt.person.phone, {
+            step: Steps.AWAITING_FLOW_INTERACTION,
+          });
         } catch (error) {
           this.logger.error(`Error enviando a ${debt.person.phone}:`, error?.message);
         }

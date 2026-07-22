@@ -528,5 +528,84 @@ describe('ChatbotService', () => {
       expect(mockAwsService.uploadFile).toHaveBeenCalled();
       expect(mockOcrService.extractReceiptData).toHaveBeenCalled();
     });
+
+    it('should process nfm_reply without prior state (notification template scenario)', async () => {
+      // Simulate: user receives a notification template with Flow, completes it,
+      // but has NO prior state in Redis (never said "hola")
+      await service.handleIncomingMessage(
+        createNfmReplyMessage(
+          '789',
+          JSON.stringify({
+            selected_invoices: ['inv1'],
+            payment_method: 'transferencia',
+            total_amount: '50.00',
+            doc_number: '12345678',
+            doc_type: 'V',
+          }),
+        ),
+      );
+
+      // Should NOT have sent the greeting message
+      expect(mockedAxios.post).not.toHaveBeenCalledWith(
+        'https://graph.facebook.com/v25.0/phoneid/messages',
+        expect.objectContaining({
+          to: '789',
+          type: 'interactive',
+          interactive: expect.objectContaining({
+            type: 'button',
+            body: expect.objectContaining({
+              text: expect.stringContaining('¿en qué puedo apoyarte hoy?'),
+            }),
+          }),
+        }),
+        expect.any(Object),
+      );
+
+      // Should have sent the "send capture" message (AWAITING_CAPTURE)
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v25.0/phoneid/messages',
+        expect.objectContaining({
+          to: '789',
+          text: { body: expect.stringContaining('comprobante de pago') },
+        }),
+        expect.any(Object),
+      );
+
+      // Verify state was set correctly to AWAITING_CAPTURE
+      const stateData = mockRedisStore.get('chatbot_state:789');
+      expect(stateData).toBeDefined();
+      const parsedState = JSON.parse(stateData!);
+      expect(parsedState.step).toBe('AWAITING_CAPTURE');
+      expect(parsedState.selected_invoices).toEqual(['inv1']);
+      expect(parsedState.payment_method).toBe('transferencia');
+      expect(parsedState.identity_card).toBe('12345678');
+      expect(parsedState.type_identity_card).toBe('V');
+    });
+
+    it('should process nfm_reply with existing state (normal flow scenario)', async () => {
+      // User said "hola", then completed the Flow
+      await service.handleIncomingMessage(createMetaMessage('456', 'hola'));
+
+      await service.handleIncomingMessage(
+        createNfmReplyMessage(
+          '456',
+          JSON.stringify({
+            selected_invoices: ['inv2'],
+            payment_method: 'pago_movil',
+            total_amount: '75.00',
+          }),
+        ),
+      );
+
+      // Should have sent the "send capture" message
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v25.0/phoneid/messages',
+        expect.objectContaining({
+          to: '456',
+          text: { body: expect.stringContaining('comprobante de pago') },
+        }),
+        expect.any(Object),
+      );
+    });
   });
 });
