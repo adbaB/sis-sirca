@@ -143,6 +143,22 @@ export class InvoiceService {
     return this.findPendingInvoices(`${typeIdentityCard}-${identityCard}`);
   }
 
+  async findPendingInvoicesByBillingMonth(billingMonth: string): Promise<Invoice[]> {
+    return this.invoiceRepository.find({
+      where: {
+        status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+        billingMonth,
+        contract: {
+          contractPersons: { isBillingOwner: true },
+        },
+      },
+      relations: {
+        contract: {
+          contractPersons: { person: true },
+        },
+      },
+    });
+  }
   async findInvoicesByIds(ids: string[]): Promise<Invoice[]> {
     if (!ids || ids.length === 0) return [];
     return await this.invoiceRepository

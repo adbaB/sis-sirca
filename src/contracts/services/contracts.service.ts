@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { SystemCounter } from '../../common/entities/system-counter.entity';
+import { MONTH_NAMES_ES } from '../../reports/report-utils';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
@@ -55,21 +56,6 @@ export interface PipelineCounts {
   partial: number;
   paid: number;
 }
-
-const SPANISH_MONTHS = [
-  'ENERO',
-  'FEBRERO',
-  'MARZO',
-  'ABRIL',
-  'MAYO',
-  'JUNIO',
-  'JULIO',
-  'AGOSTO',
-  'SEPTIEMBRE',
-  'OCTUBRE',
-  'NOVIEMBRE',
-  'DICIEMBRE',
-];
 
 const SPANISH_DAYS: Record<number, string> = {
   1: 'UN',
@@ -872,7 +858,7 @@ export class ContractsService {
         year: yearNumber,
       } = getCalendarDateComponents(fullContract.affiliationDate || getCaracasTodayJSDate());
       const dayText = SPANISH_DAYS[dayNumber] || String(dayNumber);
-      const monthText = SPANISH_MONTHS[monthIndex];
+      const monthText = MONTH_NAMES_ES[monthIndex].toUpperCase();
 
       const logoBase64 = await loadLogoBase64(this.logger);
 

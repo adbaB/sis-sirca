@@ -6,6 +6,9 @@ import { PersonsService } from '../../persons/services/persons.service';
 import { MetaWhatsappService } from './meta-whatsapp.service';
 import { ChatbotStateService } from './chatbot-state.service';
 import { UserState } from '../interfaces/userState.interface';
+import { ChatbotAnalyticsService } from './chatbot-analytics.service';
+import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
+import { getCaracasTodayJSDate } from '../../common/utils/date.util';
 
 @Injectable()
 export class ChatbotPaymentService {
@@ -17,6 +20,8 @@ export class ChatbotPaymentService {
     private readonly personsService: PersonsService,
     private readonly metaWhatsappService: MetaWhatsappService,
     private readonly stateService: ChatbotStateService,
+    private readonly analyticsService: ChatbotAnalyticsService,
+    private readonly exchangeRateService: ExchangeRateService,
   ) {}
 
   async processPaymentForInvoices(
@@ -30,6 +35,7 @@ export class ChatbotPaymentService {
     let isTransactionActive = false;
     let paymentsCreated = 0;
     let personId: string | undefined;
+    const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
     try {
       await queryRunner.connect();
@@ -39,7 +45,6 @@ export class ChatbotPaymentService {
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
       const datePaymentReceipt = DateTime.now().setZone('America/Caracas').toISODate() ?? undefined;
-      const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
       // Build OCR metadata to persist alongside the payment (exclude receiptUrl which has its own column)
       let ocrMetadata: Record<string, unknown> | undefined;
@@ -115,22 +120,22 @@ export class ChatbotPaymentService {
 
         for (const invoice of invoices) {
           // Idempotency check
-          const existingPayment = await queryRunner.manager
-            .createQueryBuilder()
-            .select('payment.id')
-            .from('payments', 'payment')
-            .where('payment.invoice_id = :invoiceId AND payment.reference_number = :ref', {
-              invoiceId: invoice.id,
-              ref: referenceNumber,
-            })
-            .getRawOne();
+          // const existingPayment = await queryRunner.manager
+          //   .createQueryBuilder()
+          //   .select('payment.id')
+          //   .from('payments', 'payment')
+          //   .where('payment.invoice_id = :invoiceId AND payment.reference_number = :ref', {
+          //     invoiceId: invoice.id,
+          //     ref: referenceNumber,
+          //   })
+          //   .getRawOne();
 
-          if (existingPayment) {
-            this.logger.warn(
-              `Payment for invoice ${invoice.id} with ref ${referenceNumber} already exists. Skipping.`,
-            );
-            continue;
-          }
+          // if (existingPayment) {
+          //   this.logger.warn(
+          //     `Payment for invoice ${invoice.id} with ref ${referenceNumber} already exists. Skipping.`,
+          //   );
+          //   continue;
+          // }
 
           const pendingUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
           const weight = pendingUsd / fallbackTotalUsd;
@@ -186,13 +191,96 @@ export class ChatbotPaymentService {
     }
 
     try {
+      await this.analyticsService.trackCompletion(fromNumber);
       await this.stateService.clearState(fromNumber);
-      await this.metaWhatsappService.sendMessage(
-        fromNumber,
-        '¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨',
-      );
+
+      let rateUsd: number | undefined;
+      try {
+        const exchangeRate =
+          await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
+        if (exchangeRate?.rateUsd) {
+          rateUsd = Number(exchangeRate.rateUsd);
+        }
+      } catch (rateError) {
+        this.logger.warn(
+          `Could not fetch exchange rate for post-payment notification: ${rateError?.message}`,
+        );
+      }
+
+      const invoiceIds = state.selected_invoices_details
+        ? state.selected_invoices_details.map((inv) => inv.id)
+        : Array.isArray(state.selected_invoices)
+          ? state.selected_invoices
+          : String(state.selected_invoices)
+              .split(',')
+              .map((id) => id.trim());
+
+      const updatedInvoices = await this.billingService.findInvoicesByIds(invoiceIds);
+
+      const isZelle = state.payment_method === 'zelle';
+      let totalPaidUsd = 0;
+
+      if (hasAmount) {
+        if (isZelle) {
+          totalPaidUsd = extractedAmount;
+        } else if (rateUsd) {
+          totalPaidUsd = extractedAmount / rateUsd;
+        }
+      } else {
+        if (state.selected_invoices_details) {
+          totalPaidUsd = state.selected_invoices_details.reduce((sum, inv) => sum + inv.amount, 0);
+        }
+      }
+
+      let breakdownText = '';
+      let totalPendingUsd = 0;
+
+      for (const invoice of updatedInvoices) {
+        const pendingUsd = Math.max(0, Number(invoice.totalAmount) - Number(invoice.paidAmount));
+        totalPendingUsd += pendingUsd;
+
+        if (updatedInvoices.length > 1) {
+          if (pendingUsd > 0) {
+            const pendingBsText = rateUsd ? ` (Bs. ${(pendingUsd * rateUsd).toFixed(2)})` : '';
+            breakdownText += `\n- Mes ${invoice.billingMonth}: Queda pendiente $${pendingUsd.toFixed(2)}${pendingBsText}`;
+          } else {
+            breakdownText += `\n- Mes ${invoice.billingMonth}: Pagada en su totalidad ✅`;
+          }
+        }
+      }
+
+      let finalMessage = '';
+      if (totalPaidUsd > 0) {
+        finalMessage = `¡Excelente noticia! 🎉 Tu pago de $${totalPaidUsd.toFixed(2)} ha sido registrado con éxito.\n`;
+      } else {
+        finalMessage = `¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n`;
+      }
+
+      if (totalPendingUsd > 0) {
+        const totalPendingBsText = rateUsd
+          ? ` (Bs. ${(totalPendingUsd * rateUsd).toFixed(2)})`
+          : '';
+        finalMessage += `\nAún queda un saldo pendiente total de $${totalPendingUsd.toFixed(2)}${totalPendingBsText}.`;
+        if (updatedInvoices.length > 1) {
+          finalMessage += `\nDetalle por factura:${breakdownText}`;
+        }
+      } else {
+        finalMessage += `\n¡Tus facturas seleccionadas han sido pagadas en su totalidad! 🥳`;
+      }
+
+      finalMessage += `\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨`;
+
+      await this.metaWhatsappService.sendMessage(fromNumber, finalMessage);
     } catch (notificationError) {
       this.logger.error('Error sending post-payment notifications', notificationError);
+      try {
+        await this.metaWhatsappService.sendMessage(
+          fromNumber,
+          `¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨`,
+        );
+      } catch (fallbackErr) {
+        this.logger.error('Error sending fallback payment confirmation message', fallbackErr);
+      }
     }
   }
 }

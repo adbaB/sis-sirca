@@ -77,7 +77,6 @@ export class MetaFlowService {
     if (['CHECK', 'PING', 'STATUS', 'VERIFICATION'].includes(action || '')) {
       return { screen: 'SCREEN_IDENTIFICATION', data: { status: 'active' } };
     }
-
     if (action === 'INIT') {
       return { screen: 'SCREEN_IDENTIFICATION', data: {} };
     }

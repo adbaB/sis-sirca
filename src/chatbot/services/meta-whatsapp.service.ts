@@ -4,6 +4,12 @@ import { ConfigType } from '@nestjs/config';
 import config from '../../config/configurations';
 import axios from 'axios';
 import * as crypto from 'crypto';
+import {
+  MetaTemplateComponent,
+  MetaTemplateParameter,
+  MetaTemplatePayload,
+  MetaTemplateVariables,
+} from '../interfaces/meta-template.interface';
 
 @Injectable()
 export class MetaWhatsappService {
@@ -162,6 +168,87 @@ export class MetaWhatsappService {
         this.logger.error(`Error sending flow message to ${to}:`, message);
       }
       return null;
+    }
+  }
+
+  public async sendTemplateMessage(
+    to: string,
+    templateName: string,
+    variables: MetaTemplateVariables = {},
+    languageCode: string = 'es',
+    flowToken?: string,
+  ): Promise<void> {
+    const accessToken = this.configService.meta.accessToken;
+    const phoneNumberId = this.configService.meta.phoneNumberId;
+
+    if (!accessToken || !phoneNumberId) {
+      throw new Error('Missing Meta access token or phone number ID in configuration.');
+    }
+
+    const parameters: MetaTemplateParameter[] = Object.entries(variables).map(([key, value]) => ({
+      type: 'text',
+      parameter_name: key,
+      text: String(value),
+    }));
+
+    const components: MetaTemplateComponent[] =
+      parameters.length > 0 ? [{ type: 'body', parameters }] : [];
+
+    if (flowToken) {
+      components.push({
+        type: 'button',
+        sub_type: 'flow',
+        index: '0',
+        parameters: [
+          {
+            type: 'action',
+            action: {
+              flow_token: flowToken,
+              flow_action_data: {
+                screen: 'SCREEN_IDENTIFICATION',
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    const templatePayload: MetaTemplatePayload = {
+      name: templateName,
+      language: {
+        code: languageCode,
+      },
+    };
+
+    if (components.length > 0) {
+      templatePayload.components = components;
+    }
+
+    try {
+      await axios.post(
+        this.baseUrl,
+        {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'template',
+          template: templatePayload,
+        },
+        {
+          headers: this.getHeaders(),
+          timeout: 15000,
+        },
+      );
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        this.logger.error(
+          `Error sending template message to ${to}:`,
+          error.response?.data || error.message,
+        );
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Error sending template message to ${to}:`, message);
+      }
+      throw error;
     }
   }
 
