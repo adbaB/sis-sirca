@@ -12,6 +12,7 @@ import {
 import { RequirePermissions } from '../../auth/decorators';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
+import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from '../services/persons.service';
 
@@ -48,6 +49,12 @@ export class PersonsController {
   @RequirePermissions('read:contracts', 'read:persons')
   findOne(@Param('id') id: string) {
     return this.personsService.findOne(id);
+  }
+
+  @Patch('bulk')
+  @RequirePermissions('update:contracts', 'update:persons')
+  bulkUpdate(@Body() bulkUpdatePersonsDto: BulkUpdatePersonsDto) {
+    return this.personsService.bulkUpdate(bulkUpdatePersonsDto);
   }
 
   @Patch(':id')
