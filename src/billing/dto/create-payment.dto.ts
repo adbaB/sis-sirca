@@ -1,4 +1,14 @@
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
+import { PaymentOrigin } from '../entities/payment.entity';
 
 export class CreatePaymentDto {
   @IsUUID()
@@ -34,6 +44,10 @@ export class CreatePaymentDto {
   @IsString()
   @IsOptional()
   operationDate?: string;
+
+  @IsEnum(PaymentOrigin)
+  @IsOptional()
+  origin?: PaymentOrigin;
 
   @IsString()
   @IsOptional()

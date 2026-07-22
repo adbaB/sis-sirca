@@ -3,7 +3,7 @@ import { CreatePaymentDto } from '../../dto/create-payment.dto';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { PaymentSplit, TransactionResult } from '../interfaces/payment.interface';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
-import { Payment, PaymentStatus } from '../../entities/payment.entity';
+import { Payment, PaymentOrigin, PaymentStatus } from '../../entities/payment.entity';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -358,6 +358,7 @@ export class PaymentService {
     const payment = queryRunner.manager.create(Payment, {
       paymentDate,
       operationDate,
+      origin: dto.origin || PaymentOrigin.WEB,
       status: PaymentStatus.PROCESSING,
       invoice,
       person: dto.personId ? { id: dto.personId } : null,

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { DateTime } from 'luxon';
+import { PaymentOrigin } from '../../billing/entities/payment.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { PersonsService } from '../../persons/services/persons.service';
 import { MetaWhatsappService } from './meta-whatsapp.service';
@@ -98,6 +99,7 @@ export class ChatbotPaymentService {
               url: receiptUrl,
               personId,
               datePaymentReceipt,
+              origin: PaymentOrigin.BOT,
               metadata: ocrMetadata,
             },
             queryRunner,
@@ -159,6 +161,7 @@ export class ChatbotPaymentService {
               url: receiptUrl,
               personId,
               datePaymentReceipt,
+              origin: PaymentOrigin.BOT,
               metadata: ocrMetadata,
             },
             queryRunner,
