@@ -34,6 +34,10 @@ export class ChatbotAnalyticsService {
       interaction.current_step = step;
     }
 
+    if (metadata) {
+      interaction.metadata = metadata;
+    }
+
     const selectedInvoiceIds = metadata?.selected_invoices;
     if (selectedInvoiceIds && Array.isArray(selectedInvoiceIds) && selectedInvoiceIds.length > 0) {
       // Buscamos las facturas reales en la BD por sus IDs

@@ -161,7 +161,7 @@ export class BillingController {
     let amountBsVal: number | null = null;
     const ocrAmount = ocrResult.monto || 0;
 
-    if (currency === 'VES') {
+    if (currency === 'BS' || currency === 'VES') {
       amountBsVal = ocrAmount;
     } else {
       amountUsd = ocrAmount;

@@ -194,8 +194,18 @@ export class ChatbotPaymentService {
       await this.analyticsService.trackCompletion(fromNumber);
       await this.stateService.clearState(fromNumber);
 
-      const exchangeRate =
-        await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
+      let rateUsd: number | undefined;
+      try {
+        const exchangeRate =
+          await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
+        if (exchangeRate?.rateUsd) {
+          rateUsd = Number(exchangeRate.rateUsd);
+        }
+      } catch (rateError) {
+        this.logger.warn(
+          `Could not fetch exchange rate for post-payment notification: ${rateError?.message}`,
+        );
+      }
 
       const invoiceIds = state.selected_invoices_details
         ? state.selected_invoices_details.map((inv) => inv.id)
@@ -213,8 +223,8 @@ export class ChatbotPaymentService {
       if (hasAmount) {
         if (isZelle) {
           totalPaidUsd = extractedAmount;
-        } else {
-          totalPaidUsd = extractedAmount / exchangeRate.rateUsd;
+        } else if (rateUsd) {
+          totalPaidUsd = extractedAmount / rateUsd;
         }
       } else {
         if (state.selected_invoices_details) {
@@ -231,8 +241,8 @@ export class ChatbotPaymentService {
 
         if (updatedInvoices.length > 1) {
           if (pendingUsd > 0) {
-            const pendingBs = pendingUsd * exchangeRate.rateUsd;
-            breakdownText += `\n- Mes ${invoice.billingMonth}: Queda pendiente $${pendingUsd.toFixed(2)} (Bs. ${pendingBs.toFixed(2)})`;
+            const pendingBsText = rateUsd ? ` (Bs. ${(pendingUsd * rateUsd).toFixed(2)})` : '';
+            breakdownText += `\n- Mes ${invoice.billingMonth}: Queda pendiente $${pendingUsd.toFixed(2)}${pendingBsText}`;
           } else {
             breakdownText += `\n- Mes ${invoice.billingMonth}: Pagada en su totalidad ✅`;
           }
@@ -247,8 +257,10 @@ export class ChatbotPaymentService {
       }
 
       if (totalPendingUsd > 0) {
-        const totalPendingBs = totalPendingUsd * exchangeRate.rateUsd;
-        finalMessage += `\nAún queda un saldo pendiente total de $${totalPendingUsd.toFixed(2)} (Bs. ${totalPendingBs.toFixed(2)}).`;
+        const totalPendingBsText = rateUsd
+          ? ` (Bs. ${(totalPendingUsd * rateUsd).toFixed(2)})`
+          : '';
+        finalMessage += `\nAún queda un saldo pendiente total de $${totalPendingUsd.toFixed(2)}${totalPendingBsText}.`;
         if (updatedInvoices.length > 1) {
           finalMessage += `\nDetalle por factura:${breakdownText}`;
         }
@@ -261,6 +273,14 @@ export class ChatbotPaymentService {
       await this.metaWhatsappService.sendMessage(fromNumber, finalMessage);
     } catch (notificationError) {
       this.logger.error('Error sending post-payment notifications', notificationError);
+      try {
+        await this.metaWhatsappService.sendMessage(
+          fromNumber,
+          `¡Excelente noticia! 🎉 Tu pago ha sido registrado con éxito.\n\nYa notifiqué a nuestro equipo administrativo para que lo validen. ¡Gracias por confiar en SIRCA! Estás en buenas manos. ✨`,
+        );
+      } catch (fallbackErr) {
+        this.logger.error('Error sending fallback payment confirmation message', fallbackErr);
+      }
     }
   }
 }

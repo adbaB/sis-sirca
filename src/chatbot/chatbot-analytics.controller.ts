@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { RequirePermissions } from '../auth/decorators';
 import { ChatbotAnalyticsService } from './services/chatbot-analytics.service';
 import { GetInteractionsQueryDto } from './dto/get-interactions-query.dto';
+import { CheckInteractionsDto } from './dto/check-interactions.dto';
 
 @Controller('chatbot-analytics')
 export class ChatbotAnalyticsController {
@@ -15,8 +16,8 @@ export class ChatbotAnalyticsController {
 
   @Post('check-interactions')
   @RequirePermissions('read:pipeline')
-  async checkInteractions(@Body('invoiceIds') invoiceIds: string[]) {
-    return this.analyticsService.checkInvoicesWithInteractions(invoiceIds);
+  async checkInteractions(@Body() dto: CheckInteractionsDto) {
+    return this.analyticsService.checkInvoicesWithInteractions(dto.invoiceIds);
   }
 
   @Get('active-operations')
