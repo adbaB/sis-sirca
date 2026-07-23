@@ -346,7 +346,7 @@ export class PaymentService {
     split: PaymentSplit,
     paymentDate: Date,
   ): Promise<Payment> {
-    let operationDate: Date = paymentDate;
+    let operationDate: Date = getCaracasTodayJSDate();
     if (dto.operationDate) {
       const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
       const dt = parseDateToCaracas(dto.operationDate, isZelle);
