@@ -11,7 +11,7 @@ export class ChatbotAnalyticsController {
   @Get('interactions')
   @RequirePermissions('read:pipeline')
   async getInteractions(@Query() query: GetInteractionsQueryDto) {
-    return this.analyticsService.getInteractionsByInvoice(query.invoiceId, query);
+    return this.analyticsService.getInteractions(query);
   }
 
   @Post('check-interactions')
