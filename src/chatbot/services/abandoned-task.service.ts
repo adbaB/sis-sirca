@@ -17,18 +17,22 @@ export class AbandonedTasksService {
   // Se ejecuta cada hora
   @Cron(CronExpression.EVERY_HOUR)
   async handleAbandonedChats() {
-    const twoHoursAgo = getCaracasNow().minus({ hours: 2 }).toJSDate();
+    try {
+      const twoHoursAgo = getCaracasNow().minus({ hours: 2 }).toJSDate();
 
-    const result = await this.interactionRepo.update(
-      {
-        status: InteractionStatus.IN_PROGRESS,
-        updated_at: LessThan(twoHoursAgo),
-      },
-      { status: InteractionStatus.ABANDONED },
-    );
+      const result = await this.interactionRepo.update(
+        {
+          status: InteractionStatus.IN_PROGRESS,
+          updated_at: LessThan(twoHoursAgo),
+        },
+        { status: InteractionStatus.ABANDONED },
+      );
 
-    if (result.affected > 0) {
-      this.logger.log(`Marked ${result.affected} chats as ABANDONED.`);
+      if (result.affected > 0) {
+        this.logger.log(`Marked ${result.affected} chats as ABANDONED.`);
+      }
+    } catch (error) {
+      this.logger.error('Error al procesar tareas abandonadas:', error);
     }
   }
 }

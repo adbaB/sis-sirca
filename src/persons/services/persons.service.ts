@@ -11,6 +11,7 @@ import { AffiliationHistory } from '../../contracts/entities/affiliation-history
 
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
+import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
 
 import { InvoiceLineCategory } from '../../billing/enums/invoice-line-category.enum';
@@ -224,7 +225,8 @@ export class PersonsService {
 
   async update(id: string, updatePersonDto: UpdatePersonDto): Promise<Person> {
     // ── 1. Destructuring & fast-fail ─────────────────────────────────────────
-    const { planId, contractId, role, isBillingOwner, ...updateData } = updatePersonDto;
+    const { planId, contractId, role, isBillingOwner, relationship, ...updateData } =
+      updatePersonDto;
 
     if (!contractId) {
       throw new BadRequestException('Contract ID is required.');
@@ -260,7 +262,7 @@ export class PersonsService {
 
     // ── 3. Resolver junction existente y rol ─────────────────────────────────
 
-    const existingJunction = await this.contractPersonRepository.findOne({
+    let existingJunction = await this.contractPersonRepository.findOne({
       where: { contract: { id: contractId }, person: { id: person.id } },
     });
 
@@ -318,10 +320,11 @@ export class PersonsService {
     const contractsToRecalculate = new Set<string>();
 
     if (existingJunction) {
-      // Actualizar role e isBillingOwner solo si alguno cambió.
+      // Actualizar role, isBillingOwner y relationship solo si alguno cambió.
       const junctionNeedsUpdate =
         (role !== undefined && existingJunction.role !== role) ||
-        (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner);
+        (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner) ||
+        (relationship !== undefined && existingJunction.relationship !== relationship);
 
       if (junctionNeedsUpdate) {
         if (role !== undefined) {
@@ -334,6 +337,7 @@ export class PersonsService {
           existingJunction.role = role;
         }
         if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
+        if (relationship !== undefined) existingJunction.relationship = relationship;
         await this.contractPersonRepository.save(existingJunction);
       }
     } else {
@@ -344,7 +348,14 @@ export class PersonsService {
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
       });
-      await this.contractPersonRepository.save(contractPerson);
+      existingJunction = await this.contractPersonRepository.save(contractPerson);
+    }
+
+    if (updateData.healthDeclarations && existingJunction) {
+      await this.healthDeclarationRepository.delete({
+        contractPerson: { id: existingJunction.id },
+      });
+      await this.saveHealthDeclarations(updateData.healthDeclarations, existingJunction);
     }
 
     contractsToRecalculate.add(contractId);
@@ -360,6 +371,31 @@ export class PersonsService {
     }
 
     return savedPerson;
+  }
+
+  async bulkUpdate(bulkUpdatePersonsDto: BulkUpdatePersonsDto): Promise<void> {
+    // Para simplificar y reutilizar lógica, procesaremos las actualizaciones una por una.
+    // Esto asegura que la lógica de validación de cédulas siga en su lugar.
+    for (const personData of bulkUpdatePersonsDto.persons) {
+      const { id, ...updateData } = personData;
+
+      // Obtener la persona primero para saber de qué contrato(s) es parte
+      const person = await this.findOne(id);
+
+      // Usamos el id del primer contrato de la persona si no se provee.
+      // Dado que solo permitiremos actualizar información básica de la persona,
+      // el contractId no debería afectar más que desencadenar recalculaciones (lo cual es deseado si el plan cambia, pero aquí no cambiará plan).
+      const contractId = person.contractPersons?.[0]?.contract?.id;
+
+      if (contractId) {
+        await this.update(id, { ...updateData, contractId });
+      } else {
+        // Fallback en caso extraño de que la persona no esté asociada a un contrato aún
+        // Aquí simulamos parte de la actualización básica.
+        Object.assign(person, updateData);
+        await this.personsRepository.save(person);
+      }
+    }
   }
 
   async remove(id: string): Promise<void> {

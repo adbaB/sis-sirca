@@ -1,5 +1,5 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis/built/Redis';
 import { UserState } from '../interfaces/userState.interface';
 import { Steps } from '../enums/steps.enum';
@@ -7,6 +7,7 @@ import { ChatbotAnalyticsService } from './chatbot-analytics.service';
 
 @Injectable()
 export class ChatbotStateService {
+  private readonly logger = new Logger(ChatbotStateService.name);
   private readonly STATE_TTL_SECONDS = 60 * 60 * 24; // 1 day
 
   constructor(
@@ -39,7 +40,11 @@ export class ChatbotStateService {
     );
     if (state.step !== Steps.AWAITING_NAME) {
       // Ignoramos el saludo inicial si quieres
-      await this.analyticsService.trackStep(normalized, state.step, state);
+      try {
+        await this.analyticsService.trackStep(normalized, state.step, state);
+      } catch (error) {
+        this.logger.warn(`Failed to track step analytics for ${normalized}:`, error);
+      }
     }
   }
 

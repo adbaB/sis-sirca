@@ -177,7 +177,7 @@ export class ReminderService {
     for (const invoice of pendingInvoices) {
       const person = invoice.contract?.contractPersons.find(
         (contractPerson) => contractPerson.isBillingOwner,
-      ).person;
+      )?.person;
       if (!person) continue;
 
       if (!debtsMap.has(person.id)) {

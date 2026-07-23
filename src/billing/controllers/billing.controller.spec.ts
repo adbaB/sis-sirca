@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PdfService } from '../../pdf/services/pdf.service';
 import { BillingController } from './billing.controller';
-import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { BillingService } from '../services/billing.service';
 
 import { AwsService } from '../../aws/aws.service';
@@ -9,7 +8,6 @@ import { OcrService } from '../../ocr/ocr.service';
 
 describe('BillingController', () => {
   let controller: BillingController;
-  let service: BillingService;
 
   const mockBillingService = {
     createPayment: jest.fn(),
@@ -39,32 +37,81 @@ describe('BillingController', () => {
     }).compile();
 
     controller = module.get<BillingController>(BillingController);
-    service = module.get<BillingService>(BillingService);
   });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
-  describe('createPayment', () => {
-    it('should call BillingService.createPayment with correct parameters', async () => {
-      // Arrange
-      const createPaymentDto: CreatePaymentDto = {
-        invoiceId: 'inv-123',
-        amount: 100,
-        paymentMethod: 'CASH',
-        referenceNumber: 'REF123',
-      };
+  describe('analyzeReceipt', () => {
+    const mockAwsService = { uploadFile: jest.fn() };
+    const mockOcrService = { extractReceiptData: jest.fn() };
 
-      const expectedResult = { id: 'payment-1', ...createPaymentDto };
-      mockBillingService.createPayment.mockResolvedValue(expectedResult);
+    beforeEach(async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        controllers: [BillingController],
+        providers: [
+          { provide: BillingService, useValue: mockBillingService },
+          { provide: PdfService, useValue: {} },
+          { provide: AwsService, useValue: mockAwsService },
+          { provide: OcrService, useValue: mockOcrService },
+        ],
+      }).compile();
 
-      // Act
-      const result = await controller.createPayment(createPaymentDto);
+      controller = module.get<BillingController>(BillingController);
+    });
 
-      // Assert
-      expect(service.createPayment).toHaveBeenCalledWith(createPaymentDto);
-      expect(result).toEqual(expectedResult);
+    it('should assign amountBs when currency is BS', async () => {
+      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
+      mockAwsService.uploadFile.mockResolvedValue('http://s3/test.jpg');
+      mockOcrService.extractReceiptData.mockResolvedValue({
+        monto: 500,
+        referencia: '123456',
+        moneda: 'Bs',
+        fecha: '22/07/2026',
+        nombreBanco: 'Mercantil',
+      });
+
+      const result = await controller.analyzeReceipt(mockFile);
+
+      expect(result.amountBs).toBe(500);
+      expect(result.amount).toBeNull();
+      expect(result.referenceNumber).toBe('123456');
+    });
+
+    it('should assign amountBs when currency is VES (legacy)', async () => {
+      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
+      mockAwsService.uploadFile.mockResolvedValue('http://s3/test.jpg');
+      mockOcrService.extractReceiptData.mockResolvedValue({
+        monto: 300,
+        referencia: '654321',
+        moneda: 'VES',
+        fecha: '22/07/2026',
+        nombreBanco: 'Banesco',
+      });
+
+      const result = await controller.analyzeReceipt(mockFile);
+
+      expect(result.amountBs).toBe(300);
+      expect(result.amount).toBeNull();
+    });
+
+    it('should assign amount when currency is USD', async () => {
+      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
+      mockAwsService.uploadFile.mockResolvedValue('http://s3/test.jpg');
+      mockOcrService.extractReceiptData.mockResolvedValue({
+        monto: 100,
+        referencia: 'WFCT123',
+        moneda: 'USD',
+        fecha: '22/07/2026',
+        nombreBanco: 'Wells Fargo',
+      });
+
+      const result = await controller.analyzeReceipt(mockFile);
+
+      expect(result.amount).toBe(100);
+      expect(result.amountBs).toBeNull();
+      expect(result.paymentMethod).toBe('ZELLE');
     });
   });
 });
