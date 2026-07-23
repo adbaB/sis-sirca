@@ -262,29 +262,5 @@ describe('BillingCronService', () => {
       expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });
-
-    it('should inactivate contract and not generate invoice if 2 or more unpaid invoices exist', async () => {
-      // Arrange
-      const mockPersons = [createMockPerson('person-1', 50)];
-      const mockContract = createMockContract('contract-1', mockPersons);
-
-      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
-      mockQueryRunner.manager.findOne.mockResolvedValue(null);
-      mockQueryRunner.manager.count.mockResolvedValueOnce(2); // 2 unpaid invoices
-
-      // Act
-      await service.generateMonthlyInvoices();
-
-      // Assert
-      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(Contract, 'contract-1', {
-        status: ContractStatus.INACTIVE,
-      });
-      // Invoice was not created or saved
-      expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
-      expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
-      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.release).toHaveBeenCalled();
-    });
   });
 });

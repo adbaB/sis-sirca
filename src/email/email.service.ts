@@ -177,4 +177,31 @@ export class EmailService {
       throw new InternalServerErrorException('Failed to send PDF links email with unknown error');
     }
   }
+
+  /**
+   * Sends a generic HTML email via AWS SES.
+   * @param to         Recipient address
+   * @param subject    Email subject
+   * @param htmlBody   Full HTML body content
+   */
+  async sendHtmlEmail(to: string, subject: string, htmlBody: string): Promise<void> {
+    const command = new SendEmailCommand({
+      Source: this.configService.aws.sesFromEmail,
+      Destination: { ToAddresses: [to] },
+      Message: {
+        Subject: { Data: subject, Charset: 'UTF-8' },
+        Body: { Html: { Data: htmlBody, Charset: 'UTF-8' } },
+      },
+    });
+
+    try {
+      await this.sesClient.send(command);
+      this.logger.log(`HTML email sent to ${to}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new InternalServerErrorException(`Failed to send HTML email: ${error.message}`);
+      }
+      throw new InternalServerErrorException('Failed to send HTML email with unknown error');
+    }
+  }
 }
