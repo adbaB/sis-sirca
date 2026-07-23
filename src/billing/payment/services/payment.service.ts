@@ -78,6 +78,13 @@ export class PaymentService {
         }
         paymentDate = dt.toJSDate();
       }
+      if (dto.operationDate) {
+        const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
+        const dt = parseDateToCaracas(dto.operationDate, isZelle);
+        if (!dt.isValid) {
+          throw new BadRequestException('Formato de fecha de operación inválido');
+        }
+      }
 
       const exchangeRate = await this.getExchangeRateOrThrow(paymentDate);
 
@@ -269,7 +276,7 @@ export class PaymentService {
 
   /** Validates that the incoming amounts are positive finite numbers. */
   private validateAmounts(dto: CreatePaymentDto, amount: number, amountExtracted: number): void {
-    const isZelle = dto.paymentMethod.toLowerCase() === 'zelle';
+    const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
     if (isZelle) {
       if (!Number.isFinite(amount) || amount <= 0) {
         throw new BadRequestException('Payment amount must be greater than 0');
@@ -350,9 +357,10 @@ export class PaymentService {
     if (dto.operationDate) {
       const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
       const dt = parseDateToCaracas(dto.operationDate, isZelle);
-      if (dt.isValid) {
-        operationDate = dt.toJSDate();
+      if (!dt.isValid) {
+        throw new BadRequestException('Formato de fecha de operación inválido');
       }
+      operationDate = dt.toJSDate();
     }
 
     const payment = queryRunner.manager.create(Payment, {

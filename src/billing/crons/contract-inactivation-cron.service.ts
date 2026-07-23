@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, MoreThan, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { EmailService } from '../../email/email.service';
 import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
@@ -40,16 +40,18 @@ export class ContractInactivationCronService {
     this.logger.log('Starting contract inactivation check for delinquency...');
 
     const chunkSize = 100;
-    let offset = 0;
+    let lastId: string | null = null;
     const inactivatedContracts: InactivatedContractInfo[] = [];
     const today = formatDateES(getCaracasNow(), 'dd/MM/yyyy');
 
     while (true) {
       const contracts = await this.contractRepository.find({
-        where: { status: ContractStatus.ACTIVE },
+        where: {
+          status: ContractStatus.ACTIVE,
+          ...(lastId ? { id: MoreThan(lastId) } : {}),
+        },
         relations: ['contractPersons', 'contractPersons.person'],
         order: { id: 'ASC' },
-        skip: offset,
         take: chunkSize,
       });
 
@@ -64,7 +66,7 @@ export class ContractInactivationCronService {
         }
       }
 
-      offset += chunkSize;
+      lastId = contracts[contracts.length - 1].id;
     }
 
     this.logger.log(

@@ -187,5 +187,42 @@ describe('ContractInactivationCronService', () => {
 
       loggerSpy.mockRestore();
     });
+
+    it('should use keyset (cursor) pagination with MoreThan when processing multiple chunks', async () => {
+      const contract1 = createMockContract('c-1', 'CON-001', 'Juan Pérez');
+      const contract2 = createMockContract('c-2', 'CON-002', 'María López');
+
+      mockContractRepository.find
+        .mockResolvedValueOnce([contract1])
+        .mockResolvedValueOnce([contract2])
+        .mockResolvedValueOnce([]);
+
+      mockQueryRunner.manager.count
+        .mockResolvedValueOnce(3) // c-1: 3 unpaid → inactivate
+        .mockResolvedValueOnce(3); // c-2: 3 unpaid → inactivate
+
+      await service.processContractInactivations();
+
+      expect(mockContractRepository.find).toHaveBeenCalledTimes(3);
+
+      // First call has no cursor
+      expect(mockContractRepository.find.mock.calls[0][0].where).toEqual({
+        status: ContractStatus.ACTIVE,
+      });
+
+      // Second call uses id: MoreThan('c-1')
+      expect(mockContractRepository.find.mock.calls[1][0].where).toEqual({
+        status: ContractStatus.ACTIVE,
+        id: expect.anything(),
+      });
+
+      // Third call uses id: MoreThan('c-2')
+      expect(mockContractRepository.find.mock.calls[2][0].where).toEqual({
+        status: ContractStatus.ACTIVE,
+        id: expect.anything(),
+      });
+
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledTimes(2);
+    });
   });
 });
