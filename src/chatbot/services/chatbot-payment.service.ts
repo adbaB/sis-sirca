@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { DateTime } from 'luxon';
+import { PaymentOrigin } from '../../billing/entities/payment.entity';
 import { BillingService } from '../../billing/services/billing.service';
 import { PersonsService } from '../../persons/services/persons.service';
 import { MetaWhatsappService } from './meta-whatsapp.service';
@@ -8,7 +8,12 @@ import { ChatbotStateService } from './chatbot-state.service';
 import { UserState } from '../interfaces/userState.interface';
 import { ChatbotAnalyticsService } from './chatbot-analytics.service';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
-import { getCaracasTodayJSDate } from '../../common/utils/date.util';
+import {
+  formatToISODateString,
+  getCaracasNow,
+  getCaracasTodayJSDate,
+  parseDateToCaracas,
+} from '../../common/utils/date.util';
 
 @Injectable()
 export class ChatbotPaymentService {
@@ -44,7 +49,18 @@ export class ChatbotPaymentService {
 
       const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
-      const datePaymentReceipt = DateTime.now().setZone('America/Caracas').toISODate() ?? undefined;
+
+      let datePaymentReceipt: string | undefined =
+        formatToISODateString(getCaracasNow()) || undefined;
+      const rawOcrFecha = state.extracted_data?.fecha as string | undefined;
+
+      if (rawOcrFecha) {
+        const isZelle = paymentMethod.toLowerCase() === 'zelle';
+        const parsedDt = parseDateToCaracas(rawOcrFecha, isZelle);
+        if (parsedDt.isValid) {
+          datePaymentReceipt = formatToISODateString(parsedDt) || datePaymentReceipt;
+        }
+      }
 
       // Build OCR metadata to persist alongside the payment (exclude receiptUrl which has its own column)
       let ocrMetadata: Record<string, unknown> | undefined;
@@ -98,6 +114,7 @@ export class ChatbotPaymentService {
               url: receiptUrl,
               personId,
               datePaymentReceipt,
+              origin: PaymentOrigin.BOT,
               metadata: ocrMetadata,
             },
             queryRunner,
@@ -159,6 +176,7 @@ export class ChatbotPaymentService {
               url: receiptUrl,
               personId,
               datePaymentReceipt,
+              origin: PaymentOrigin.BOT,
               metadata: ocrMetadata,
             },
             queryRunner,

@@ -3,7 +3,7 @@ import { CreatePaymentDto } from '../../dto/create-payment.dto';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { PaymentSplit, TransactionResult } from '../interfaces/payment.interface';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
-import { Payment, PaymentStatus } from '../../entities/payment.entity';
+import { Payment, PaymentOrigin, PaymentStatus } from '../../entities/payment.entity';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -77,6 +77,13 @@ export class PaymentService {
           throw new BadRequestException('Formato de fecha de recibo inválido');
         }
         paymentDate = dt.toJSDate();
+      }
+      if (dto.operationDate) {
+        const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
+        const dt = parseDateToCaracas(dto.operationDate, isZelle);
+        if (!dt.isValid) {
+          throw new BadRequestException('Formato de fecha de operación inválido');
+        }
       }
 
       const exchangeRate = await this.getExchangeRateOrThrow(paymentDate);
@@ -269,7 +276,7 @@ export class PaymentService {
 
   /** Validates that the incoming amounts are positive finite numbers. */
   private validateAmounts(dto: CreatePaymentDto, amount: number, amountExtracted: number): void {
-    const isZelle = dto.paymentMethod.toLowerCase() === 'zelle';
+    const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
     if (isZelle) {
       if (!Number.isFinite(amount) || amount <= 0) {
         throw new BadRequestException('Payment amount must be greater than 0');
@@ -346,8 +353,20 @@ export class PaymentService {
     split: PaymentSplit,
     paymentDate: Date,
   ): Promise<Payment> {
+    let operationDate: Date = getCaracasTodayJSDate();
+    if (dto.operationDate) {
+      const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
+      const dt = parseDateToCaracas(dto.operationDate, isZelle);
+      if (!dt.isValid) {
+        throw new BadRequestException('Formato de fecha de operación inválido');
+      }
+      operationDate = dt.toJSDate();
+    }
+
     const payment = queryRunner.manager.create(Payment, {
       paymentDate,
+      operationDate,
+      origin: dto.origin || PaymentOrigin.WEB,
       status: PaymentStatus.PROCESSING,
       invoice,
       person: dto.personId ? { id: dto.personId } : null,

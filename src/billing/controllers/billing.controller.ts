@@ -172,6 +172,7 @@ export class BillingController {
       amount: amountUsd,
       amountBs: amountBsVal,
       paymentDate: formattedDate,
+      operationDate: formattedDate,
       paymentMethod: mappedMethod,
       bank: ocrResult.nombreBanco || ocrResult.origen || '',
       url: s3Url,

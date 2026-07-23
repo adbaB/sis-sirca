@@ -6,6 +6,7 @@ import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 import { GoogleModule } from '../google/google.module';
 import { PdfModule } from '../pdf/pdf.module';
 import { BillingCronService } from './crons/billing-cron.service';
+import { ContractInactivationCronService } from './crons/contract-inactivation-cron.service';
 import { PaymentCronService } from './crons/payment-cron.service';
 import { PaymentPdfCronService } from './crons/payment-pdf-cron.service';
 import { SurplusCronService } from './crons/surplus-cron.service';
@@ -38,6 +39,7 @@ import { InvoiceController } from './invoices/controllers/invoice.controller';
   providers: [
     BillingService,
     BillingCronService,
+    ContractInactivationCronService,
     PaymentCronService,
     PaymentPdfCronService,
     SurplusService,

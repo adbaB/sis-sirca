@@ -19,6 +19,11 @@ export enum PaymentStatus {
   REJECTED = 'REJECTED',
 }
 
+export enum PaymentOrigin {
+  WEB = 'WEB',
+  BOT = 'BOT',
+}
+
 @Entity('payments')
 export class Payment {
   @PrimaryGeneratedColumn('uuid')
@@ -34,6 +39,12 @@ export class Payment {
 
   @Column({ type: 'timestamp', name: 'payment_date' })
   paymentDate: Date;
+
+  @Column({ type: 'timestamp', name: 'operation_date', nullable: true })
+  operationDate?: Date | null;
+
+  @Column({ type: 'varchar', length: 20, name: 'origin', default: PaymentOrigin.WEB })
+  origin: PaymentOrigin;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;

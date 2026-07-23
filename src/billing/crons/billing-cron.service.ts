@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
@@ -97,25 +97,6 @@ export class BillingCronService {
       if (existingInvoice) {
         await queryRunner.rollbackTransaction();
         return; // Skip this contract as it already has an invoice for this month
-      }
-
-      // Check de inactivación por morosidad: 2+ facturas no pagadas
-      const unpaidInvoiceCount = await queryRunner.manager.count(Invoice, {
-        where: {
-          contract: { id: contract.id },
-          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
-        },
-      });
-
-      if (unpaidInvoiceCount >= 2) {
-        await queryRunner.manager.update(Contract, contract.id, {
-          status: ContractStatus.INACTIVE,
-        });
-        await queryRunner.commitTransaction();
-        this.logger.warn(
-          `Contract ${contract.code} inactivated: ${unpaidInvoiceCount} unpaid invoices`,
-        );
-        return; // NO genera factura nueva
       }
 
       const activeAfiliados =
