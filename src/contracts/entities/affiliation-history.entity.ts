@@ -18,7 +18,7 @@ import { AffiliationAction } from '../enums/affiliation-action.enum';
 @Index('IDX_ah_person', ['person'])
 @Index('IDX_ah_contract', ['contract'])
 @Index('IDX_ah_action_date', ['actionDate'])
-@Check('CHK_ah_action', "\"action\" IN ('AFILIACION', 'DESAFILIACION')")
+@Check('CHK_ah_action', "\"action\" IN ('AFILIACION', 'DESAFILIACION', 'CAMBIO_CONTRATO')")
 export class AffiliationHistory {
   @PrimaryGeneratedColumn('uuid')
   id: string;
