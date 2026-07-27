@@ -26,6 +26,7 @@ import {
 } from '../../../common/utils/date.util';
 import { Surplus, SurplusStatus } from '../../entities/surplus.entity';
 import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
+import { extractOcrDisplayFields } from '../../utils/ocr-display.util';
 import { Plan } from '../../../plans/entities/plan.entity';
 
 @Injectable()
@@ -974,6 +975,9 @@ export class InvoiceService {
           ? await fetchReceiptAsBase64(payment.url, this.logger)
           : null;
 
+        // Extract OCR metadata for banco destino and monto extraído
+        const { bancoDestino, montoExtraido } = extractOcrDisplayFields(payment?.metadata);
+
         return {
           contractCode: contract.code,
           billingMonth: invoice.billingMonth,
@@ -999,6 +1003,8 @@ export class InvoiceService {
           date: today,
           advisor: contract.advisor?.name ?? 'Sin asesor',
           receiptUrl,
+          bancoDestino,
+          montoExtraido,
         };
       }),
     );

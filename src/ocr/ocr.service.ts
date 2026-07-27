@@ -68,7 +68,7 @@ export class OcrService {
       const prompt = `Extrae los datos del comprobante de pago adjunto. Puede ser una transferencia bancaria venezolana O un pago Zelle desde un banco estadounidense.
 
 INSTRUCCIONES PARA LA REFERENCIA:
-1. Busca la referencia bajo etiquetas como: "Referencia:", "Nro. de referencia:", "Número de operación", "El número de operación es:", "Comprobante Nro", "Ref:", "N° Referencia", "Confirmation", "Confirmación", "Número de confirmación", "Reference Number".
+1. Busca la referencia bajo etiquetas como: "Referencia:", "Nro. de referencia:", "Número de operación", "El número de operación es:", "Comprobante Nro", "Ref:", "N° Referencia", "Confirmation", "Confirmación", "Número de confirmación", "Reference Number", "Operación:".
 2. La referencia puede ser NUMÉRICA (bancos venezolanos, ej: 000080329301) o ALFANUMÉRICA (Zelle, ej: WFCT128RS4V9, sa845yhrn, l0pxs6yl0).
 3. Transcribe CADA CARÁCTER exactamente como aparece, respetando mayúsculas/minúsculas.
 4. CONSERVA todos los ceros iniciales (ejemplo: 000080329301, NO 80329301).
@@ -82,15 +82,44 @@ INSTRUCCIONES PARA EL MONTO:
 - Si ves "Bs.", "BS", "Bs" o "VES", la moneda es "Bs".
 - Si ves "$", "USD", "US$" o es un pago Zelle, la moneda es "USD".
 
+INSTRUCCIONES PARA EL BANCO DESTINO (banco receptor del pago):
+Busca el banco destino bajo estas etiquetas según el banco emisor:
+- Mercantil: Campo "Banco destino:" (ej: "0191 - Banco Nacional Crédito, C.a. Banco Universal").
+- Banco de Venezuela (BDV/PagomóvilBDV): Campo "Banco:" junto a un código (ej: "0191 - BANCO NACIONAL DE CREDITO"). NO confundir con el banco origen.
+- Banesco: Campo "BANCO RECEPTOR" (ej: "BANCO NACIONAL DE CREDITO").
+- BNC: Busca en la línea de "Beneficiario:" al final puede indicar el banco con un guion (ej: "0412-7313398 SIRCA J-501776385 - BNC"). Si el beneficiario contiene "- BNC", el banco destino es "Banco Nacional de Crédito". Si no hay indicación de banco destino diferente, puede ser el mismo BNC.
+- Provincial (BBVA): Campo "Banco:" (ej: "NAC.CREDIT"). Normaliza las abreviaciones.
+- Zelle: En pagos Zelle no aplica banco destino venezolano; busca el nombre del receptor si existe.
+
+NORMALIZACIÓN DE NOMBRES DE BANCOS DESTINO:
+Siempre devuelve el nombre completo normalizado del banco destino. Usa esta tabla:
+- "NAC.CREDIT", "NAC. CREDIT", "NACIONAL DE CREDITO", "0191" → "Banco Nacional de Crédito"
+- "BANESCO", "0134" → "Banesco"
+- "MERCANTIL", "0105" → "Mercantil"
+- "VENEZUELA", "BDV", "0102" → "Banco de Venezuela"
+- "PROVINCIAL", "BBVA", "0108" → "Provincial"
+- "BNC", "0191" → "Banco Nacional de Crédito"
+- "TESORO", "0163" → "Banco del Tesoro"
+- "BICENTENARIO", "0175" → "Bicentenario"
+- "BANCARIBE", "0114" → "Bancaribe"
+- "EXTERIOR", "0115" → "Banco Exterior"
+- "BOD", "0116" → "BOD"
+- "PLAZA", "0138" → "Banco Plaza"
+- "BFC", "FONDO COMUN", "0151" → "BFC"
+- "BANCAMIGA", "0172" → "Bancamiga"
+- "ACTIVO", "0171" → "Banco Activo"
+- "BANPLUS", "0174" → "Banplus"
+Si aparece un código de banco (4 dígitos como "0191"), úsalo para identificar el banco.
+
 INSTRUCCIONES PARA IDENTIFICAR EL BANCO ORIGEN (quien envía el pago):
 Identifica el banco usando texto visible O por sus características visuales:
 
 Bancos venezolanos:
 - Mercantil: Fondo azul degradado, logo "Mercantil" con flecha azul, texto "Tu Tpago fue exitoso".
 - Banco de Venezuela (BDV): Encabezado rojo/vinotinto, logo tricolor (amarillo/azul/rojo), texto "PagomóvilBDV", URL "banvenez.com".
-- Banesco: Tema verde, logo circular verde, texto "Banesco".
-- BNC (Banco Nacional de Crédito): Encabezado azul oscuro, logo "BNC" en blanco, texto en azul/blanco.
-- Provincial (BBVA): Tema azul con detalles blancos, logo BBVA Provincial.
+- Banesco: Tema verde, logo circular verde, texto "Banesco", "BANCO EMISOR: BANESCO".
+- BNC (Banco Nacional de Crédito): Encabezado azul oscuro, logo "BNC" en blanco, texto en azul/blanco, "Su pago móvil ha sido Ejecutado exitosamente".
+- Provincial (BBVA): Tema azul oscuro arriba, logo "Dinero Rápido BBVA Provincial", texto "El dinero fue enviado".
 - Banco del Tesoro: Tema azul claro, logo con estrella.
 - Bicentenario: Tema verde/dorado, logo con estrella.
 - Bancaribe: Tema naranja/blanco.
@@ -113,15 +142,21 @@ Bancos Zelle (estadounidenses):
 - PNC Bank: Tema naranja/azul.
 Si no puedes identificar el banco origen, devuelve null.
 
+INSTRUCCIONES PARA EL BANCO ORIGEN (normalización):
+Siempre devuelve el nombre normalizado del banco origen:
+- Si es banco venezolano, usa los mismos nombres de la tabla de normalización de banco destino.
+- Si es banco Zelle/estadounidense, usa el nombre completo (ej: "Bank of America", "Wells Fargo", "Chase", "Zelle").
+El campo "nombreBanco" debe ser SIEMPRE igual al campo "origen".
+
 FORMATO DE SALIDA:
 Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
 {
   "monto": (number|null),
   "referencia": (string|null) Exactamente como aparece, sin espacios,
   "beneficiario": (string|null) Nombre del beneficiario/receptor del pago,
-  "bancoDestino": (string|null) Banco receptor del pago,
+  "bancoDestino": (string|null) Banco receptor del pago (nombre normalizado),
   "fecha": (string|null) formato DD/MM/YYYY,
-  "origen": (string|null) Banco desde donde se realizó el pago (identificado por texto o logo),
+  "origen": (string|null) Banco desde donde se realizó el pago (nombre normalizado),
   "descripcion": (string|null) Concepto o descripción del pago,
   "nombreBanco": (string|null) Nombre del banco que emitió el comprobante (mismo que origen),
   "moneda": (string|null) "Bs" o "USD"
