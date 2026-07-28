@@ -139,30 +139,26 @@ export function getBillingMonth(dateVal?: Date | string | DateTime): string {
 }
 
 /**
- * Computes the date windows used to classify SIP commission records
- * for a given billing month.
+ * Computes the operation_date query window for SIP commission reports.
  *
- * For billing month M (year-month):
- *   - Cobranza Ejecutada: operation_date in [25 of M-1, 5 of M] (inclusive)
- *   - Extemporaneidad:    operation_date in [6 of M-1, 24 of M-1] (inclusive)
+ * For billing month M (year-month), the window covers [6 of M-1, 5 of M].
+ * Records within this window are then classified by billing_month match:
+ *   - billing_month = M  → Cobranza Ejecutada
+ *   - billing_month ≠ M  → Extemporaneidad
  */
 export function getBillingDateWindows(
   year: number,
   month: number,
 ): {
-  cobranzaStart: string;
-  cobranzaEnd: string;
-  extemporaneidadStart: string;
-  extemporaneidadEnd: string;
+  queryStart: string;
+  queryEnd: string;
 } {
   const billingMonthDt = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE });
   const prevMonth = billingMonthDt.minus({ months: 1 });
 
   return {
-    cobranzaStart: prevMonth.set({ day: 25 }).toFormat('yyyy-MM-dd'),
-    cobranzaEnd: billingMonthDt.set({ day: 5 }).toFormat('yyyy-MM-dd'),
-    extemporaneidadStart: prevMonth.set({ day: 6 }).toFormat('yyyy-MM-dd'),
-    extemporaneidadEnd: prevMonth.set({ day: 24 }).toFormat('yyyy-MM-dd'),
+    queryStart: prevMonth.set({ day: 6 }).toFormat('yyyy-MM-dd'),
+    queryEnd: billingMonthDt.set({ day: 5 }).toFormat('yyyy-MM-dd'),
   };
 }
 

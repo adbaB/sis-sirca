@@ -54,6 +54,7 @@ interface SipCommissionQueryRow {
   commission_amount: string | number;
   portfolio_code: string;
   contract_code: string;
+  billing_month: string;
   affiliation_date: string | Date;
   payment_date: string | Date;
   operation_date: string | Date;
@@ -83,7 +84,6 @@ export class SipCommissionsService {
    */
   async buildReportData(year: number, month: number): Promise<SipCommissionReport> {
     const monthStr = String(month).padStart(2, '0');
-    const billingMonth = `${year}-${monthStr}`;
 
     const startDate = `${year}-${monthStr}-01`;
     const lastDay = getEndOfMonth(startDate).getDate();
@@ -106,7 +106,8 @@ export class SipCommissionsService {
     // 2. Determine which contract codes are "convenio inicial" (SIR-002-001 to SIR-002-060)
     const convenioInicialPattern = '^SIR-002-0[0-5][0-9]$|^SIR-002-060$';
 
-    // 3. Fetch all invoice lines (MENSUALIDAD only) with related data for the period
+    // 3. Fetch all invoice lines (MENSUALIDAD only) with payments in the operation_date window
+    const windows = getBillingDateWindows(year, month);
     let rawData: SipCommissionQueryRow[];
     try {
       rawData = await this.dataSource.query(
@@ -117,6 +118,7 @@ export class SipCommissionsService {
           p.commission_amount,
           COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
           c.code       AS contract_code,
+          inv.billing_month,
           c.affiliation_date,
           pay.payment_date,
           COALESCE(pay.operation_date, pay.payment_date) AS operation_date,
@@ -136,15 +138,17 @@ export class SipCommissionsService {
           WHERE status = 'COMPLETED' AND deleted_at IS NULL
           GROUP BY invoice_id
         ) pay ON pay.invoice_id = inv.id
-        WHERE inv.billing_month = $1
-          AND c.status = 'ACTIVE'
+        WHERE c.status = 'ACTIVE'
           AND il.category = 'MENSUALIDAD'
           AND il.deleted_at IS NULL
+          AND COALESCE(pay.operation_date, pay.payment_date)::date >= $1::date
+          AND COALESCE(pay.operation_date, pay.payment_date)::date <= $2::date
         GROUP BY p.name, p.amount, p.commission_amount, pf.code,
-                 c.code, c.affiliation_date, pay.payment_date, pay.operation_date,
+                 c.code, inv.billing_month, c.affiliation_date,
+                 pay.payment_date, pay.operation_date,
                  inv.due_date, inv.issue_date
         `,
-        [billingMonth],
+        [windows.queryStart, windows.queryEnd],
       );
     } catch (err) {
       this.logger.error('Error querying invoice lines for SIP commissions:', err);
@@ -209,38 +213,31 @@ export class SipCommissionsService {
       extemporaneosConvenioInicial: [],
     };
 
-    const windows = getBillingDateWindows(year, month);
+    const billingMonth = `${year}-${String(month).padStart(2, '0')}`;
 
     for (const row of rawData) {
       const isConvenioInicial = convenioRe.test(row.contract_code);
-      const isNew = this.checkIsNew(row);
+      const isBillingMonthMatch = row.billing_month === billingMonth;
 
-      if (isNew) {
-        buckets.nuevos.push(row);
-        continue;
-      }
-
-      const operationDateStr = this.formatToDateString(row.operation_date);
-      const isCobranza =
-        operationDateStr >= windows.cobranzaStart && operationDateStr <= windows.cobranzaEnd;
-      const isExtemporanea =
-        operationDateStr >= windows.extemporaneidadStart &&
-        operationDateStr <= windows.extemporaneidadEnd;
-
-      if (isCobranza) {
-        if (isConvenioInicial) {
-          buckets.cobranzasConvenioInicial.push(row);
-        } else {
-          buckets.cobranzasNuevoConvenio.push(row);
-        }
-      } else if (isExtemporanea) {
+      // Extemporaneidad: invoice belongs to a different billing month
+      if (!isBillingMonthMatch) {
         if (isConvenioInicial) {
           buckets.extemporaneosConvenioInicial.push(row);
         } else {
           buckets.extemporaneosNuevoConvenio.push(row);
         }
+        continue;
       }
-      // Records outside both windows are not classified into any section
+
+      // billing_month = M: check if new or cobranza ejecutada
+      const isNew = this.checkIsNew(row);
+      if (isNew) {
+        buckets.nuevos.push(row);
+      } else if (isConvenioInicial) {
+        buckets.cobranzasConvenioInicial.push(row);
+      } else {
+        buckets.cobranzasNuevoConvenio.push(row);
+      }
     }
 
     return buckets;
