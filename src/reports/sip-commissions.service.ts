@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { DataSource } from 'typeorm';
 import {
   formatToISODateString,
+  getBillingDateWindows,
   getCaracasDateTime,
   getEndOfMonth,
 } from '../common/utils/date.util';
@@ -55,6 +56,7 @@ interface SipCommissionQueryRow {
   contract_code: string;
   affiliation_date: string | Date;
   payment_date: string | Date;
+  operation_date: string | Date;
   due_date: string | Date;
   issue_date: string | Date;
   affiliate_count: string | number;
@@ -117,6 +119,7 @@ export class SipCommissionsService {
           c.code       AS contract_code,
           c.affiliation_date,
           pay.payment_date,
+          COALESCE(pay.operation_date, pay.payment_date) AS operation_date,
           inv.due_date,
           inv.issue_date,
           COUNT(DISTINCT il.id) AS affiliate_count
@@ -126,7 +129,9 @@ export class SipCommissionsService {
         JOIN plans p         ON il.plan_id = p.id AND p.deleted_at IS NULL
         LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
         JOIN (
-          SELECT invoice_id, MAX(payment_date) AS payment_date
+          SELECT invoice_id,
+                 MAX(payment_date) AS payment_date,
+                 MAX(operation_date) AS operation_date
           FROM payments
           WHERE status = 'COMPLETED' AND deleted_at IS NULL
           GROUP BY invoice_id
@@ -136,7 +141,8 @@ export class SipCommissionsService {
           AND il.category = 'MENSUALIDAD'
           AND il.deleted_at IS NULL
         GROUP BY p.name, p.amount, p.commission_amount, pf.code,
-                 c.code, c.affiliation_date, pay.payment_date, inv.due_date, inv.issue_date
+                 c.code, c.affiliation_date, pay.payment_date, pay.operation_date,
+                 inv.due_date, inv.issue_date
         `,
         [billingMonth],
       );
@@ -160,7 +166,7 @@ export class SipCommissionsService {
 
     // 4. Classify each record into a section
     const convenioRe = new RegExp(convenioInicialPattern);
-    const sectionBuckets = this.classifyRowsIntoBuckets(rawData, convenioRe);
+    const sectionBuckets = this.classifyRowsIntoBuckets(rawData, convenioRe, year, month);
 
     // 5. Aggregate each bucket into sections
     const sectionDefs: Array<{ key: string; title: string }> = [
@@ -189,12 +195,11 @@ export class SipCommissionsService {
     return { startDate, endDate, sections, grandTotalCommission, portfolioCodes };
   }
 
-  /**
-   * Helper to classify rows into section buckets.
-   */
   private classifyRowsIntoBuckets(
     rawData: SipCommissionQueryRow[],
     convenioRe: RegExp,
+    year: number,
+    month: number,
   ): Record<string, SipCommissionQueryRow[]> {
     const buckets: Record<string, SipCommissionQueryRow[]> = {
       nuevos: [],
@@ -204,26 +209,38 @@ export class SipCommissionsService {
       extemporaneosConvenioInicial: [],
     };
 
+    const windows = getBillingDateWindows(year, month);
+
     for (const row of rawData) {
       const isConvenioInicial = convenioRe.test(row.contract_code);
       const isNew = this.checkIsNew(row);
-      const isExtemporaneo = this.checkIsExtemporaneo(row);
 
       if (isNew) {
         buckets.nuevos.push(row);
-      } else if (isExtemporaneo) {
-        if (isConvenioInicial) {
-          buckets.extemporaneosConvenioInicial.push(row);
-        } else {
-          buckets.extemporaneosNuevoConvenio.push(row);
-        }
-      } else {
+        continue;
+      }
+
+      const operationDateStr = this.formatToDateString(row.operation_date);
+      const isCobranza =
+        operationDateStr >= windows.cobranzaStart && operationDateStr <= windows.cobranzaEnd;
+      const isExtemporanea =
+        operationDateStr >= windows.extemporaneidadStart &&
+        operationDateStr <= windows.extemporaneidadEnd;
+
+      if (isCobranza) {
         if (isConvenioInicial) {
           buckets.cobranzasConvenioInicial.push(row);
         } else {
           buckets.cobranzasNuevoConvenio.push(row);
         }
+      } else if (isExtemporanea) {
+        if (isConvenioInicial) {
+          buckets.extemporaneosConvenioInicial.push(row);
+        } else {
+          buckets.extemporaneosNuevoConvenio.push(row);
+        }
       }
+      // Records outside both windows are not classified into any section
     }
 
     return buckets;
@@ -237,13 +254,6 @@ export class SipCommissionsService {
     );
 
     return affiliationDateStr >= issueDateStr && affiliationDateStr < nextIssueDateStr;
-  }
-
-  private checkIsExtemporaneo(row: SipCommissionQueryRow): boolean {
-    const paymentDateStr = this.formatToDateString(row.payment_date);
-    const dueDateStr = this.formatToDateString(row.due_date);
-
-    return paymentDateStr > dueDateStr;
   }
 
   private formatToDateString(dateVal: Date | string): string {

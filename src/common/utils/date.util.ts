@@ -139,6 +139,34 @@ export function getBillingMonth(dateVal?: Date | string | DateTime): string {
 }
 
 /**
+ * Computes the date windows used to classify SIP commission records
+ * for a given billing month.
+ *
+ * For billing month M (year-month):
+ *   - Cobranza Ejecutada: operation_date in [25 of M-1, 5 of M] (inclusive)
+ *   - Extemporaneidad:    operation_date in [6 of M-1, 24 of M-1] (inclusive)
+ */
+export function getBillingDateWindows(
+  year: number,
+  month: number,
+): {
+  cobranzaStart: string;
+  cobranzaEnd: string;
+  extemporaneidadStart: string;
+  extemporaneidadEnd: string;
+} {
+  const billingMonthDt = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE });
+  const prevMonth = billingMonthDt.minus({ months: 1 });
+
+  return {
+    cobranzaStart: prevMonth.set({ day: 25 }).toFormat('yyyy-MM-dd'),
+    cobranzaEnd: billingMonthDt.set({ day: 5 }).toFormat('yyyy-MM-dd'),
+    extemporaneidadStart: prevMonth.set({ day: 6 }).toFormat('yyyy-MM-dd'),
+    extemporaneidadEnd: prevMonth.set({ day: 24 }).toFormat('yyyy-MM-dd'),
+  };
+}
+
+/**
  * Converts Excel serial date to a Caracas timezone YYYY-MM-DD string.
  */
 export function excelDateToDateString(serial: number): string | null {

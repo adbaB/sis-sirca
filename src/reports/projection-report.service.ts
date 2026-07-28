@@ -19,6 +19,7 @@ import {
 
 interface ProjectionQueryRow {
   contract_code: string;
+  legacy_code: string | null;
   affiliation_date: string | Date | null;
   person_name: string;
   type_identity_card: string | null;
@@ -33,6 +34,7 @@ interface ProjectionQueryRow {
 
 interface ProjectionRow {
   contractCode: string;
+  legacyCode: string | null;
   affiliationDate: string;
   affiliationDateES: string;
   personName: string;
@@ -90,6 +92,7 @@ export class ProjectionReportService {
     let sql = `
       SELECT
         c.code AS contract_code,
+        c.legacy_code AS legacy_code,
         c.affiliation_date,
         CASE WHEN cp.role = 'TITULAR' THEN p.name || ' (titular)' ELSE p.name END AS person_name,
         p.type_identity_card,
@@ -143,6 +146,7 @@ export class ProjectionReportService {
 
       group.push({
         contractCode: row.contract_code,
+        legacyCode: row.legacy_code || null,
         affiliationDate: row.affiliation_date ? String(row.affiliation_date) : '',
         affiliationDateES,
         personName: row.person_name,
@@ -215,7 +219,7 @@ export class ProjectionReportService {
     const report = await this.buildReportData(advisorId);
     const { workbook, ws } = createWorkbook('PROYECCIÓN DE COBROS');
 
-    const totalCols = 8;
+    const totalCols = 9;
 
     // A. TITLE
     const titleRow = ws.addRow(['PROYECCIÓN DE INGRESOS MENSUALES']);
@@ -253,6 +257,7 @@ export class ProjectionReportService {
       currentRowIdx++;
       const headers = [
         'CONTRATO',
+        'CONTRATO ANTERIOR',
         'FECHA AFILIACIÓN',
         'CÉDULA / RIF',
         'NOMBRE COMPLETO',
@@ -273,6 +278,7 @@ export class ProjectionReportService {
         currentRowIdx++;
         const rowData = [
           rowObj.contractCode,
+          rowObj.legacyCode || '-',
           rowObj.affiliationDateES,
           `${rowObj.typeIdentityCard}-${rowObj.identityCard}`,
           rowObj.personName,
@@ -287,13 +293,14 @@ export class ProjectionReportService {
         row.getCell(1).alignment = { horizontal: 'center' };
         row.getCell(2).alignment = { horizontal: 'center' };
         row.getCell(3).alignment = { horizontal: 'center' };
-        row.getCell(4).alignment = { horizontal: 'left' };
-        row.getCell(5).alignment = { horizontal: 'center' };
+        row.getCell(4).alignment = { horizontal: 'center' };
+        row.getCell(5).alignment = { horizontal: 'left' };
         row.getCell(6).alignment = { horizontal: 'center' };
-        row.getCell(7).alignment = { horizontal: 'right' };
-        row.getCell(7).numFmt = '$#,##0.00';
+        row.getCell(7).alignment = { horizontal: 'center' };
         row.getCell(8).alignment = { horizontal: 'right' };
         row.getCell(8).numFmt = '$#,##0.00';
+        row.getCell(9).alignment = { horizontal: 'right' };
+        row.getCell(9).numFmt = '$#,##0.00';
 
         for (let c = 1; c <= totalCols; c++) {
           const cell = row.getCell(c);
@@ -310,11 +317,12 @@ export class ProjectionReportService {
         '',
         '',
         '',
+        '',
         section.subtotalAmount,
         section.subtotalAmount,
       ]);
       ws.mergeCells(currentRowIdx, 1, currentRowIdx, 2);
-      ws.mergeCells(currentRowIdx, 3, currentRowIdx, 6);
+      ws.mergeCells(currentRowIdx, 3, currentRowIdx, 7);
       subtotalRow.height = 22;
 
       subtotalRow.getCell(1).font = { name: 'Calibri', size: 10, bold: true };
@@ -328,13 +336,13 @@ export class ProjectionReportService {
       };
       subtotalRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
 
-      subtotalRow.getCell(7).font = { name: 'Calibri', size: 10, bold: true };
-      subtotalRow.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
-      subtotalRow.getCell(7).numFmt = '$#,##0.00';
-
       subtotalRow.getCell(8).font = { name: 'Calibri', size: 10, bold: true };
       subtotalRow.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
       subtotalRow.getCell(8).numFmt = '$#,##0.00';
+
+      subtotalRow.getCell(9).font = { name: 'Calibri', size: 10, bold: true };
+      subtotalRow.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+      subtotalRow.getCell(9).numFmt = '$#,##0.00';
 
       for (let c = 1; c <= totalCols; c++) {
         const cell = subtotalRow.getCell(c);
@@ -358,14 +366,15 @@ export class ProjectionReportService {
       '',
       '',
       '',
+      '',
       report.grandTotalCount,
     ]);
-    ws.mergeCells(currentRowIdx, 1, currentRowIdx, 7);
+    ws.mergeCells(currentRowIdx, 1, currentRowIdx, 8);
     gtCountRow.height = 24;
     applyGrandTotalStyle(gtCountRow.getCell(1), 'right');
     gtCountRow.getCell(1).font = { ...gtCountRow.getCell(1).font, size: 11 };
-    applyGrandTotalStyle(gtCountRow.getCell(8), 'center');
-    gtCountRow.getCell(8).font = { ...gtCountRow.getCell(8).font, size: 11 };
+    applyGrandTotalStyle(gtCountRow.getCell(9), 'center');
+    gtCountRow.getCell(9).font = { ...gtCountRow.getCell(9).font, size: 11 };
 
     currentRowIdx++;
     const gtAmountRow = ws.addRow([
@@ -376,25 +385,27 @@ export class ProjectionReportService {
       '',
       '',
       '',
+      '',
       report.grandTotalAmount,
     ]);
-    ws.mergeCells(currentRowIdx, 1, currentRowIdx, 7);
+    ws.mergeCells(currentRowIdx, 1, currentRowIdx, 8);
     gtAmountRow.height = 24;
     applyGrandTotalStyle(gtAmountRow.getCell(1), 'right');
     gtAmountRow.getCell(1).font = { ...gtAmountRow.getCell(1).font, size: 11 };
-    applyGrandTotalStyle(gtAmountRow.getCell(8), 'center');
-    gtAmountRow.getCell(8).font = { ...gtAmountRow.getCell(8).font, size: 11 };
-    gtAmountRow.getCell(8).numFmt = '$#,##0.00';
+    applyGrandTotalStyle(gtAmountRow.getCell(9), 'center');
+    gtAmountRow.getCell(9).font = { ...gtAmountRow.getCell(9).font, size: 11 };
+    gtAmountRow.getCell(9).numFmt = '$#,##0.00';
 
     // Set precise columns widths
-    ws.getColumn(1).width = 18; // Contrato
-    ws.getColumn(2).width = 20; // Fecha Afiliación
-    ws.getColumn(3).width = 18; // Cédula / RIF
-    ws.getColumn(4).width = 35; // Nombre Completo
-    ws.getColumn(5).width = 25; // Plan
-    ws.getColumn(6).width = 20; // Asesor
-    ws.getColumn(7).width = 22; // Importe Mensual
-    ws.getColumn(8).width = 22; // Total Contrato
+    ws.getColumn(1).width = 16; // Contrato
+    ws.getColumn(2).width = 18; // Contrato Anterior
+    ws.getColumn(3).width = 18; // Fecha Afiliación
+    ws.getColumn(4).width = 16; // Cédula / RIF
+    ws.getColumn(5).width = 35; // Nombre Completo
+    ws.getColumn(6).width = 25; // Plan
+    ws.getColumn(7).width = 20; // Asesor
+    ws.getColumn(8).width = 22; // Importe Mensual
+    ws.getColumn(9).width = 22; // Total Contrato
 
     return finishWorkbook(workbook);
   }

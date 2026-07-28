@@ -13,6 +13,7 @@ describe('ProjectionReportService', () => {
   const mockRawContracts = [
     {
       contract_code: 'SIR-001-001',
+      legacy_code: 'CON-001',
       affiliation_date: '2026-01-15',
       person_name: 'Juan Perez',
       type_identity_card: 'V',
@@ -25,6 +26,7 @@ describe('ProjectionReportService', () => {
     },
     {
       contract_code: 'SIR-001-001',
+      legacy_code: 'CON-001',
       affiliation_date: '2026-01-15',
       person_name: 'Maria Perez',
       type_identity_card: 'V',
@@ -37,6 +39,7 @@ describe('ProjectionReportService', () => {
     },
     {
       contract_code: 'SIR-001-002',
+      legacy_code: null,
       affiliation_date: '2026-02-10',
       person_name: 'Pedro Gomez',
       type_identity_card: 'E',
@@ -95,9 +98,11 @@ describe('ProjectionReportService', () => {
       expect(apfSection.portfolioCode).toBe('APF');
       expect(apfSection.rows).toHaveLength(2);
       expect(apfSection.rows[0].contractCode).toBe('SIR-001-001');
+      expect(apfSection.rows[0].legacyCode).toBe('CON-001');
       expect(apfSection.rows[0].contractTotalAmount).toBeNull();
       expect(apfSection.rows[0].contractTotalAmountFormatted).toBe('');
       expect(apfSection.rows[1].contractCode).toBe('SIR-001-001');
+      expect(apfSection.rows[1].legacyCode).toBe('CON-001');
       expect(apfSection.rows[1].contractTotalAmount).toBe(75);
       expect(apfSection.rows[1].contractTotalAmountFormatted).toBe('75.00');
       expect(apfSection.subtotalCount).toBe(2);
@@ -109,6 +114,7 @@ describe('ProjectionReportService', () => {
       expect(gmpSection.portfolioCode).toBe('GMP');
       expect(gmpSection.rows).toHaveLength(1);
       expect(gmpSection.rows[0].contractCode).toBe('SIR-001-002');
+      expect(gmpSection.rows[0].legacyCode).toBeNull();
       expect(gmpSection.rows[0].contractTotalAmount).toBe(25);
       expect(gmpSection.rows[0].contractTotalAmountFormatted).toBe('25.00');
       expect(gmpSection.subtotalCount).toBe(1);

@@ -182,6 +182,9 @@
       <div style="text-align: right;">
         <p>Día: <strong>{{ today }}</strong></p>
         <p>Contrato: <strong>{{ contractCode }}</strong></p>
+        {{#if legacyCode}}
+        <p>Contrato Ant.: <strong>{{ legacyCode }}</strong></p>
+        {{/if}}
       </div>
     </div>
 
@@ -273,7 +276,7 @@
             </tr>
             {{/if}}
             <tr>
-              <td>Abono a contrato {{contractCode}} ({{ paymentMethod }})</td>
+              <td>Abono a contrato {{contractCode}}{{#if legacyCode}} (Ant: {{legacyCode}}){{/if}} ({{ paymentMethod }})</td>
               <td></td>
               <td style="text-align:right;">${{ amountUsd }}</td>
             </tr>

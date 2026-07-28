@@ -980,6 +980,7 @@ export class InvoiceService {
 
         return {
           contractCode: contract.code,
+          legacyCode: contract.legacyCode ?? null,
           billingMonth: invoice.billingMonth,
           personName,
           identityCard,
