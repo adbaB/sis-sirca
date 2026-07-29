@@ -135,6 +135,15 @@ export class CreateContractFullDto {
   @Max(100)
   retentionPercentage?: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  advisorCommission?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  excludeFromNextBilling?: boolean;
+
   @IsArray()
   @ValidateNested({ each: true })
   @ArrayMinSize(1)

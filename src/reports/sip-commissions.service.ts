@@ -54,6 +54,7 @@ interface SipCommissionQueryRow {
   commission_amount: string | number;
   portfolio_code: string;
   contract_code: string;
+  legacy_code: string | null;
   billing_month: string;
   affiliation_date: string | Date;
   payment_date: string | Date;
@@ -118,6 +119,7 @@ export class SipCommissionsService {
           p.commission_amount,
           COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
           c.code       AS contract_code,
+          c.legacy_code,
           inv.billing_month,
           c.affiliation_date,
           pay.payment_date,
@@ -144,7 +146,7 @@ export class SipCommissionsService {
           AND COALESCE(pay.operation_date, pay.payment_date)::date >= $1::date
           AND COALESCE(pay.operation_date, pay.payment_date)::date <= $2::date
         GROUP BY p.name, p.amount, p.commission_amount, pf.code,
-                 c.code, inv.billing_month, c.affiliation_date,
+                 c.code, c.legacy_code, inv.billing_month, c.affiliation_date,
                  pay.payment_date, pay.operation_date,
                  inv.due_date, inv.issue_date
         `,
@@ -216,7 +218,7 @@ export class SipCommissionsService {
     const billingMonth = `${year}-${String(month).padStart(2, '0')}`;
 
     for (const row of rawData) {
-      const isConvenioInicial = convenioRe.test(row.contract_code);
+      const isConvenioInicial = row.legacy_code ? convenioRe.test(row.legacy_code) : false;
       const isBillingMonthMatch = row.billing_month === billingMonth;
 
       // Extemporaneidad: invoice belongs to a different billing month

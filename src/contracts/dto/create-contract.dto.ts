@@ -2,6 +2,7 @@ import {
   IsDateString,
   IsNotEmpty,
   IsNumber,
+  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
@@ -33,6 +34,15 @@ export class CreateContractDto {
   @Min(0)
   @Max(100)
   retentionPercentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  advisorCommission?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  excludeFromNextBilling?: boolean;
 
   @IsOptional()
   @IsArray()

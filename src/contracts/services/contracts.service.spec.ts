@@ -44,6 +44,8 @@ describe('ContractsService', () => {
     deletedAt: null,
     status: ContractStatus.ACTIVE,
     inactivationReason: null,
+    advisorCommission: 0,
+    excludeFromNextBilling: false,
   };
 
   const CONTRACTS_REPOSITORY_TOKEN = getRepositoryToken(Contract);
