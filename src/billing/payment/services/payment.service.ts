@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CreatePaymentDto } from '../../dto/create-payment.dto';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { PaymentSplit, TransactionResult } from '../interfaces/payment.interface';
@@ -18,6 +18,8 @@ import {
 
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
@@ -78,15 +80,10 @@ export class PaymentService {
         }
         paymentDate = dt.toJSDate();
       }
-      if (dto.operationDate) {
-        const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
-        const dt = parseDateToCaracas(dto.operationDate, isZelle);
-        if (!dt.isValid) {
-          throw new BadRequestException('Formato de fecha de operación inválido');
-        }
-      }
 
-      const exchangeRate = await this.getExchangeRateOrThrow(paymentDate);
+      const operationDate = getCaracasTodayJSDate();
+
+      const exchangeRate = await this.getExchangeRateOrThrow(paymentDate, operationDate);
 
       // Normalize invoiceIds
       const invoiceIds =
@@ -288,8 +285,21 @@ export class PaymentService {
     }
   }
 
-  private async getExchangeRateOrThrow(date: Date): Promise<ExchangeRate> {
-    const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(date);
+  private async getExchangeRateOrThrow(date: Date, fallbackDate?: Date): Promise<ExchangeRate> {
+    let exchangeRate = await this.exchangeRateService.getExchangeRateByDate(date);
+    if (
+      !exchangeRate &&
+      fallbackDate &&
+      formatToISODateString(date) !== formatToISODateString(fallbackDate)
+    ) {
+      this.logger.warn(
+        `Exchange rate not found for payment date ${formatToISODateString(
+          date,
+        )}. Attempting fallback to operation date ${formatToISODateString(fallbackDate)}.`,
+      );
+      exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fallbackDate);
+    }
+
     if (!exchangeRate) {
       const dateFormatted = formatToISODateString(date);
       throw new BadRequestException(
@@ -353,15 +363,7 @@ export class PaymentService {
     split: PaymentSplit,
     paymentDate: Date,
   ): Promise<Payment> {
-    let operationDate: Date = getCaracasTodayJSDate();
-    if (dto.operationDate) {
-      const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
-      const dt = parseDateToCaracas(dto.operationDate, isZelle);
-      if (!dt.isValid) {
-        throw new BadRequestException('Formato de fecha de operación inválido');
-      }
-      operationDate = dt.toJSDate();
-    }
+    const operationDate = getCaracasTodayJSDate();
 
     const payment = queryRunner.manager.create(Payment, {
       paymentDate,
