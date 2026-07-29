@@ -10,7 +10,6 @@ import { ChatbotAnalyticsService } from './chatbot-analytics.service';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import {
   formatToISODateString,
-  getCaracasNow,
   getCaracasTodayJSDate,
   parseDateToCaracas,
 } from '../../common/utils/date.util';
@@ -42,25 +41,24 @@ export class ChatbotPaymentService {
     let personId: string | undefined;
     const hasAmount = typeof extractedAmount === 'number' && !isNaN(extractedAmount);
 
+    const paymentMethod = state.payment_method || 'transferencia';
+    let datePaymentReceipt: string | undefined;
+    const rawOcrFecha = state.extracted_data?.fecha as string | undefined;
+
+    if (rawOcrFecha) {
+      const isZelle = paymentMethod.toLowerCase() === 'zelle';
+      const parsedDt = parseDateToCaracas(rawOcrFecha, isZelle);
+      if (parsedDt.isValid) {
+        datePaymentReceipt = formatToISODateString(parsedDt) || undefined;
+      }
+    }
+
     try {
       await queryRunner.connect();
       await queryRunner.startTransaction();
       isTransactionActive = true;
 
-      const paymentMethod = state.payment_method || 'transferencia';
       const receiptUrl = state.extracted_data?.receiptUrl as string | undefined;
-
-      let datePaymentReceipt: string | undefined =
-        formatToISODateString(getCaracasNow()) || undefined;
-      const rawOcrFecha = state.extracted_data?.fecha as string | undefined;
-
-      if (rawOcrFecha) {
-        const isZelle = paymentMethod.toLowerCase() === 'zelle';
-        const parsedDt = parseDateToCaracas(rawOcrFecha, isZelle);
-        if (parsedDt.isValid) {
-          datePaymentReceipt = formatToISODateString(parsedDt) || datePaymentReceipt;
-        }
-      }
 
       // Build OCR metadata to persist alongside the payment (exclude receiptUrl which has its own column)
       let ocrMetadata: Record<string, unknown> | undefined;
@@ -214,8 +212,15 @@ export class ChatbotPaymentService {
 
       let rateUsd: number | undefined;
       try {
-        const exchangeRate =
-          await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
+        let exchangeRate = datePaymentReceipt
+          ? await this.exchangeRateService.getExchangeRateByDate(datePaymentReceipt)
+          : null;
+
+        if (!exchangeRate) {
+          exchangeRate =
+            await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
+        }
+
         if (exchangeRate?.rateUsd) {
           rateUsd = Number(exchangeRate.rateUsd);
         }

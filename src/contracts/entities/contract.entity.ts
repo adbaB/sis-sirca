@@ -37,6 +37,23 @@ export class Contract {
   })
   retentionPercentage: number;
 
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0.0,
+    name: 'advisor_commission',
+    transformer: decimalTransformer,
+  })
+  advisorCommission: number;
+
+  @Column({
+    type: 'boolean',
+    default: false,
+    name: 'exclude_from_next_billing',
+  })
+  excludeFromNextBilling: boolean;
+
   @Column({ type: 'date', name: 'affiliation_date' })
   affiliationDate: Date;
 

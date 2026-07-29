@@ -24,6 +24,8 @@ describe('ContractsController', () => {
     deletedAt: null,
     status: ContractStatus.ACTIVE,
     inactivationReason: null,
+    advisorCommission: 0,
+    excludeFromNextBilling: false,
   };
 
   beforeEach(async () => {

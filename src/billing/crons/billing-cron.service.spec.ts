@@ -262,5 +262,31 @@ describe('BillingCronService', () => {
       expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });
+
+    it('should skip a Contract and reset excludeFromNextBilling to false if excludeFromNextBilling is true', async () => {
+      // Arrange
+      const mockPersons = [createMockPerson('person-1', 50)];
+      const mockContract = {
+        ...createMockContract('contract-1', mockPersons),
+        excludeFromNextBilling: true,
+      } as Contract;
+
+      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
+
+      // Act
+      await service.generateMonthlyInvoices();
+
+      // Assert
+      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(
+        Contract,
+        { id: mockContract.id },
+        { excludeFromNextBilling: false },
+      );
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
+      expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
   });
 });

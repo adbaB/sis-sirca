@@ -84,6 +84,19 @@ export class BillingCronService {
       await queryRunner.connect();
       await queryRunner.startTransaction();
 
+      if (contract.excludeFromNextBilling) {
+        this.logger.log(
+          `Contract ${contract.id} (${contract.code}) is excluded from billing cycle ${billingMonth}. Resetting excludeFromNextBilling to false.`,
+        );
+        await queryRunner.manager.update(
+          Contract,
+          { id: contract.id },
+          { excludeFromNextBilling: false },
+        );
+        await queryRunner.commitTransaction();
+        return;
+      }
+
       // The idempotency check below is now only an optimization.
       // The true database truth check is enforced via the Unique constraint
       // on (contract, billingMonth).
