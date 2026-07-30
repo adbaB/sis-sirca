@@ -102,7 +102,7 @@
       padding: 5px 6px;
       text-align: center;
       border: 1px solid var(--border-color);
-      font-size: 9px;
+      font-size: 8px;
     }
     .report-table th {
       background-color: #f1f5f9;
@@ -152,6 +152,10 @@
       color: white;
       text-align: center;
       width: 150px;
+    }
+
+    .page-break {
+      page-break-before: always;
     }
 
     /* ── Footer ───────────────────────────────────────────── */
@@ -259,6 +263,62 @@
         <td class="grand-total-value">${{ grandTotalCommissionFormatted }}</td>
       </tr>
     </table>
+
+    <!-- Detailed Affiliates Section (New Pages) -->
+    <div class="page-break"></div>
+
+    <div class="report-title">
+      <h2>DETALLE DE AFILIADOS SIP POR CATEGORÍA Y ASESOR</h2>
+      <p>Corte: Del {{ startDateES }} Al {{ endDateES }}</p>
+    </div>
+
+    {{#each sections}}
+      {{#if hasAffiliates}}
+        <div class="section-title-bar">{{ title }} ({{ affiliateDetails.length }} AFILIADOS)</div>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th class="text-left" style="width: 15%;">ASESOR</th>
+              <th class="text-center" style="width: 9%;">CONTRATO</th>
+              <th class="text-center" style="width: 8%;">CÓD. ANT.</th>
+              <th class="text-center" style="width: 9%;">CÉDULA</th>
+              <th class="text-left" style="width: 15%;">AFILIADO</th>
+              <th class="text-center" style="width: 6%;">CARTERA</th>
+              <th class="text-left" style="width: 11%;">PLAN</th>
+              <th class="text-right" style="width: 7%;">IMPORTE</th>
+              <th class="text-right" style="width: 7%;">COMISIÓN PLAN</th>
+              <th class="text-right" style="width: 7%;">COMISIÓN ASESOR</th>
+              <th class="text-center" style="width: 6%;">MES FACT.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each affiliateDetails}}
+              <tr>
+                <td class="text-left">{{ fullAdvisorName }}</td>
+                <td class="text-center">{{ contractCode }}</td>
+                <td class="text-center">{{#if legacyCode}}{{ legacyCode }}{{else}}-{{/if}}</td>
+                <td class="text-center">{{ affiliateCard }}</td>
+                <td class="text-left">{{ affiliateName }}</td>
+                <td class="text-center">{{ portfolioCode }}</td>
+                <td class="text-left">{{ planName }}</td>
+                <td class="text-right">${{ planAmountFormatted }}</td>
+                <td class="text-right">${{ commissionAmountFormatted }}</td>
+                <td class="text-right">${{ advisorCommissionAmountFormatted }}</td>
+                <td class="text-center">{{ billingMonth }}</td>
+              </tr>
+            {{/each}}
+
+            <tr class="subtotal-row">
+              <td class="text-left" colspan="7">Subtotal {{ title }} ({{ affiliateDetails.length }} Afiliados)</td>
+              <td class="text-right">${{ subtotalPlanAmountFormatted }}</td>
+              <td class="text-right">${{ subtotalAffiliateCommissionFormatted }}</td>
+              <td class="text-right">${{ subtotalAdvisorCommissionAmountFormatted }}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      {{/if}}
+    {{/each}}
 
     <!-- Footer -->
     <div class="footer">
