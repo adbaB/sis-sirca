@@ -1,7 +1,9 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import ExcelJS from 'exceljs';
+import { DateTime } from 'luxon';
 import { DataSource } from 'typeorm';
 import {
+  CARACAS_ZONE,
   formatToISODateString,
   getBillingDateWindows,
   getCaracasDateTime,
@@ -181,7 +183,7 @@ export class SipCommissionsService {
           GROUP BY invoice_id
         ) pay ON pay.invoice_id = inv.id
         WHERE c.status = 'ACTIVE'
-          AND il.category = 'MENSUALIDAD'
+          AND il.category IN ('MENSUALIDAD', 'INCLUSION')
           AND il.deleted_at IS NULL
           AND COALESCE(pay.operation_date, pay.payment_date)::date >= $1::date
           AND COALESCE(pay.operation_date, pay.payment_date)::date <= $2::date
@@ -212,7 +214,8 @@ export class SipCommissionsService {
 
     // 5. Aggregate each bucket into sections
     const sectionDefs: Array<{ key: string; title: string }> = [
-      { key: 'nuevos', title: 'AFILIACIONES NUEVOS CONTRATOS' },
+      { key: 'nuevosOportunos', title: 'AFILIACIONES NUEVOS CONTRATOS' },
+      { key: 'nuevosExtemporaneos', title: 'AFILIACIONES EXTEMPORÁNEAS NUEVOS CONTRATOS' },
       { key: 'cobranzasNuevoConvenio', title: 'COBRANZAS EJECUTADAS (SEGÚN NUEVO CONVENIO)' },
       {
         key: 'cobranzasConvenioInicial',
@@ -244,7 +247,8 @@ export class SipCommissionsService {
     month: number,
   ): Record<string, SipCommissionQueryRow[]> {
     const buckets: Record<string, SipCommissionQueryRow[]> = {
-      nuevos: [],
+      nuevosOportunos: [],
+      nuevosExtemporaneos: [],
       cobranzasNuevoConvenio: [],
       cobranzasConvenioInicial: [],
       extemporaneosNuevoConvenio: [],
@@ -253,11 +257,23 @@ export class SipCommissionsService {
 
     const billingMonth = `${year}-${String(month).padStart(2, '0')}`;
 
+    // Date windows for month M
+    const dtM = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE });
+    const prevMonth = dtM.minus({ months: 1 });
+
+    // 20 of (M - 1) to 5 of M
+    const startOportunosStr = prevMonth.set({ day: 20 }).toFormat('yyyy-MM-dd');
+    const endOportunosStr = dtM.set({ day: 5 }).toFormat('yyyy-MM-dd');
+
+    // 6 of (M - 1) to 19 of (M - 1)
+    const startExtempStr = prevMonth.set({ day: 6 }).toFormat('yyyy-MM-dd');
+    const endExtempStr = prevMonth.set({ day: 19 }).toFormat('yyyy-MM-dd');
+
     for (const row of rawData) {
       const isConvenioInicial = row.legacy_code ? convenioRe.test(row.legacy_code) : false;
       const isBillingMonthMatch = row.billing_month === billingMonth;
 
-      // Extemporaneidad: invoice belongs to a different billing month
+      // Extemporaneidad de cobranza: invoice belongs to a different billing month (billing_month != M)
       if (!isBillingMonthMatch) {
         if (isConvenioInicial) {
           buckets.extemporaneosConvenioInicial.push(row);
@@ -267,10 +283,13 @@ export class SipCommissionsService {
         continue;
       }
 
-      // billing_month = M: check if new or cobranza ejecutada
-      const isNew = this.checkIsNew(row);
-      if (isNew) {
-        buckets.nuevos.push(row);
+      // billing_month = M: check if new affiliation or regular cobranza
+      const affDateStr = this.formatToDateString(row.affiliation_date);
+
+      if (affDateStr >= startOportunosStr && affDateStr <= endOportunosStr) {
+        buckets.nuevosOportunos.push(row);
+      } else if (affDateStr >= startExtempStr && affDateStr <= endExtempStr) {
+        buckets.nuevosExtemporaneos.push(row);
       } else if (isConvenioInicial) {
         buckets.cobranzasConvenioInicial.push(row);
       } else {

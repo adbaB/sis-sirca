@@ -14,7 +14,7 @@ import { MONTH_NAMES_ES } from '../../reports/report-utils';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
-import { Person, PersonStatus } from '../../persons/entities/person.entity';
+import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
@@ -714,24 +714,41 @@ export class ContractsService {
       const contractPlan = planPerson?.plan;
       const planName = contractPlan?.name || '';
 
-      const beneficiaries = affiliateCps
-        .filter((cp) => !isSamePerson(cp, titularCp))
-        .map((cp, idx) => {
-          const person = cp.person;
-          return {
-            index: String(idx + 1).padStart(2, '0'),
-            name: person.name,
-            typeIdentityCard: person.typeIdentityCard,
-            identityCard: person.identityCard,
-            relationship: cp.relationship || '-',
-            birthDateFormatted: formatDate(person.birthDate),
-            age: getAge(person.birthDate),
-            genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
-            weight: person.weight || '-',
-            height: person.height || '-',
-            planName: person.plan?.name || '-',
-          };
-        });
+      const beneficiariesCps = affiliateCps.filter((cp) => !isSamePerson(cp, titularCp));
+      const beneficiariesList =
+        beneficiariesCps.length > 0
+          ? beneficiariesCps
+          : affiliateCps.length > 0
+            ? affiliateCps
+            : titularCp
+              ? [titularCp]
+              : [];
+
+      const beneficiaries = beneficiariesList.map((cp, idx) => {
+        const person = cp.person;
+        const isTitular = isSamePerson(cp, titularCp);
+        const plan = person?.plan || contractPlan;
+        const coverage = plan?.coverage
+          ? Number(plan.coverage).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : '0.00';
+        return {
+          index: String(idx + 1).padStart(2, '0'),
+          name: person.name,
+          typeIdentityCard: person.typeIdentityCard,
+          identityCard: person.identityCard,
+          relationship: cp.relationship || (isTitular ? 'TITULAR' : '-'),
+          birthDateFormatted: formatDate(person.birthDate),
+          age: getAge(person.birthDate),
+          genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
+          weight: person.weight || '-',
+          height: person.height || '-',
+          planName: plan?.name || '-',
+          coverage,
+        };
+      });
 
       const emptyRows: string[] = [];
       for (let i = beneficiaries.length + 1; i <= 7; i++) {
@@ -769,32 +786,28 @@ export class ContractsService {
         };
       });
 
-      const isTitularAlsoBeneficiary = affiliateCps.some((cp) => isSamePerson(cp, titularCp));
-
-      const titularRow =
-        titularCp && !isTitularAlsoBeneficiary
-          ? {
-              name: titularCp.person.name,
-              typeIdentityCard: titularCp.person.typeIdentityCard,
-              identityCard: titularCp.person.identityCard,
-              age: getAge(titularCp.person.birthDate),
-              planName: titularCp.person.plan?.name || 'TITULAR',
-              coverage: titularCp.person.plan?.coverage
-                ? Number(titularCp.person.plan.coverage).toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '0.00',
-              monthlyCost: titularCp.person.plan?.amount
-                ? Number(titularCp.person.plan.amount).toFixed(2)
-                : '0.00',
-            }
-          : null;
+      const titularPlan = titularCp?.person?.plan || contractPlan;
+      const titularRow = titularCp
+        ? {
+            name: titularCp.person.name,
+            typeIdentityCard: titularCp.person.typeIdentityCard,
+            identityCard: titularCp.person.identityCard,
+            age: getAge(titularCp.person.birthDate),
+            planName: titularPlan?.name || 'TITULAR',
+            coverage: titularPlan?.coverage
+              ? Number(titularPlan.coverage).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })
+              : '0.00',
+            monthlyCost: titularPlan?.amount ? Number(titularPlan.amount).toFixed(2) : '0.00',
+          }
+        : null;
 
       const beneficiariesRow = affiliateCps
         .filter((cp) => !isSamePerson(cp, titularCp))
         .map((cp) => {
-          const plan = cp.person?.plan;
+          const plan = cp.person?.plan || contractPlan;
           const coverage = plan?.coverage
             ? Number(plan.coverage).toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -852,6 +865,25 @@ export class ContractsService {
         totalCost: data.totalCost.toFixed(2),
       }));
 
+      const uniquePersonsMap = new Map<string, Person>();
+      for (const cp of fullContract.contractPersons) {
+        if (cp.person) {
+          const key = `${cp.person.typeIdentityCard}-${cp.person.identityCard}`;
+          if (!uniquePersonsMap.has(key)) {
+            uniquePersonsMap.set(key, cp.person);
+          }
+        }
+      }
+      const allMembers = Array.from(uniquePersonsMap.values()).map((person) => {
+        const ageNum = person.birthDate ? getAge(person.birthDate) : 99;
+        return {
+          name: person.name,
+          isPN:
+            person.typeIdentityCard === TypeIdentityCard.PN ||
+            (Boolean(person.birthDate) && ageNum < 18),
+        };
+      });
+
       const {
         day: dayNumber,
         monthIndex,
@@ -879,6 +911,7 @@ export class ContractsService {
         titularRow,
         beneficiariesRow,
         contractedPlansList,
+        allMembers,
       };
 
       return this.pdfService.generatePdf('contract-affiliation', pdfData);

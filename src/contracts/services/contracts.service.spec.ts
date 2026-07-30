@@ -31,6 +31,7 @@ describe('ContractsService', () => {
   let service: ContractsService;
   let repository: Repository<Contract>;
   let contractPersonsRepository: Repository<ContractPerson>;
+  let pdfService: PdfService;
 
   const mockContract: Contract = {
     id: '1',
@@ -132,6 +133,7 @@ describe('ContractsService', () => {
     contractPersonsRepository = module.get<Repository<ContractPerson>>(
       CONTRACT_PERSONS_REPOSITORY_TOKEN,
     );
+    pdfService = module.get<PdfService>(PdfService);
   });
 
   it('should be defined', () => {
@@ -842,6 +844,58 @@ describe('ContractsService', () => {
 
       await expect(service.inactivate('1', dto)).rejects.toThrow(
         'El contrato ya se encuentra inactivo.',
+      );
+    });
+  });
+
+  describe('generateContractPdfBuffer', () => {
+    it('should correctly populate pdfData when a single affiliate is billing owner', async () => {
+      const mockAffiliatePerson: Partial<Person> = {
+        id: 'p-1',
+        name: 'Maria Perez',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '99999999',
+        birthDate: new Date('1990-01-01'),
+        gender: false,
+        plan: { id: 'plan-1', name: 'Plan Oro', amount: 100, coverage: 10000 } as Plan,
+      };
+
+      const mockContractPerson: Partial<ContractPerson> = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        isBillingOwner: true,
+        person: mockAffiliatePerson as Person,
+      };
+
+      const fullContractData = {
+        ...mockContract,
+        contractPersons: [mockContractPerson as ContractPerson],
+      };
+
+      jest.spyOn(repository, 'findOne').mockResolvedValue(fullContractData as Contract);
+
+      await service.generateContractPdfBuffer('1');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'contract-affiliation',
+        expect.objectContaining({
+          titularRow: expect.objectContaining({
+            name: 'Maria Perez',
+            planName: 'Plan Oro',
+          }),
+          beneficiaries: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Maria Perez',
+              planName: 'Plan Oro',
+            }),
+          ]),
+          allMembers: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Maria Perez',
+              isPN: false,
+            }),
+          ]),
+        }),
       );
     });
   });
