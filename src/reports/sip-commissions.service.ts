@@ -145,7 +145,7 @@ export class SipCommissionsService {
         SELECT
           il.id        AS line_id,
           p.name       AS plan_name,
-          p.amount     AS plan_amount,
+          COALESCE(il.amount, p.amount) AS plan_amount,
           p.commission_amount,
           COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
           c.code       AS contract_code,
