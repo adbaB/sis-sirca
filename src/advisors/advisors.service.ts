@@ -18,7 +18,11 @@ export class AdvisorsService {
   }
 
   findAll() {
-    return this.advisorRepository.find();
+    return this.advisorRepository.find({
+      order: {
+        codeNumber: 'ASC',
+      },
+    });
   }
 
   async findOne(id: string) {
@@ -42,6 +46,9 @@ export class AdvisorsService {
     }
     return this.advisorRepository.find({
       where: { name: ILike(`%${name}%`) },
+      order: {
+        codeNumber: 'ASC',
+      },
       take: 20, // Limit results
     });
   }
