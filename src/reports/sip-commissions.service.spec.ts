@@ -15,9 +15,10 @@ describe('SipCommissionsService', () => {
   // - Oportunos (Nuevos): [2026-03-20, 2026-04-05]
   // - Extemporaneos (Nuevos): [2026-03-06, 2026-03-19]
   const mockRawData = [
-    // 1. Nuevos Oportunos (billing_month = '2026-04', affiliation = '2026-04-05' in [2026-03-20, 2026-04-05])
+    // 1. Nuevos Oportunos (billing_month = '2026-04', line_category = 'INCLUSION', affiliation = '2026-04-05')
     {
       line_id: 'l1',
+      line_category: 'INCLUSION',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -38,9 +39,10 @@ describe('SipCommissionsService', () => {
       affiliate_id_number: '12345678',
       affiliate_name: 'Juan Perez',
     },
-    // 2. Nuevos Extemporaneos (billing_month = '2026-04', affiliation = '2026-03-12' in [2026-03-06, 2026-03-19])
+    // 2. Nuevos Extemporaneos (billing_month = '2026-04', line_category = 'INCLUSION', affiliation = '2026-03-12')
     {
       line_id: 'l1b',
+      line_category: 'INCLUSION',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -61,9 +63,10 @@ describe('SipCommissionsService', () => {
       affiliate_id_number: '12345679',
       affiliate_name: 'Pedro Perez',
     },
-    // 3. Cobranzas Nuevo Convenio (billing_month = '2026-04', affiliation = '2026-03-01' outside new windows, NOT convenio inicial)
+    // 3. Cobranzas Nuevo Convenio (billing_month = '2026-04', line_category = 'MENSUALIDAD', affiliation = '2026-03-01', NOT convenio inicial)
     {
       line_id: 'l2',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -84,9 +87,10 @@ describe('SipCommissionsService', () => {
       affiliate_id_number: '23456789',
       affiliate_name: 'Maria Gomez',
     },
-    // 4. Cobranzas Convenio Inicial (billing_month = '2026-04', affiliation = '2026-03-01' outside new windows, IS convenio inicial)
+    // 4. Cobranzas Convenio Inicial (billing_month = '2026-04', line_category = 'MENSUALIDAD', affiliation = '2026-03-01', IS convenio inicial)
     {
       line_id: 'l3',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN B',
       plan_amount: '100.00',
       commission_amount: '10.00',
@@ -107,9 +111,10 @@ describe('SipCommissionsService', () => {
       affiliate_id_number: '34567890',
       affiliate_name: 'Pedro Rodriguez',
     },
-    // 5. Extemporaneos Nuevo Convenio (billing_month = '2026-03' ≠ '2026-04', NOT convenio inicial)
+    // 5. Extemporaneos Nuevo Convenio (billing_month = '2026-03' ≠ '2026-04', line_category = 'MENSUALIDAD', NOT convenio inicial)
     {
       line_id: 'l4',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -130,9 +135,10 @@ describe('SipCommissionsService', () => {
       affiliate_id_number: '45678901',
       affiliate_name: 'Luis Fernandez',
     },
-    // 6. Extemporaneos Convenio Inicial (billing_month = '2026-02' ≠ '2026-04', IS convenio inicial)
+    // 6. Extemporaneos Convenio Inicial (billing_month = '2026-02' ≠ '2026-04', line_category = 'MENSUALIDAD', IS convenio inicial)
     {
       line_id: 'l5',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN B',
       plan_amount: '100.00',
       commission_amount: '10.00',
@@ -267,6 +273,7 @@ describe('SipCommissionsService', () => {
     it('should classify all billing_month mismatches as extemporaneidad', async () => {
       const oldMonthRecord = {
         line_id: 'lx',
+        line_category: 'MENSUALIDAD',
         plan_name: 'PLAN C',
         plan_amount: '75.00',
         commission_amount: '7.50',

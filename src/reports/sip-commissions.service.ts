@@ -74,6 +74,7 @@ export interface SipCommissionReport {
 
 export interface SipCommissionQueryRow {
   line_id?: string;
+  line_category?: string;
   plan_name: string;
   plan_amount: string | number;
   commission_amount: string | number;
@@ -146,6 +147,7 @@ export class SipCommissionsService {
         `
         SELECT
           il.id        AS line_id,
+          il.category  AS line_category,
           p.name       AS plan_name,
           COALESCE(il.amount, p.amount) AS plan_amount,
           p.commission_amount,
@@ -153,7 +155,7 @@ export class SipCommissionsService {
           c.code       AS contract_code,
           c.legacy_code,
           inv.billing_month,
-          c.affiliation_date,
+          COALESCE(c.affiliation_date, c.created_at) AS affiliation_date,
           pay.payment_date,
           COALESCE(pay.operation_date, pay.payment_date) AS operation_date,
           inv.due_date,
@@ -285,11 +287,16 @@ export class SipCommissionsService {
 
       // billing_month = M: check if new affiliation or regular cobranza
       const affDateStr = this.formatToDateString(row.affiliation_date);
+      const isNew = row.line_category === 'INCLUSION' || this.checkIsNew(row);
 
-      if (affDateStr >= startOportunosStr && affDateStr <= endOportunosStr) {
-        buckets.nuevosOportunos.push(row);
-      } else if (affDateStr >= startExtempStr && affDateStr <= endExtempStr) {
-        buckets.nuevosExtemporaneos.push(row);
+      if (isNew) {
+        if (affDateStr >= startOportunosStr && affDateStr <= endOportunosStr) {
+          buckets.nuevosOportunos.push(row);
+        } else if (affDateStr >= startExtempStr && affDateStr <= endExtempStr) {
+          buckets.nuevosExtemporaneos.push(row);
+        } else {
+          buckets.nuevosOportunos.push(row);
+        }
       } else if (isConvenioInicial) {
         buckets.cobranzasConvenioInicial.push(row);
       } else {
