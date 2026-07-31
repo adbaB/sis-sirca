@@ -469,6 +469,7 @@ export class ContractsService {
                 action: AffiliationAction.CAMBIO_CONTRATO,
                 amount: Number(oldCp.person?.plan?.amount ?? 0),
                 reason: `Migrado al contrato ${savedContract.code}`,
+                actionDate: savedContract.affiliationDate ?? new Date(),
               }),
             );
 
@@ -567,6 +568,7 @@ export class ContractsService {
               action: AffiliationAction.AFILIACION,
               amount: Number(plan?.amount ?? 0),
               reason: affiliationReason,
+              actionDate: savedContract.affiliationDate ?? new Date(),
             }),
           );
         }
@@ -1570,26 +1572,40 @@ export class ContractsService {
     });
   }
 
-  async getAffiliationStats(month: number, year: number) {
-    const start = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE }).startOf(
-      'day',
-    );
-    const end = start.endOf('month');
-    const startDate = start.toJSDate();
-    const endDate = end.toJSDate();
+  async getAffiliationStats(month: number, year: number, mode: 'billing' | 'calendar' = 'billing') {
+    const monthDt = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE });
+    let start: DateTime;
+    let end: DateTime;
+
+    if (mode === 'calendar') {
+      start = monthDt.startOf('month');
+      end = monthDt.endOf('month');
+    } else {
+      // Billing cycle mode: from day 25 of previous month to day 24 of target month
+      start = monthDt.minus({ months: 1 }).set({ day: 25 }).startOf('day');
+      end = monthDt.set({ day: 24 }).endOf('day');
+    }
+
+    const startDateStr = start.toFormat('yyyy-MM-dd HH:mm:ss');
+    const endDateStr = end.toFormat('yyyy-MM-dd HH:mm:ss');
 
     const stats = await this.affiliationHistoryRepository
       .createQueryBuilder('h')
       .select([
         `SUM(CASE WHEN h.action = 'AFILIACION' THEN 1 ELSE 0 END) AS new_affiliations`,
-        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN 1 ELSE 0 END) AS disaffiliations`,
+        `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN 1 ELSE 0 END) AS disaffiliations`,
         `SUM(CASE WHEN h.action = 'AFILIACION' THEN h.amount ELSE 0 END) AS revenue_gained`,
-        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN h.amount ELSE 0 END) AS revenue_lost`,
+        `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN h.amount ELSE 0 END) AS revenue_lost`,
       ])
-      .where('h.action_date BETWEEN :startDate AND :endDate', { startDate, endDate })
+      .where('h.action_date BETWEEN :startDateStr AND :endDateStr', { startDateStr, endDateStr })
       .getRawOne();
 
     return {
+      mode,
+      period: {
+        startDate: start.toFormat('yyyy-MM-dd'),
+        endDate: end.toFormat('yyyy-MM-dd'),
+      },
       newAffiliations: Number(stats?.new_affiliations ?? 0),
       disaffiliations: Number(stats?.disaffiliations ?? 0),
       revenueGained: Number(stats?.revenue_gained ?? 0),
