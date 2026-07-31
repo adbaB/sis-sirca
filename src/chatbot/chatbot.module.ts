@@ -5,7 +5,6 @@ import { ChatbotService } from './services/chatbot.service';
 import { AwsModule } from '../aws/aws.module';
 import { EmailModule } from '../email/email.module';
 import { OcrModule } from '../ocr/ocr.module';
-import { BillingModule } from '../billing/billing.module';
 import { PersonsModule } from '../persons/persons.module';
 import { MetaWhatsappService } from './services/meta-whatsapp.service';
 import { ChatbotStateService } from './services/chatbot-state.service';
@@ -45,6 +44,8 @@ const stepHandlersProvider = {
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 import { ReminderService } from './services/reminder.service';
 import { AbandonedTasksService } from './services/abandoned-task.service';
+import { InvoiceModule } from '../billing/invoices/invoice.module';
+import { PaymentModule } from '../billing/payments/payment.module';
 
 const flowHandlersProvider = {
   provide: 'FLOW_HANDLERS',
@@ -57,7 +58,8 @@ const flowHandlersProvider = {
     AwsModule,
     EmailModule,
     OcrModule,
-    BillingModule,
+    InvoiceModule,
+    PaymentModule,
     PersonsModule,
     ExchangeRateModule,
     TypeOrmModule.forFeature([ChatbotInteraction, Invoice]),

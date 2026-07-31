@@ -22,7 +22,7 @@ import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractsService } from './contracts.service';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
-import { BillingService } from '../../billing/services/billing.service';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { PdfService } from '../../pdf/services/pdf.service';
 import { AwsService } from '../../aws/aws.service';
@@ -67,7 +67,7 @@ describe('ContractsService', () => {
           },
         },
         {
-          provide: BillingService,
+          provide: InvoiceService,
           useValue: {
             removeAffiliateLineFromActiveInvoice: jest.fn(),
           },

@@ -6,7 +6,7 @@ import { MetaMessage } from '../../interfaces/webhook.interface';
 import { MetaWhatsappService } from '../../services/meta-whatsapp.service';
 import { ChatbotStateService } from '../../services/chatbot-state.service';
 import { TypeIdentityCard } from '../../../persons/entities/person.entity';
-import { BillingService } from '../../../billing/services/billing.service';
+import { InvoiceService } from '../../../billing/invoices/services/invoice.service';
 
 @Injectable()
 export class AwaitingDocInfoManualStep implements IStepHandler {
@@ -14,7 +14,7 @@ export class AwaitingDocInfoManualStep implements IStepHandler {
   constructor(
     private readonly metaWhatsappService: MetaWhatsappService,
     private readonly stateService: ChatbotStateService,
-    private readonly billingService: BillingService,
+    private readonly invoiceService: InvoiceService,
   ) {}
   canHandle(step: Steps): boolean {
     return step === Steps.AWAITING_DOC_INFO_MANUAL;
@@ -41,7 +41,7 @@ export class AwaitingDocInfoManualStep implements IStepHandler {
     const docNumber = docMatch[2];
 
     try {
-      const invoices = await this.billingService.findPendingInvoicesByIdentityCard(
+      const invoices = await this.invoiceService.findPendingInvoicesByIdentityCard(
         docNumber,
         docType as TypeIdentityCard,
       );

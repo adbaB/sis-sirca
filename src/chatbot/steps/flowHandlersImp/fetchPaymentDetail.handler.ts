@@ -5,12 +5,12 @@ import {
   FlowResponse,
 } from '../../interfaces/flow.interface';
 import { FlowActionHandler } from '../flow-handler.interface';
-import { BillingService } from '../../../billing/services/billing.service';
 import { TypeIdentityCard } from '../../../persons/entities/person.entity';
+import { InvoiceService } from '../../../billing/invoices/services/invoice.service';
 
 @Injectable()
 export class FetchPaymentDetailHandler implements FlowActionHandler {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(private readonly invoiceService: InvoiceService) {}
   canHandle(payload: FlowDecryptedPayload): boolean {
     const dataAction = payload.data?.action;
     return (
@@ -33,7 +33,7 @@ export class FetchPaymentDetailHandler implements FlowActionHandler {
     }
 
     // Security: Scope selected invoices to the supplied identity
-    const userInvoices = await this.billingService.findPendingInvoicesByIdentityCard(
+    const userInvoices = await this.invoiceService.findPendingInvoicesByIdentityCard(
       doc_number,
       doc_type as TypeIdentityCard,
     );
@@ -50,7 +50,7 @@ export class FetchPaymentDetailHandler implements FlowActionHandler {
       }
     }
 
-    const totalAmount = await this.billingService.calculateAmountByInvoicesIds(
+    const totalAmount = await this.invoiceService.calculateAmountByInvoicesIds(
       selected_invoices,
       payment_method,
     );

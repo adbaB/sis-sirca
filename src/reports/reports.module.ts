@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Payment } from '../billing/entities/payment.entity';
+import { Payment } from '../billing/payments/entities/payment.entity';
 import { Invoice } from '../billing/invoices/entities/invoice.entity';
 import { ContractPerson } from '../contracts/entities/contract-person.entity';
 import { Contract } from '../contracts/entities/contract.entity';

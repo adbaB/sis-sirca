@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 
 import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
-import { BillingService } from '../../billing/services/billing.service';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
@@ -24,7 +24,7 @@ describe('PersonsService', () => {
   let cpRepository: Repository<ContractPerson>;
   let plansService: PlansService;
   let contractsService: ContractsService;
-  let billingService: BillingService;
+  let invoiceService: InvoiceService;
 
   const mockPlan: Plan = { id: 'plan-1', name: 'Basic', amount: 10 } as Plan;
   const mockContract: Contract = {
@@ -151,7 +151,7 @@ describe('PersonsService', () => {
           },
         },
         {
-          provide: BillingService,
+          provide: InvoiceService,
           useValue: {
             updatePlanLineOnActiveInvoice: jest.fn(),
           },
@@ -164,7 +164,7 @@ describe('PersonsService', () => {
     cpRepository = module.get<Repository<ContractPerson>>(CP_REPOSITORY_TOKEN);
     plansService = module.get<PlansService>(PlansService);
     contractsService = module.get<ContractsService>(ContractsService);
-    billingService = module.get<BillingService>(BillingService);
+    invoiceService = module.get<InvoiceService>(InvoiceService);
   });
 
   it('should be defined', () => {
@@ -314,7 +314,7 @@ describe('PersonsService', () => {
       // Verify that no write mutations occurred
       expect(repository.save).not.toHaveBeenCalled();
       expect(cpRepository.save).not.toHaveBeenCalled();
-      expect(billingService.updatePlanLineOnActiveInvoice).not.toHaveBeenCalled();
+      expect(invoiceService.updatePlanLineOnActiveInvoice).not.toHaveBeenCalled();
     });
 
     it('should not wipe global plan when adding a TITULAR to a new contract', async () => {

@@ -10,7 +10,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Advisor } from '../../advisors/entities/advisor.entity';
-import type { Surplus } from '../../billing/entities/surplus.entity';
+import type { Surplus } from '../../billing/payments/entities/surplus.entity';
 import type { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import type { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import type { ContractPerson } from './contract-person.entity';

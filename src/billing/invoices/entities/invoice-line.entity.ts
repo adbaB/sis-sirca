@@ -12,7 +12,7 @@ import {
 } from 'typeorm';
 import type { Person } from '../../../persons/entities/person.entity';
 import type { Plan } from '../../../plans/entities/plan.entity';
-import { InvoiceLineCategory } from '../../enums/invoice-line-category.enum';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import type { Invoice } from './invoice.entity';
 
 @Entity('invoice_lines')

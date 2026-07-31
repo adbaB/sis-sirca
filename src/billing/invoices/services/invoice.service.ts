@@ -12,11 +12,11 @@ import { ContractPerson } from '../../../contracts/entities/contract-person.enti
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { Person, PersonStatus, TypeIdentityCard } from '../../../persons/entities/person.entity';
-import { InvoiceLineCategory } from '../../enums/invoice-line-category.enum';
-import { SurplusService } from '../../services/surplus.service';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
+import { SurplusService } from '../../payments/services/surplus.service';
 import { InvoiceLine } from '../entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
-import { Payment, PaymentStatus } from '../../entities/payment.entity';
+import { Payment, PaymentStatus } from '../../payments/entities/payment.entity';
 import {
   getBillingMonth,
   getCaracasNow,
@@ -24,7 +24,7 @@ import {
   formatDateES,
   getCaracasDateTime,
 } from '../../../common/utils/date.util';
-import { Surplus, SurplusStatus } from '../../entities/surplus.entity';
+import { Surplus, SurplusStatus } from '../../payments/entities/surplus.entity';
 import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
 import { extractOcrDisplayFields } from '../../utils/ocr-display.util';
 import { Plan } from '../../../plans/entities/plan.entity';

@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { PaymentOrigin } from '../../billing/entities/payment.entity';
-import { BillingService } from '../../billing/services/billing.service';
+import { PaymentOrigin } from '../../billing/payments/entities/payment.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { MetaWhatsappService } from './meta-whatsapp.service';
 import { ChatbotStateService } from './chatbot-state.service';
@@ -13,6 +12,8 @@ import {
   getCaracasTodayJSDate,
   parseDateToCaracas,
 } from '../../common/utils/date.util';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
+import { PaymentService } from '../../billing/payments/services/payment.service';
 
 @Injectable()
 export class ChatbotPaymentService {
@@ -20,12 +21,13 @@ export class ChatbotPaymentService {
 
   constructor(
     private readonly dataSource: DataSource,
-    private readonly billingService: BillingService,
     private readonly personsService: PersonsService,
     private readonly metaWhatsappService: MetaWhatsappService,
     private readonly stateService: ChatbotStateService,
     private readonly analyticsService: ChatbotAnalyticsService,
     private readonly exchangeRateService: ExchangeRateService,
+    private readonly invoiceService: InvoiceService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   async processPaymentForInvoices(
@@ -102,7 +104,7 @@ export class ChatbotPaymentService {
             currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
           }
 
-          await this.billingService.createPayment(
+          await this.paymentService.createPayment(
             {
               invoiceId: invoice.id,
               amount: amount,
@@ -126,7 +128,7 @@ export class ChatbotPaymentService {
               .split(',')
               .map((id) => id.trim());
 
-        const invoices = await this.billingService.findInvoicesByIds(invoicesList);
+        const invoices = await this.invoiceService.findInvoicesByIds(invoicesList);
         const fallbackTotalUsd =
           invoices.reduce(
             (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
@@ -164,7 +166,7 @@ export class ChatbotPaymentService {
             currentAmountExtracted = hasAmount ? extractedAmount * weight : undefined;
           }
 
-          await this.billingService.createPayment(
+          await this.paymentService.createPayment(
             {
               invoiceId: invoice.id,
               amount: amount,
@@ -238,7 +240,7 @@ export class ChatbotPaymentService {
               .split(',')
               .map((id) => id.trim());
 
-      const updatedInvoices = await this.billingService.findInvoicesByIds(invoiceIds);
+      const updatedInvoices = await this.invoiceService.findInvoicesByIds(invoiceIds);
 
       const isZelle = state.payment_method === 'zelle';
       let totalPaidUsd = 0;

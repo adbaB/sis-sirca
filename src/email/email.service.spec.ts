@@ -3,7 +3,7 @@ import { EmailService } from './email.service';
 import { InternalServerErrorException } from '@nestjs/common';
 import { SESClient } from '@aws-sdk/client-ses';
 import configurations from '../config/configurations';
-import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
+import { SubmitPaymentDto } from '../billing/payments/dto/submit-payment.dto';
 
 jest.mock('@aws-sdk/client-ses', () => {
   return {

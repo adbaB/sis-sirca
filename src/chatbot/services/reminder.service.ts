@@ -4,11 +4,11 @@ import { MetaWhatsappService } from './meta-whatsapp.service';
 import { ChatbotStateService } from './chatbot-state.service';
 import { WHATSAPP_TEMPLATES } from '../constants/whatsapp-templates.contants';
 import { MONTH_NAMES_ES } from '../../reports/report-utils';
-import { BillingService } from '../../billing/services/billing.service';
 import { Steps } from '../enums/steps.enum';
 import { Person } from '../../persons/entities/person.entity';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { getBillingMonth } from '../../common/utils/date.util';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 
 // Interfaz temporal para agrupar los datos
 interface PendingDebt {
@@ -22,7 +22,7 @@ export class ReminderService {
 
   constructor(
     private readonly whatsappService: MetaWhatsappService,
-    private readonly billingService: BillingService,
+    private readonly invoiceService: InvoiceService,
     private readonly stateService: ChatbotStateService,
   ) {}
 
@@ -169,7 +169,7 @@ export class ReminderService {
   private async getPersonsWithPendingInvoices(): Promise<PendingDebt[]> {
     // Obtenemos todas las facturas que están pendientes
     const pendingInvoices =
-      await this.billingService.findPendingInvoicesByBillingMonth(getBillingMonth());
+      await this.invoiceService.findPendingInvoicesByBillingMonth(getBillingMonth());
 
     // Agrupamos las facturas por persona
     const debtsMap = new Map<string, PendingDebt>();

@@ -1,6 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BillingModule } from '../billing/billing.module';
 import { InvoiceLine } from '../billing/invoices/entities/invoice-line.entity';
 import { Invoice } from '../billing/invoices/entities/invoice.entity';
 import { ContractsModule } from '../contracts/contracts.module';
@@ -12,6 +11,7 @@ import { Person } from './entities/person.entity';
 import { PersonsService } from './services/persons.service';
 
 import { HealthDeclaration } from '../contracts/entities/health-declaration.entity';
+import { InvoiceModule } from '../billing/invoices/invoice.module';
 
 @Module({
   imports: [
@@ -24,7 +24,7 @@ import { HealthDeclaration } from '../contracts/entities/health-declaration.enti
       HealthDeclaration,
     ]),
     forwardRef(() => ContractsModule),
-    forwardRef(() => BillingModule),
+    forwardRef(() => InvoiceModule),
     PlansModule,
   ],
   controllers: [PersonsController],
