@@ -19,6 +19,8 @@ import type { Invoice } from './invoice.entity';
 @Index('IDX_invoice_lines_category', ['category'])
 @Index('IDX_invoice_lines_invoice', ['invoice'])
 @Index('IDX_invoice_lines_projectable', ['isProjectable'])
+@Index('IDX_invoice_lines_person_id', ['person'])
+@Index('IDX_invoice_lines_plan_id', ['plan'])
 @Check('CHK_invoice_lines_amount', '"amount" >= 0')
 @Check('CHK_invoice_lines_quantity', '"quantity" > 0')
 @Check(
@@ -62,12 +64,12 @@ export class InvoiceLine {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown>;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt: Date;
 }

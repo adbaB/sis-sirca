@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -23,6 +24,7 @@ export enum ContractStatus {
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 
 @Entity('contracts')
+@Index('IDX_contracts_status', ['status'])
 export class Contract {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -81,10 +83,12 @@ export class Contract {
   @OneToMany('Surplus', (surplus: Surplus) => surplus.contract)
   surpluses?: Surplus[] | null;
 
+  @Index('IDX_contracts_advisor_id')
   @ManyToOne('Advisor', (advisor: Advisor) => advisor.contracts, { nullable: true })
   @JoinColumn({ name: 'advisor_id' })
   advisor?: Advisor | null;
 
+  @Index('IDX_contracts_portfolio_id')
   @ManyToOne('Portfolio', (portfolio: Portfolio) => portfolio.contracts, { nullable: true })
   @JoinColumn({ name: 'portfolio_id', foreignKeyConstraintName: 'FK_contracts_portfolio' })
   portfolio?: Portfolio | null;
@@ -95,13 +99,13 @@ export class Contract {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'inactivation_reason' })
   inactivationReason: string;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt: Date;
 
   @Column({ type: 'text', array: true, nullable: true })

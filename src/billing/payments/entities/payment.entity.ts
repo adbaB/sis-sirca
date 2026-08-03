@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -25,6 +26,11 @@ export enum PaymentOrigin {
 }
 
 @Entity('payments')
+@Index('IDX_payments_invoice_id', ['invoice'])
+@Index('IDX_payments_person_id', ['person'])
+@Index('IDX_payments_reference_number', ['referenceNumber'])
+@Index('IDX_payments_payment_date', ['paymentDate'])
+@Index('IDX_payments_status', ['status'])
 export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -37,10 +43,10 @@ export class Payment {
   @JoinColumn({ name: 'person_id' })
   person?: Person | null;
 
-  @Column({ type: 'timestamp', name: 'payment_date' })
+  @Column({ type: 'timestamptz', name: 'payment_date' })
   paymentDate: Date;
 
-  @Column({ type: 'timestamp', name: 'operation_date', nullable: true })
+  @Column({ type: 'timestamptz', name: 'operation_date', nullable: true })
   operationDate?: Date | null;
 
   @Column({ type: 'varchar', length: 20, name: 'origin', default: PaymentOrigin.WEB })
@@ -64,7 +70,7 @@ export class Payment {
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PROCESSING })
   status: PaymentStatus;
 
-  @Column({ type: 'timestamp', name: 'send_at', nullable: true })
+  @Column({ type: 'timestamptz', name: 'send_at', nullable: true })
   sendAt?: Date | null;
 
   @Column({ type: 'jsonb', nullable: true })
@@ -73,12 +79,12 @@ export class Payment {
   @OneToMany('Surplus', (surplus: Surplus) => surplus.payment)
   surpluses: Surplus[];
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt: Date;
 }

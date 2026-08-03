@@ -44,6 +44,8 @@ export enum Parentesco {
   unique: true,
   where: '"deleted_at" IS NULL',
 })
+@Index('IDX_contract_persons_contract_id', ['contract'])
+@Index('IDX_contract_persons_person_id', ['person'])
 export class ContractPerson {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -68,12 +70,12 @@ export class ContractPerson {
   @OneToMany('HealthDeclaration', (hd: HealthDeclaration) => hd.contractPerson)
   healthDeclarations?: HealthDeclaration[];
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt: Date;
 }

@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -19,6 +20,10 @@ export enum SurplusStatus {
 }
 
 @Entity('surpluses')
+@Index('IDX_surpluses_contract_id', ['contract'])
+@Index('IDX_surpluses_payment_id', ['payment'])
+@Index('IDX_surpluses_invoice_id', ['invoice'])
+@Index('IDX_surpluses_status', ['status'])
 export class Surplus {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -29,7 +34,7 @@ export class Surplus {
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'amount_usd', nullable: true })
   amountUsd: number | null;
 
-  @Column({ type: 'timestamp', name: 'date' })
+  @Column({ type: 'timestamptz', name: 'date' })
   date: Date;
 
   @ManyToOne(() => Payment, { nullable: false })
@@ -47,9 +52,9 @@ export class Surplus {
   @Column({ type: 'enum', enum: SurplusStatus, default: SurplusStatus.PENDING })
   status: SurplusStatus;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 }

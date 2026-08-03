@@ -1,5 +1,7 @@
 import './instrument';
 
+process.env.TZ = 'America/Caracas';
+
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 
