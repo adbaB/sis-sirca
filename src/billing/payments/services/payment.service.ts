@@ -15,6 +15,12 @@ import {
   getCaracasTodayJSDate,
   formatToISODateString,
 } from '../../../common/utils/date.util';
+import { Transactional } from '../../../common/decorators/transactional.decorator';
+import {
+  getContextSafe,
+  getQueryRunner,
+  resolveQueryRunner,
+} from '../../../common/context/request-context';
 
 @Injectable()
 export class PaymentService {
@@ -37,13 +43,21 @@ export class PaymentService {
 
     this.validateAmounts(createPaymentDto, amount, amountExtracted);
 
-    const queryRunner = externalQueryRunner || this.dataSource.createQueryRunner();
+    // resolveQueryRunner: si viene un QueryRunner externo (p.ej. del chatbot) lo usa;
+    // de lo contrario usa el QueryRunner del contexto ALS del request HTTP, o crea uno con this.dataSource si no hay contexto.
+    const queryRunner = resolveQueryRunner(externalQueryRunner, this.dataSource);
+
+    // skipRelease: el ContextInterceptor es responsable de release() del QR del contexto ALS;
+    // no debemos llamar release() aquí o devolvería la conexión al pool a mitad del request.
+    const skipRelease = !externalQueryRunner && !!getContextSafe();
+
     const result = await this.executePaymentTransaction(
       createPaymentDto,
       amount,
       amountExtracted,
       queryRunner,
       externalQueryRunner,
+      skipRelease,
     );
 
     return result;
@@ -64,6 +78,7 @@ export class PaymentService {
     amountExtracted: number,
     queryRunner: QueryRunner,
     externalQueryRunner: QueryRunner | undefined,
+    skipRelease: boolean = false,
   ): Promise<TransactionResult> {
     if (!externalQueryRunner) {
       await queryRunner.connect();
@@ -265,7 +280,7 @@ export class PaymentService {
       }
       throw error;
     } finally {
-      if (!externalQueryRunner) {
+      if (!externalQueryRunner && !skipRelease) {
         await queryRunner.release();
       }
     }
@@ -454,63 +469,52 @@ export class PaymentService {
     });
   }
 
+  @Transactional()
   async approvePayment(id: string): Promise<Payment> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const qr = getQueryRunner();
+    const paymentRepo = qr.manager.getRepository(Payment);
+    const surplusRepo = qr.manager.getRepository(Surplus);
 
-    try {
-      const paymentRepo = queryRunner.manager.getRepository(Payment);
-      const surplusRepo = queryRunner.manager.getRepository(Surplus);
+    const payment = await qr.manager
+      .createQueryBuilder(Payment, 'payment')
+      .setQueryRunner(qr)
+      .innerJoinAndSelect('payment.invoice', 'invoice')
+      .where('payment.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
 
-      const payment = await queryRunner.manager
-        .createQueryBuilder(Payment, 'payment')
-        .setQueryRunner(queryRunner)
-        .innerJoinAndSelect('payment.invoice', 'invoice')
-        .where('payment.id = :id', { id })
-        .setLock('pessimistic_write')
-        .getOne();
+    if (!payment) {
+      throw new NotFoundException(`Payment with ID ${id} not found`);
+    }
+    if (payment.status === PaymentStatus.COMPLETED) {
+      throw new BadRequestException('El pago ya se encuentra aprobado.');
+    }
 
-      if (!payment) {
-        throw new NotFoundException(`Payment with ID ${id} not found`);
+    payment.status = PaymentStatus.COMPLETED;
+
+    // Remove rejection reason from metadata if present
+    const metadata = payment.metadata || {};
+    if (metadata.rejectionReason) {
+      delete metadata.rejectionReason;
+    }
+    payment.metadata = metadata;
+
+    await paymentRepo.save(payment);
+
+    // Find and restore associated surpluses (from cancelled to pending)
+    const associatedSurpluses = await surplusRepo.find({
+      where: { payment: { id: payment.id } },
+    });
+
+    for (const surplus of associatedSurpluses) {
+      if (surplus.status === SurplusStatus.CANCELLED) {
+        surplus.status = SurplusStatus.PENDING;
+        await surplusRepo.save(surplus);
       }
-      if (payment.status === PaymentStatus.COMPLETED) {
-        throw new BadRequestException('El pago ya se encuentra aprobado.');
-      }
+    }
 
-      payment.status = PaymentStatus.COMPLETED;
-
-      // Remove rejection reason from metadata if present
-      const metadata = payment.metadata || {};
-      if (metadata.rejectionReason) {
-        delete metadata.rejectionReason;
-      }
-      payment.metadata = metadata;
-
-      await paymentRepo.save(payment);
-
-      // Find and restore associated surpluses (from cancelled to pending)
-      const associatedSurpluses = await surplusRepo.find({
-        where: { payment: { id: payment.id } },
-      });
-
-      for (const surplus of associatedSurpluses) {
-        if (surplus.status === SurplusStatus.CANCELLED) {
-          surplus.status = SurplusStatus.PENDING;
-          await surplusRepo.save(surplus);
-        }
-      }
-
-      if (payment.invoice) {
-        await this.invoiceService.recalculateInvoicePaidAmount(payment.invoice.id, queryRunner);
-      }
-
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
+    if (payment.invoice) {
+      await this.invoiceService.recalculateInvoicePaidAmount(payment.invoice.id, qr);
     }
 
     const reloadedPayment = await this.paymentRepository.findOne({
@@ -525,59 +529,48 @@ export class PaymentService {
     return reloadedPayment;
   }
 
+  @Transactional()
   async rejectPayment(id: string, reason: string): Promise<Payment> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const qr = getQueryRunner();
+    const paymentRepo = qr.manager.getRepository(Payment);
+    const surplusRepo = qr.manager.getRepository(Surplus);
 
-    try {
-      const paymentRepo = queryRunner.manager.getRepository(Payment);
-      const surplusRepo = queryRunner.manager.getRepository(Surplus);
+    const payment = await qr.manager
+      .createQueryBuilder(Payment, 'payment')
+      .setQueryRunner(qr)
+      .innerJoinAndSelect('payment.invoice', 'invoice')
+      .where('payment.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
 
-      const payment = await queryRunner.manager
-        .createQueryBuilder(Payment, 'payment')
-        .setQueryRunner(queryRunner)
-        .innerJoinAndSelect('payment.invoice', 'invoice')
-        .where('payment.id = :id', { id })
-        .setLock('pessimistic_write')
-        .getOne();
+    if (!payment) {
+      throw new NotFoundException(`Payment with ID ${id} not found`);
+    }
+    if (payment.status === PaymentStatus.REJECTED) {
+      throw new BadRequestException('El pago ya se encuentra rechazado.');
+    }
 
-      if (!payment) {
-        throw new NotFoundException(`Payment with ID ${id} not found`);
+    payment.status = PaymentStatus.REJECTED;
+    const metadata = payment.metadata || {};
+    metadata.rejectionReason = reason;
+    payment.metadata = metadata;
+
+    await paymentRepo.save(payment);
+
+    // Find and cancel associated surpluses
+    const associatedSurpluses = await surplusRepo.find({
+      where: { payment: { id: payment.id } },
+    });
+
+    for (const surplus of associatedSurpluses) {
+      if (surplus.status === SurplusStatus.PENDING) {
+        surplus.status = SurplusStatus.CANCELLED;
+        await surplusRepo.save(surplus);
       }
-      if (payment.status === PaymentStatus.REJECTED) {
-        throw new BadRequestException('El pago ya se encuentra rechazado.');
-      }
+    }
 
-      payment.status = PaymentStatus.REJECTED;
-      const metadata = payment.metadata || {};
-      metadata.rejectionReason = reason;
-      payment.metadata = metadata;
-
-      await paymentRepo.save(payment);
-
-      // Find and cancel associated surpluses
-      const associatedSurpluses = await surplusRepo.find({
-        where: { payment: { id: payment.id } },
-      });
-
-      for (const surplus of associatedSurpluses) {
-        if (surplus.status === SurplusStatus.PENDING) {
-          surplus.status = SurplusStatus.CANCELLED;
-          await surplusRepo.save(surplus);
-        }
-      }
-
-      if (payment.invoice) {
-        await this.invoiceService.recalculateInvoicePaidAmount(payment.invoice.id, queryRunner);
-      }
-
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
+    if (payment.invoice) {
+      await this.invoiceService.recalculateInvoicePaidAmount(payment.invoice.id, qr);
     }
 
     const reloadedPayment = await this.paymentRepository.findOne({
@@ -592,132 +585,116 @@ export class PaymentService {
     return reloadedPayment;
   }
 
+  @Transactional()
   async updatePaymentDate(id: string, newDateStr: string): Promise<Payment> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const qr = getQueryRunner();
+    const paymentRepo = qr.manager.getRepository(Payment);
+    const surplusRepo = qr.manager.getRepository(Surplus);
 
-    try {
-      const paymentRepo = queryRunner.manager.getRepository(Payment);
-      const surplusRepo = queryRunner.manager.getRepository(Surplus);
+    const payment = await qr.manager
+      .createQueryBuilder(Payment, 'payment')
+      .setQueryRunner(qr)
+      .innerJoinAndSelect('payment.invoice', 'invoice')
+      .where('payment.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
 
-      const payment = await queryRunner.manager
-        .createQueryBuilder(Payment, 'payment')
-        .setQueryRunner(queryRunner)
-        .innerJoinAndSelect('payment.invoice', 'invoice')
-        .where('payment.id = :id', { id })
-        .setLock('pessimistic_write')
-        .getOne();
-
-      if (!payment) {
-        throw new NotFoundException(`Pago con ID ${id} no encontrado`);
-      }
-
-      const dt = parseDateToCaracas(newDateStr);
-      if (!dt.isValid) {
-        throw new BadRequestException('Formato de fecha inválido');
-      }
-      const newDate = dt.toJSDate();
-
-      let rateUsd = 1;
-      const isZelle = payment.paymentMethod.toLowerCase() === 'zelle';
-      if (!isZelle) {
-        const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(newDate);
-        if (!exchangeRate) {
-          throw new BadRequestException(
-            'No se encontró tasa de cambio para la fecha especificada.',
-          );
-        }
-        rateUsd = Number(exchangeRate.rateUsd);
-      }
-
-      // Obtener excedentes asociados y activos
-      const associatedSurpluses = await surplusRepo.find({
-        where: { payment: { id: payment.id } },
-      });
-
-      let totalBs = Number(payment.amountBs || 0);
-      let totalUsd = Number(payment.amount || 0);
-
-      const existingSurplus = associatedSurpluses.find((s) => s.status !== SurplusStatus.CANCELLED);
-      if (existingSurplus) {
-        totalBs += Number(existingSurplus.amountBs || 0);
-        totalUsd += Number(existingSurplus.amountUsd || 0);
-      }
-
-      // Obtener factura bloqueada pesimistamente
-      const invoice = await this.invoiceService.fetchInvoiceWithLock(
-        queryRunner,
-        payment.invoice.id,
-      );
-
-      // Recalcular saldo pendiente antes de este pago
-      const invoiceUnpaidBefore = Math.max(
-        0,
-        Number(invoice.totalAmount) -
-          Number(invoice.retentionAmount || 0) -
-          (Number(invoice.paidAmount) - Number(payment.amount)),
-      );
-
-      let amountUsdInput = totalUsd;
-      if (payment.paymentMethod.toLowerCase() !== 'zelle') {
-        amountUsdInput = totalBs / rateUsd;
-      }
-
-      const split = this.computePaymentSplit(
-        amountUsdInput,
-        invoiceUnpaidBefore,
-        totalBs,
-        payment.paymentMethod,
-        rateUsd,
-      );
-
-      payment.paymentDate = newDate;
-      payment.amount = split.paymentAmountUsd;
-      payment.amountBs = split.paymentAmountBs;
-
-      const savedPayment = await paymentRepo.save(payment);
-
-      const hasSurplus = split.surplusAmountUsd !== null || split.surplusAmountBs !== null;
-
-      if (hasSurplus) {
-        if (existingSurplus) {
-          existingSurplus.amountUsd = split.surplusAmountUsd;
-          existingSurplus.amountBs = split.surplusAmountBs;
-          existingSurplus.date = newDate;
-          existingSurplus.status = SurplusStatus.PENDING;
-          await surplusRepo.save(existingSurplus);
-        } else {
-          await surplusRepo.save(
-            surplusRepo.create({
-              amountBs: split.surplusAmountBs,
-              amountUsd: split.surplusAmountUsd,
-              date: newDate,
-              payment: savedPayment,
-              invoice: null,
-              contract: invoice.contract,
-              status: SurplusStatus.PENDING,
-            }),
-          );
-        }
-      } else {
-        if (existingSurplus) {
-          existingSurplus.status = SurplusStatus.CANCELLED;
-          existingSurplus.amountUsd = null;
-          existingSurplus.amountBs = null;
-          await surplusRepo.save(existingSurplus);
-        }
-      }
-
-      await this.invoiceService.recalculateInvoicePaidAmount(invoice.id, queryRunner);
-
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
+    if (!payment) {
+      throw new NotFoundException(`Pago con ID ${id} no encontrado`);
     }
+
+    const dt = parseDateToCaracas(newDateStr);
+    if (!dt.isValid) {
+      throw new BadRequestException('Formato de fecha inválido');
+    }
+    const newDate = dt.toJSDate();
+
+    let rateUsd = 1;
+    const isZelle = payment.paymentMethod.toLowerCase() === 'zelle';
+    if (!isZelle) {
+      const exchangeRate = await this.exchangeRateService.getExchangeRateByDate(newDate);
+      if (!exchangeRate) {
+        throw new BadRequestException('No se encontró tasa de cambio para la fecha especificada.');
+      }
+      rateUsd = Number(exchangeRate.rateUsd);
+    }
+
+    // Obtener excedentes asociados y activos
+    const associatedSurpluses = await surplusRepo.find({
+      where: { payment: { id: payment.id } },
+    });
+
+    let totalBs = Number(payment.amountBs || 0);
+    let totalUsd = Number(payment.amount || 0);
+
+    const existingSurplus = associatedSurpluses.find((s) => s.status !== SurplusStatus.CANCELLED);
+    if (existingSurplus) {
+      totalBs += Number(existingSurplus.amountBs || 0);
+      totalUsd += Number(existingSurplus.amountUsd || 0);
+    }
+
+    // Obtener factura bloqueada pesimistamente
+    const invoice = await this.invoiceService.fetchInvoiceWithLock(qr, payment.invoice.id);
+
+    // Recalcular saldo pendiente antes de este pago
+    const invoiceUnpaidBefore = Math.max(
+      0,
+      Number(invoice.totalAmount) -
+        Number(invoice.retentionAmount || 0) -
+        (Number(invoice.paidAmount) - Number(payment.amount)),
+    );
+
+    let amountUsdInput = totalUsd;
+    if (payment.paymentMethod.toLowerCase() !== 'zelle') {
+      amountUsdInput = totalBs / rateUsd;
+    }
+
+    const split = this.computePaymentSplit(
+      amountUsdInput,
+      invoiceUnpaidBefore,
+      totalBs,
+      payment.paymentMethod,
+      rateUsd,
+    );
+
+    payment.paymentDate = newDate;
+    payment.amount = split.paymentAmountUsd;
+    payment.amountBs = split.paymentAmountBs;
+
+    const savedPayment = await paymentRepo.save(payment);
+
+    const hasSurplus = split.surplusAmountUsd !== null || split.surplusAmountBs !== null;
+
+    if (hasSurplus) {
+      if (existingSurplus) {
+        existingSurplus.amountUsd = split.surplusAmountUsd;
+        existingSurplus.amountBs = split.surplusAmountBs;
+        existingSurplus.date = newDate;
+        existingSurplus.status = SurplusStatus.PENDING;
+        await surplusRepo.save(existingSurplus);
+      } else {
+        await surplusRepo.save(
+          surplusRepo.create({
+            amountBs: split.surplusAmountBs,
+            amountUsd: split.surplusAmountUsd,
+            date: newDate,
+            payment: savedPayment,
+            invoice: null,
+            contract: invoice.contract,
+            status: SurplusStatus.PENDING,
+          }),
+        );
+      }
+    } else {
+      if (existingSurplus) {
+        existingSurplus.status = SurplusStatus.CANCELLED;
+        existingSurplus.amountUsd = null;
+        existingSurplus.amountBs = null;
+        await surplusRepo.save(existingSurplus);
+      }
+    }
+
+    await this.invoiceService.recalculateInvoicePaidAmount(invoice.id, qr);
 
     const reloadedPayment = await this.paymentRepository.findOne({
       where: { id },

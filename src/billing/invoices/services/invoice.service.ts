@@ -28,6 +28,8 @@ import { Surplus, SurplusStatus } from '../../payments/entities/surplus.entity';
 import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
 import { extractOcrDisplayFields } from '../../utils/ocr-display.util';
 import { Plan } from '../../../plans/entities/plan.entity';
+import { Transactional } from '../../../common/decorators/transactional.decorator';
+import { getQueryRunner, resolveQueryRunner } from '../../../common/context/request-context';
 
 @Injectable()
 export class InvoiceService {
@@ -46,18 +48,39 @@ export class InvoiceService {
   /**
    * Fetches the invoice using a pessimistic write lock to prevent race
    * conditions, and throws a NotFoundException when absent.
+   *
+   * Si se provee un QueryRunner explícito (compatibilidad heredada), lo usa.
+   * De lo contrario, obtiene el QueryRunner del contexto ALS del request actual.
    */
-  async fetchInvoiceWithLock(queryRunner: QueryRunner, invoiceId: string): Promise<Invoice> {
-    const invoice = await queryRunner.manager
+  async fetchInvoiceWithLock(queryRunner?: QueryRunner, invoiceId?: string): Promise<Invoice>;
+  async fetchInvoiceWithLock(queryRunner: QueryRunner, invoiceId: string): Promise<Invoice>;
+  async fetchInvoiceWithLock(
+    queryRunnerOrId?: QueryRunner | string,
+    invoiceId?: string,
+  ): Promise<Invoice> {
+    // Soporte para llamadas antiguas fetchInvoiceWithLock(qr, id) y nuevas fetchInvoiceWithLock(id)
+    let qr: QueryRunner;
+    let id: string;
+    if (typeof queryRunnerOrId === 'string') {
+      // Nueva firma: fetchInvoiceWithLock(invoiceId)
+      id = queryRunnerOrId;
+      qr = resolveQueryRunner(undefined, this.dataSource);
+    } else {
+      // Firma heredada: fetchInvoiceWithLock(queryRunner, invoiceId)
+      qr = resolveQueryRunner(queryRunnerOrId, this.dataSource);
+      id = invoiceId!;
+    }
+
+    const invoice = await qr.manager
       .createQueryBuilder(Invoice, 'invoice')
-      .setQueryRunner(queryRunner)
+      .setQueryRunner(qr)
       .innerJoinAndSelect('invoice.contract', 'contract')
-      .where('invoice.id = :id', { id: invoiceId })
+      .where('invoice.id = :id', { id })
       .setLock('pessimistic_write')
       .getOne();
 
     if (!invoice) {
-      throw new NotFoundException(`Invoice with ID ${invoiceId} not found`);
+      throw new NotFoundException(`Invoice with ID ${id} not found`);
     }
     return invoice;
   }
@@ -169,154 +192,146 @@ export class InvoiceService {
       .getMany();
   }
 
+  @Transactional()
   async generateInvoiceForContract(
     contractId: string,
     billingMonthInput?: string,
     isAffiliation: boolean = false,
   ): Promise<Invoice> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const qr = getQueryRunner();
 
     let billingMonth = billingMonthInput;
     if (!billingMonth) {
       billingMonth = getBillingMonth();
     }
 
-    try {
-      const contractRepo = queryRunner.manager.getRepository(Contract);
-      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+    const contractRepo = qr.manager.getRepository(Contract);
+    const invoiceRepo = qr.manager.getRepository(Invoice);
 
-      const contract = await contractRepo.findOne({
-        where: { id: contractId },
-        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
-      });
+    const contract = await contractRepo.findOne({
+      where: { id: contractId },
+      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+    });
 
-      if (!contract) {
-        throw new NotFoundException(`Contrato con ID ${contractId} no encontrado`);
-      }
+    if (!contract) {
+      throw new NotFoundException(`Contrato con ID ${contractId} no encontrado`);
+    }
 
-      if (contract.status !== ContractStatus.ACTIVE) {
-        throw new BadRequestException('El contrato no está activo');
-      }
+    if (contract.status !== ContractStatus.ACTIVE) {
+      throw new BadRequestException('El contrato no está activo');
+    }
 
-      // Check if invoice already exists
-      const existingInvoice = await invoiceRepo.findOne({
-        where: {
-          contract: { id: contract.id },
-          billingMonth,
-        },
-      });
+    // Check if invoice already exists
+    const existingInvoice = await invoiceRepo.findOne({
+      where: {
+        contract: { id: contract.id },
+        billingMonth,
+      },
+    });
 
-      if (existingInvoice) {
-        throw new BadRequestException(
-          `Ya existe una factura para este contrato en el mes ${billingMonth}`,
-        );
-      }
-
-      const activeAfiliados =
-        contract.contractPersons
-          ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
-          .map((cp) => cp.person) || [];
-
-      if (activeAfiliados.length === 0) {
-        throw new BadRequestException('El contrato no tiene afiliados activos');
-      }
-
-      const invalidPerson = activeAfiliados.find(
-        (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
+    if (existingInvoice) {
+      throw new BadRequestException(
+        `Ya existe una factura para este contrato en el mes ${billingMonth}`,
       );
-      if (invalidPerson) {
-        throw new BadRequestException(
-          `El afiliado ${invalidPerson.name} no tiene un plan de salud válido asignado`,
-        );
+    }
+
+    const activeAfiliados =
+      contract.contractPersons
+        ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
+        .map((cp) => cp.person) || [];
+
+    if (activeAfiliados.length === 0) {
+      throw new BadRequestException('El contrato no tiene afiliados activos');
+    }
+
+    const invalidPerson = activeAfiliados.find(
+      (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
+    );
+    if (invalidPerson) {
+      throw new BadRequestException(
+        `El afiliado ${invalidPerson.name} no tiene un plan de salud válido asignado`,
+      );
+    }
+
+    let totalAmount = 0;
+    const invoiceDetailsData = activeAfiliados.map((person) => {
+      const amount = Number(person.plan.amount);
+      totalAmount += amount;
+
+      if (!Number.isFinite(amount) || amount < 0) {
+        throw new BadRequestException(`El monto del plan del afiliado ${person.name} no es válido`);
       }
 
-      let totalAmount = 0;
-      const invoiceDetailsData = activeAfiliados.map((person) => {
-        const amount = Number(person.plan.amount);
-        totalAmount += amount;
+      return {
+        person: person,
+        plan: person.plan,
+        chargedAmount: amount,
+      };
+    });
 
-        if (!Number.isFinite(amount) || amount < 0) {
-          throw new BadRequestException(
-            `El monto del plan del afiliado ${person.name} no es válido`,
-          );
-        }
+    const now = getCaracasNow();
+    const dueDate = now.plus({ days: 5 }).toJSDate();
 
-        return {
-          person: person,
-          plan: person.plan,
-          chargedAmount: amount,
-        };
+    const retentionPercentage = Number(contract.retentionPercentage || 0);
+    const retentionAmount = totalAmount * (retentionPercentage / 100);
+
+    const invoice = invoiceRepo.create({
+      contract: contract,
+      billingMonth: billingMonth,
+      issueDate: getCaracasTodayJSDate(),
+      dueDate: dueDate,
+      baseAmount: totalAmount,
+      totalAmount: totalAmount,
+      paidAmount: 0,
+      status: InvoiceStatus.PENDING,
+      retentionPercentage,
+      retentionAmount,
+    });
+
+    const savedInvoice = await invoiceRepo.save(invoice);
+
+    const invoiceLines = invoiceDetailsData.map((data) => {
+      return qr.manager.create(InvoiceLine, {
+        invoice: savedInvoice,
+        category: isAffiliation ? InvoiceLineCategory.INCLUSION : InvoiceLineCategory.MENSUALIDAD,
+        description: `${data.person.name} - ${data.plan.name}`,
+        amount: data.chargedAmount,
+        quantity: 1,
+        person: data.person,
+        plan: data.plan,
+        isProjectable: true,
       });
+    });
 
-      const now = getCaracasNow();
-      const dueDate = now.plus({ days: 5 }).toJSDate();
+    await qr.manager.save(invoiceLines);
 
-      const retentionPercentage = Number(contract.retentionPercentage || 0);
-      const retentionAmount = totalAmount * (retentionPercentage / 100);
+    // Apply surpluses DESPUÉS del commit (lo hace @Transactional al retornar)
+    // Capturamos el id para usarlo fuera de la transacción
+    const savedInvoiceId = savedInvoice.id;
+    const contractId2 = contract.id;
 
-      const invoice = invoiceRepo.create({
-        contract: contract,
-        billingMonth: billingMonth,
-        issueDate: getCaracasTodayJSDate(),
-        dueDate: dueDate,
-        baseAmount: totalAmount,
-        totalAmount: totalAmount,
-        paidAmount: 0,
-        status: InvoiceStatus.PENDING,
-        retentionPercentage,
-        retentionAmount,
-      });
+    // Nota: el commit lo hace @Transactional() al retornar exitosamente.
+    // Guardamos el id para aplicar excedentes fuera de esta transacción.
+    // El Transactional hará commit, luego aplicamos excedentes abajo.
+    // Retornamos una Promise especial para continuar luego del commit:
+    const reloadedInvoice = await this.invoiceRepository.findOne({
+      where: { id: savedInvoiceId },
+      relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
+    });
 
-      const savedInvoice = await invoiceRepo.save(invoice);
-
-      const invoiceLines = invoiceDetailsData.map((data) => {
-        return queryRunner.manager.create(InvoiceLine, {
-          invoice: savedInvoice,
-          category: isAffiliation ? InvoiceLineCategory.INCLUSION : InvoiceLineCategory.MENSUALIDAD,
-          description: `${data.person.name} - ${data.plan.name}`,
-          amount: data.chargedAmount,
-          quantity: 1,
-          person: data.person,
-          plan: data.plan,
-          isProjectable: true,
-        });
-      });
-
-      await queryRunner.manager.save(invoiceLines);
-
-      await queryRunner.commitTransaction();
-
-      // Apply surpluses
+    // Aplicar excedentes (en su propia transacción separada, fuera de la principal)
+    setImmediate(async () => {
       try {
-        await this.surplusService.applyPendingSurplusesToInvoice(contract.id, savedInvoice.id);
+        await this.surplusService.applyPendingSurplusesToInvoice(contractId2, savedInvoiceId);
       } catch (surplusError) {
         this.logger.error(
-          `Error al aplicar excedentes al contrato ${contract.id} para la factura manual ${savedInvoice.id}`,
+          `Error al aplicar excedentes al contrato ${contractId2} para la factura ${savedInvoiceId}`,
           surplusError,
         );
       }
+    });
 
-      // Reload the invoice to get updated amounts/status/details
-      return await this.invoiceRepository.findOne({
-        where: { id: savedInvoice.id },
-        relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
-      });
-    } catch (error: unknown) {
-      if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
-      }
-      // Postgres unique constraint violation (contract_id, billing_month)
-      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
-        throw new BadRequestException(
-          `Ya existe una factura para este contrato en el mes ${billingMonth}`,
-        );
-      }
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+    return reloadedInvoice;
   }
 
   async calculateAmountByInvoicesIds(ids: string[], paymentMethod: string): Promise<number> {
@@ -393,97 +408,85 @@ export class InvoiceService {
     await invoiceRepo.save(invoice);
   }
 
+  @Transactional()
   async recalculateInvoiceAmountFromContract(invoiceId: string): Promise<Invoice> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const qr = getQueryRunner();
+    const invoiceRepo = qr.manager.getRepository(Invoice);
 
-    try {
-      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+    const invoice = await invoiceRepo.findOne({
+      where: { id: invoiceId },
+      relations: ['contract'],
+    });
 
-      const invoice = await invoiceRepo.findOne({
-        where: { id: invoiceId },
-        relations: ['contract'],
-      });
-
-      if (!invoice) {
-        throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
-      }
-
-      if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.CANCELLED) {
-        throw new BadRequestException(
-          'Solo las facturas pendientes o parciales pueden ser recalculadas.',
-        );
-      }
-
-      const contract = invoice.contract;
-      if (!contract) {
-        throw new BadRequestException('La factura no tiene un contrato asociado');
-      }
-
-      const newBaseAmountResult = await queryRunner.manager
-        .createQueryBuilder(InvoiceLine, 'line')
-        .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
-        .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
-        .andWhere('line.is_projectable = true')
-        .andWhere('line.deleted_at IS NULL')
-        .getRawOne<{ total: string }>();
-
-      const newBaseAmount = Number(newBaseAmountResult?.total ?? 0);
-      invoice.baseAmount = newBaseAmount;
-
-      // Recalcular total: base + cargos adicionales (no proyectables)
-      const additionalResult = await queryRunner.manager
-        .createQueryBuilder(InvoiceLine, 'line')
-        .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
-        .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
-        .andWhere('line.is_projectable = false')
-        .andWhere('line.deleted_at IS NULL')
-        .getRawOne<{ total: string }>();
-
-      const additionalAmount = Number(additionalResult?.total ?? 0);
-      const calculatedTotal = newBaseAmount + additionalAmount;
-      invoice.totalAmount = calculatedTotal;
-
-      const retentionPercentage = Number(contract.retentionPercentage || 0);
-      const retentionAmount = calculatedTotal * (retentionPercentage / 100);
-      invoice.retentionPercentage = retentionPercentage;
-      invoice.retentionAmount = retentionAmount;
-
-      const amountDue = Math.max(0, calculatedTotal - retentionAmount);
-
-      // Adjust paidAmount if it exceeds amountDue to avoid DB check constraint violations
-      if (invoice.paidAmount > amountDue) {
-        invoice.paidAmount = amountDue;
-      }
-
-      // Save intermediate state in transaction
-      await invoiceRepo.save(invoice);
-
-      // Recalculate properly based on payments inside the transaction
-      await this.recalculateInvoicePaidAmount(invoice.id, queryRunner);
-
-      await queryRunner.commitTransaction();
-
-      // Reload and return
-      return await this.invoiceRepository.findOne({
-        where: { id: invoice.id },
-        relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
-      });
-    } catch (error) {
-      if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
-      }
-      throw error;
-    } finally {
-      await queryRunner.release();
+    if (!invoice) {
+      throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
     }
+
+    if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Solo las facturas pendientes o parciales pueden ser recalculadas.',
+      );
+    }
+
+    const contract = invoice.contract;
+    if (!contract) {
+      throw new BadRequestException('La factura no tiene un contrato asociado');
+    }
+
+    const newBaseAmountResult = await qr.manager
+      .createQueryBuilder(InvoiceLine, 'line')
+      .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
+      .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
+      .andWhere('line.is_projectable = true')
+      .andWhere('line.deleted_at IS NULL')
+      .getRawOne<{ total: string }>();
+
+    const newBaseAmount = Number(newBaseAmountResult?.total ?? 0);
+    invoice.baseAmount = newBaseAmount;
+
+    // Recalcular total: base + cargos adicionales (no proyectables)
+    const additionalResult = await qr.manager
+      .createQueryBuilder(InvoiceLine, 'line')
+      .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
+      .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
+      .andWhere('line.is_projectable = false')
+      .andWhere('line.deleted_at IS NULL')
+      .getRawOne<{ total: string }>();
+
+    const additionalAmount = Number(additionalResult?.total ?? 0);
+    const calculatedTotal = newBaseAmount + additionalAmount;
+    invoice.totalAmount = calculatedTotal;
+
+    const retentionPercentage = Number(contract.retentionPercentage || 0);
+    const retentionAmount = calculatedTotal * (retentionPercentage / 100);
+    invoice.retentionPercentage = retentionPercentage;
+    invoice.retentionAmount = retentionAmount;
+
+    const amountDue = Math.max(0, calculatedTotal - retentionAmount);
+
+    // Adjust paidAmount if it exceeds amountDue to avoid DB check constraint violations
+    if (invoice.paidAmount > amountDue) {
+      invoice.paidAmount = amountDue;
+    }
+
+    // Save intermediate state in transaction
+    await invoiceRepo.save(invoice);
+
+    // Recalculate properly based on payments inside the transaction
+    await this.recalculateInvoicePaidAmount(invoice.id, qr);
+
+    // Reload and return
+    return await this.invoiceRepository.findOne({
+      where: { id: invoice.id },
+      relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
+    });
   }
 
   // ---------------------------------------------------------------------------
   // Additional Charges
   // ---------------------------------------------------------------------------
 
+  @Transactional()
   async addAdditionalCharge(
     invoiceId: string,
     dto: {
@@ -501,148 +504,123 @@ export class InvoiceService {
       );
     }
 
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const qr = getQueryRunner();
+    const invoiceRepo = qr.manager.getRepository(Invoice);
 
-    try {
-      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+    const invoice = await invoiceRepo.findOne({
+      where: { id: invoiceId },
+      lock: { mode: 'pessimistic_write' },
+    });
 
-      const invoice = await invoiceRepo.findOne({
-        where: { id: invoiceId },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!invoice) {
-        throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
-      }
-
-      if (invoice.status === InvoiceStatus.CANCELLED) {
-        throw new BadRequestException('No se pueden agregar cargos a una factura cancelada.');
-      }
-
-      const line = queryRunner.manager.create(InvoiceLine, {
-        invoice,
-        category: dto.category,
-        description: dto.description,
-        amount: dto.amount,
-        quantity: dto.quantity ?? 1,
-        person: dto.personId ? Object.assign(new Person(), { id: dto.personId }) : null,
-        isProjectable: false,
-        metadata: dto.metadata ?? null,
-      });
-
-      await queryRunner.manager.save(line);
-
-      // Recalcular totalAmount = baseAmount + SUM(líneas no proyectables activas)
-      const additionalResult = await queryRunner.manager
-        .createQueryBuilder(InvoiceLine, 'line')
-        .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
-        .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
-        .andWhere('line.is_projectable = false')
-        .andWhere('line.deleted_at IS NULL')
-        .getRawOne<{ total: string }>();
-
-      const additionalAmount = Number(additionalResult?.total ?? 0);
-      invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
-
-      // Si paidAmount < nuevo totalAmount ajustar status
-      if (invoice.paidAmount < invoice.totalAmount) {
-        if (invoice.paidAmount > 0) {
-          invoice.status = InvoiceStatus.PARTIAL;
-        } else {
-          invoice.status = InvoiceStatus.PENDING;
-        }
-      }
-
-      await invoiceRepo.save(invoice);
-      await queryRunner.commitTransaction();
-
-      return await this.invoiceRepository.findOne({
-        where: { id: invoice.id },
-        relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
-      });
-    } catch (error) {
-      if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
-      }
-      throw error;
-    } finally {
-      await queryRunner.release();
+    if (!invoice) {
+      throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
     }
-  }
 
-  async removeAdditionalCharge(invoiceId: string, lineId: string): Promise<Invoice> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    if (invoice.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException('No se pueden agregar cargos a una factura cancelada.');
+    }
 
-    try {
-      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+    const line = qr.manager.create(InvoiceLine, {
+      invoice,
+      category: dto.category,
+      description: dto.description,
+      amount: dto.amount,
+      quantity: dto.quantity ?? 1,
+      person: dto.personId ? Object.assign(new Person(), { id: dto.personId }) : null,
+      isProjectable: false,
+      metadata: dto.metadata ?? null,
+    });
 
-      const invoice = await invoiceRepo.findOne({
-        where: { id: invoiceId },
-        lock: { mode: 'pessimistic_write' },
-      });
+    await qr.manager.save(line);
 
-      if (!invoice) {
-        throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
-      }
+    // Recalcular totalAmount = baseAmount + SUM(líneas no proyectables activas)
+    const additionalResult = await qr.manager
+      .createQueryBuilder(InvoiceLine, 'line')
+      .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
+      .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
+      .andWhere('line.is_projectable = false')
+      .andWhere('line.deleted_at IS NULL')
+      .getRawOne<{ total: string }>();
 
-      const line = await queryRunner.manager.findOne(InvoiceLine, {
-        where: { id: lineId, invoice: { id: invoiceId } },
-      });
+    const additionalAmount = Number(additionalResult?.total ?? 0);
+    invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
 
-      if (!line) {
-        throw new NotFoundException(`Línea con ID ${lineId} no encontrada en esta factura`);
-      }
-
-      if (line.category === InvoiceLineCategory.MENSUALIDAD) {
-        throw new BadRequestException('No se puede eliminar una línea de tipo MENSUALIDAD.');
-      }
-
-      await queryRunner.manager.softRemove(line);
-
-      // Recalcular totalAmount
-      const additionalResult = await queryRunner.manager
-        .createQueryBuilder(InvoiceLine, 'line')
-        .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
-        .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
-        .andWhere('line.is_projectable = false')
-        .andWhere('line.deleted_at IS NULL')
-        .getRawOne<{ total: string }>();
-
-      const additionalAmount = Number(additionalResult?.total ?? 0);
-      invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
-
-      if (invoice.paidAmount > invoice.totalAmount) {
-        invoice.paidAmount = invoice.totalAmount;
-      }
-
-      // Recalcular status
-      if (invoice.paidAmount >= invoice.totalAmount && invoice.totalAmount > 0) {
-        invoice.status = InvoiceStatus.PAID;
-      } else if (invoice.paidAmount > 0) {
+    // Si paidAmount < nuevo totalAmount ajustar status
+    if (invoice.paidAmount < invoice.totalAmount) {
+      if (invoice.paidAmount > 0) {
         invoice.status = InvoiceStatus.PARTIAL;
       } else {
         invoice.status = InvoiceStatus.PENDING;
       }
-
-      await invoiceRepo.save(invoice);
-      await queryRunner.commitTransaction();
-
-      return await this.invoiceRepository.findOne({
-        where: { id: invoice.id },
-        relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
-      });
-    } catch (error) {
-      if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
-      }
-      throw error;
-    } finally {
-      await queryRunner.release();
     }
+
+    await invoiceRepo.save(invoice);
+
+    return await this.invoiceRepository.findOne({
+      where: { id: invoice.id },
+      relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
+    });
+  }
+
+  @Transactional()
+  async removeAdditionalCharge(invoiceId: string, lineId: string): Promise<Invoice> {
+    const qr = getQueryRunner();
+    const invoiceRepo = qr.manager.getRepository(Invoice);
+
+    const invoice = await invoiceRepo.findOne({
+      where: { id: invoiceId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
+    }
+
+    const line = await qr.manager.findOne(InvoiceLine, {
+      where: { id: lineId, invoice: { id: invoiceId } },
+    });
+
+    if (!line) {
+      throw new NotFoundException(`Línea con ID ${lineId} no encontrada en esta factura`);
+    }
+
+    if (line.category === InvoiceLineCategory.MENSUALIDAD) {
+      throw new BadRequestException('No se puede eliminar una línea de tipo MENSUALIDAD.');
+    }
+
+    await qr.manager.softRemove(line);
+
+    // Recalcular totalAmount
+    const additionalResult = await qr.manager
+      .createQueryBuilder(InvoiceLine, 'line')
+      .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
+      .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
+      .andWhere('line.is_projectable = false')
+      .andWhere('line.deleted_at IS NULL')
+      .getRawOne<{ total: string }>();
+
+    const additionalAmount = Number(additionalResult?.total ?? 0);
+    invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
+
+    if (invoice.paidAmount > invoice.totalAmount) {
+      invoice.paidAmount = invoice.totalAmount;
+    }
+
+    // Recalcular status
+    if (invoice.paidAmount >= invoice.totalAmount && invoice.totalAmount > 0) {
+      invoice.status = InvoiceStatus.PAID;
+    } else if (invoice.paidAmount > 0) {
+      invoice.status = InvoiceStatus.PARTIAL;
+    } else {
+      invoice.status = InvoiceStatus.PENDING;
+    }
+
+    await invoiceRepo.save(invoice);
+
+    return await this.invoiceRepository.findOne({
+      where: { id: invoice.id },
+      relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
+    });
   }
 
   /**
