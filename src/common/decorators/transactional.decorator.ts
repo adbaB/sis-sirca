@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { getQueryRunnerSafe } from '../context/request-context';
+import { getQueryRunnerSafe, requestContextStorage } from '../context/request-context';
 
 /**
  * Decorador de método que gestiona automáticamente el ciclo de vida de
@@ -49,7 +49,10 @@ export function Transactional(): MethodDecorator {
         await qr.connect();
         await qr.startTransaction();
         try {
-          const result = await originalMethod.apply(this, args);
+          const result = await requestContextStorage.run(
+            { queryRunner: qr, requestId: `cron-${Date.now()}`, startTime: Date.now() },
+            () => originalMethod.apply(this, args),
+          );
           await qr.commitTransaction();
           return result;
         } catch (err) {

@@ -115,7 +115,7 @@ export class InvoiceCalculationService {
     // Recalcular desde pagos reales dentro de la misma transacción
     await this.recalculateInvoicePaidAmount(invoice.id, qr.manager);
 
-    return await this.invoiceRepository.findOne({
+    return await invoiceRepo.findOne({
       where: { id: invoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });

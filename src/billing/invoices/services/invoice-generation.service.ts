@@ -154,7 +154,7 @@ export class InvoiceGenerationService {
     await qr.manager.save(invoiceLines);
 
     // Recargar con relaciones completas DENTRO de la transacción
-    const reloadedInvoice = await this.invoiceRepository.findOne({
+    const reloadedInvoice = await invoiceRepo.findOne({
       where: { id: savedInvoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });

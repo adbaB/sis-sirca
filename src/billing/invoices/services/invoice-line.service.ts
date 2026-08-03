@@ -93,7 +93,7 @@ export class InvoiceLineService {
 
     await invoiceRepo.save(invoice);
 
-    return await this.invoiceRepository.findOne({
+    return await invoiceRepo.findOne({
       where: { id: invoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });
@@ -151,7 +151,7 @@ export class InvoiceLineService {
 
     await invoiceRepo.save(invoice);
 
-    return await this.invoiceRepository.findOne({
+    return await invoiceRepo.findOne({
       where: { id: invoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });
