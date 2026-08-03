@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, QueryRunner, Repository } from 'typeorm';
 import { getCaracasTodayJSDate } from '../../../common/utils/date.util';
@@ -8,7 +9,8 @@ import { ExchangeRateService } from '../../../exchange-rate/services/exchange-ra
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
-import { InvoiceService } from '../../invoices/services/invoice.service';
+import { InvoiceCalculationService } from '../../invoices/services/invoice-calculation.service';
+import { INVOICE_CREATED, InvoiceCreatedEvent } from '../../invoices/events/invoice.events';
 import { resolveQueryRunner } from '../../../common/context/request-context';
 
 @Injectable()
@@ -20,8 +22,7 @@ export class SurplusService {
     private readonly surplusRepository: Repository<Surplus>,
     private readonly dataSource: DataSource,
     private readonly exchangeRateService: ExchangeRateService,
-    @Inject(forwardRef(() => InvoiceService))
-    private readonly invoiceService: InvoiceService,
+    private readonly invoiceCalculationService: InvoiceCalculationService,
   ) {}
 
   /**
@@ -180,7 +181,10 @@ export class SurplusService {
       }
 
       // We recalculate INSIDE the transaction to rollback everything if it fails
-      await this.invoiceService.recalculateInvoicePaidAmount(invoiceId, queryRunner);
+      await this.invoiceCalculationService.recalculateInvoicePaidAmount(
+        invoiceId,
+        queryRunner.manager,
+      );
 
       await queryRunner.commitTransaction();
     } catch (error) {
@@ -191,6 +195,22 @@ export class SurplusService {
       throw error;
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  /**
+   * Escucha el evento `invoice.created` emitido por `InvoiceGenerationService`
+   * para aplicar excedentes pendientes en su propia transacción separada.
+   * Reemplaza el `setImmediate` que existía en el InvoiceService original.
+   */
+  @OnEvent(INVOICE_CREATED)
+  async handleInvoiceCreated(event: InvoiceCreatedEvent): Promise<void> {
+    try {
+      await this.applyPendingSurplusesToInvoice(event.contractId, event.invoiceId);
+    } catch (err) {
+      this.logger.error(
+        `[surplus] Error aplicando excedentes para factura ${event.invoiceId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

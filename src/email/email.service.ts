@@ -1,8 +1,10 @@
 import { SESClient, SendEmailCommand, SendRawEmailCommand } from '@aws-sdk/client-ses';
-import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import configurations from '../config/configurations';
 import { SubmitPaymentDto } from '../billing/payments/dto/submit-payment.dto';
+import { ExternalServiceException, ErrorCode } from '../common/exceptions';
+import { withRetry } from '../common/utils/retry.util';
 
 @Injectable()
 export class EmailService {
@@ -73,22 +75,25 @@ export class EmailService {
     });
 
     try {
-      await this.sesClient.send(command);
+      await withRetry(() => this.sesClient.send(command), {
+        taskName: 'AWS SES SendPaymentConfirmation',
+        maxAttempts: 3,
+        backoffMs: 200,
+        jitter: false,
+      });
     } catch (error) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(`Failed to send email: ${error.message}`);
-      }
-      throw new InternalServerErrorException('Failed to send email with unknown error');
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ExternalServiceException(
+        'AWS SES',
+        `Failed to send email: ${message}`,
+        ErrorCode.AWS_SES_ERROR,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
   /**
    * Sends a PDF file as an email attachment via AWS SES raw message.
-   * @param to         Recipient address
-   * @param subject    Email subject
-   * @param body       Plain-text body
-   * @param pdfBuffer  PDF content
-   * @param filename   Attachment filename (e.g. 'comprobante-2024-05.pdf')
    */
   async sendPaymentPdf(
     to: string,
@@ -127,19 +132,26 @@ export class EmailService {
     });
 
     try {
-      await this.sesClient.send(command);
+      await withRetry(() => this.sesClient.send(command), {
+        taskName: 'AWS SES SendPaymentPdf',
+        maxAttempts: 3,
+        backoffMs: 200,
+        jitter: false,
+      });
       this.logger.log(`PDF email sent to ${to}: ${filename}`);
     } catch (error) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(`Failed to send PDF email: ${error.message}`);
-      }
-      throw new InternalServerErrorException('Failed to send PDF email with unknown error');
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ExternalServiceException(
+        'AWS SES',
+        `Failed to send PDF email: ${message}`,
+        ErrorCode.AWS_SES_ERROR,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
   /**
    * Sends a lightweight HTML email containing links to PDFs hosted on S3.
-   * Use this instead of sendPaymentPdf when the PDF exceeds SES's 10 MB limit.
    */
   async sendPdfLinks(to: string, subject: string, pdfUrls: string[], body: string): Promise<void> {
     const linksHtml = pdfUrls
@@ -168,21 +180,26 @@ export class EmailService {
     });
 
     try {
-      await this.sesClient.send(command);
+      await withRetry(() => this.sesClient.send(command), {
+        taskName: 'AWS SES SendPdfLinks',
+        maxAttempts: 3,
+        backoffMs: 200,
+        jitter: false,
+      });
       this.logger.log(`PDF links email sent to ${to}`);
     } catch (error) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(`Failed to send PDF links email: ${error.message}`);
-      }
-      throw new InternalServerErrorException('Failed to send PDF links email with unknown error');
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ExternalServiceException(
+        'AWS SES',
+        `Failed to send PDF links email: ${message}`,
+        ErrorCode.AWS_SES_ERROR,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
   /**
    * Sends a generic HTML email via AWS SES.
-   * @param to         Recipient address
-   * @param subject    Email subject
-   * @param htmlBody   Full HTML body content
    */
   async sendHtmlEmail(to: string, subject: string, htmlBody: string): Promise<void> {
     const command = new SendEmailCommand({
@@ -195,13 +212,21 @@ export class EmailService {
     });
 
     try {
-      await this.sesClient.send(command);
+      await withRetry(() => this.sesClient.send(command), {
+        taskName: 'AWS SES SendHtmlEmail',
+        maxAttempts: 3,
+        backoffMs: 200,
+        jitter: false,
+      });
       this.logger.log(`HTML email sent to ${to}`);
     } catch (error) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(`Failed to send HTML email: ${error.message}`);
-      }
-      throw new InternalServerErrorException('Failed to send HTML email with unknown error');
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ExternalServiceException(
+        'AWS SES',
+        `Failed to send HTML email: ${message}`,
+        ErrorCode.AWS_SES_ERROR,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 }

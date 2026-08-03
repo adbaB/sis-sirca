@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { CreateAdvisorDto } from './dto/create-advisor.dto';
 import { UpdateAdvisorDto } from './dto/update-advisor.dto';
 import { Advisor } from './entities/advisor.entity';
+import { EntityNotFoundException } from '../common/exceptions';
 
 @Injectable()
 export class AdvisorsService {
@@ -24,7 +25,7 @@ export class AdvisorsService {
   async findOne(id: string) {
     const advisor = await this.advisorRepository.findOneBy({ id });
     if (!advisor) {
-      throw new NotFoundException(`Advisor with ID ${id} not found`);
+      throw new EntityNotFoundException('Asesor', id);
     }
     return advisor;
   }
