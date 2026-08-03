@@ -5,7 +5,7 @@ import { AwsService } from '../../aws/aws.service';
 import { EmailService } from '../../email/email.service';
 import { ChatbotService } from './chatbot.service';
 import { OcrService } from '../../ocr/ocr.service';
-import { BillingService } from '../../billing/services/billing.service';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { PersonsService } from '../../persons/services/persons.service';
 import config from '../../config/configurations';
 import { DataSource } from 'typeorm';
@@ -42,7 +42,7 @@ describe('ChatbotService', () => {
     extractReceiptData: jest.fn(),
   };
 
-  const mockBillingService = {
+  const mockInvoiceService = {
     createPayment: jest.fn(),
     findPendingInvoicesByIdentityCard: jest.fn(),
     findInvoicesByIds: jest.fn(),
@@ -109,7 +109,7 @@ describe('ChatbotService', () => {
         { provide: AwsService, useValue: mockAwsService },
         { provide: EmailService, useValue: mockEmailService },
         { provide: OcrService, useValue: mockOcrService },
-        { provide: BillingService, useValue: mockBillingService },
+        { provide: InvoiceService, useValue: mockInvoiceService },
         { provide: PersonsService, useValue: mockPersonsService },
         { provide: DataSource, useValue: mockDataSource },
         MetaWhatsappService,
@@ -425,7 +425,7 @@ describe('ChatbotService', () => {
         expect.any(Object),
       );
 
-      mockBillingService.findPendingInvoicesByIdentityCard.mockResolvedValueOnce([
+      mockInvoiceService.findPendingInvoicesByIdentityCard.mockResolvedValueOnce([
         {
           id: 'inv1',
           billingMonth: 'Jan 2024',
@@ -444,7 +444,7 @@ describe('ChatbotService', () => {
 
       await service.handleIncomingMessage(createMetaMessage('123', 'V-1234567'));
 
-      expect(mockBillingService.findPendingInvoicesByIdentityCard).toHaveBeenCalledWith(
+      expect(mockInvoiceService.findPendingInvoicesByIdentityCard).toHaveBeenCalledWith(
         '1234567',
         'V',
       );

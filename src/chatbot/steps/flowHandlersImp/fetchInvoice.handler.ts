@@ -6,11 +6,11 @@ import {
   FlowResponse,
 } from '../../interfaces/flow.interface';
 import { FlowActionHandler } from '../flow-handler.interface';
-import { BillingService } from '../../../billing/services/billing.service';
+import { InvoiceService } from '../../../billing/invoices/services/invoice.service';
 
 @Injectable()
 export class FetchInvoiceHandler implements FlowActionHandler {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(private readonly invoiceService: InvoiceService) {}
 
   canHandle(payload: FlowDecryptedPayload): boolean {
     const dataAction = payload.data?.action;
@@ -21,7 +21,7 @@ export class FetchInvoiceHandler implements FlowActionHandler {
   async handle(data: Record<string, unknown>): Promise<FlowResponse> {
     const { doc_number, doc_type } = data as unknown as FetchInvoicesData;
 
-    const invoices = await this.billingService.findPendingInvoicesByIdentityCard(
+    const invoices = await this.invoiceService.findPendingInvoicesByIdentityCard(
       doc_number,
       doc_type as TypeIdentityCard,
     );

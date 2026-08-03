@@ -14,16 +14,16 @@ import { UpdatePersonDto } from '../dto/update-person.dto';
 import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
 
-import { InvoiceLineCategory } from '../../billing/enums/invoice-line-category.enum';
+import { InvoiceLineCategory } from '../../billing/invoices/enums/invoice-line-category.enum';
 import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
-import { BillingService } from '../../billing/services/billing.service';
 import { getBillingMonth } from '../../common/utils/date.util';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 
 @Injectable()
 export class PersonsService {
@@ -43,8 +43,8 @@ export class PersonsService {
     private plansService: PlansService,
     @Inject(forwardRef(() => ContractsService))
     private contractsService: ContractsService,
-    @Inject(forwardRef(() => BillingService))
-    private billingService: BillingService,
+    @Inject(forwardRef(() => InvoiceService))
+    private invoiceService: InvoiceService,
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
@@ -309,7 +309,7 @@ export class PersonsService {
 
     // ── 5.1. Si el plan cambió, actualizar la línea en la factura activa ────
     if (planId && plan && plan.id !== oldPlanId) {
-      await this.billingService.updatePlanLineOnActiveInvoice(
+      await this.invoiceService.updatePlanLineOnActiveInvoice(
         contractId,
         savedPerson.id,
         plan.id,

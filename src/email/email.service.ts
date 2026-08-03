@@ -2,7 +2,7 @@ import { SESClient, SendEmailCommand, SendRawEmailCommand } from '@aws-sdk/clien
 import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import configurations from '../config/configurations';
-import { SubmitPaymentDto } from '../payments/dto/submit-payment.dto';
+import { SubmitPaymentDto } from '../billing/payments/dto/submit-payment.dto';
 
 @Injectable()
 export class EmailService {

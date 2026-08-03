@@ -12,8 +12,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Contract } from '../../../contracts/entities/contract.entity';
-import type { Payment } from '../../entities/payment.entity';
-import type { InvoiceDetail } from './invoice-detail.entity';
+import type { Payment } from '../../payments/entities/payment.entity';
 import type { InvoiceLine } from './invoice-line.entity';
 
 export enum InvoiceStatus {
@@ -98,10 +97,6 @@ export class Invoice {
 
   @Column({ type: 'enum', enum: InvoiceStatus, default: InvoiceStatus.PENDING })
   status: InvoiceStatus;
-
-  /** @deprecated Usar `lines` (relación con {@link InvoiceLine}) en su lugar. */
-  @OneToMany('InvoiceDetail', (detail: InvoiceDetail) => detail.invoice, { cascade: true })
-  details: InvoiceDetail[];
 
   @OneToMany('InvoiceLine', (line: InvoiceLine) => line.invoice, { cascade: true })
   lines: InvoiceLine[];

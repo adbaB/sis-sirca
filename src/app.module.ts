@@ -17,10 +17,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { DatabaseModule } from './database/database.module';
 import { EmailModule } from './email/email.module';
 import { ExchangeRateModule } from './exchange-rate/exchange-rate.module';
-import { GoogleModule } from './google/google.module';
 import { OcrModule } from './ocr/ocr.module';
-import { PaymentTypesModule } from './payment-types/payment-types.module';
-import { PaymentsModule } from './payments/payments.module';
 import { PdfModule } from './pdf/pdf.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PersonsModule } from './persons/persons.module';
@@ -28,7 +25,6 @@ import { PlansModule } from './plans/plans.module';
 import { ReportsModule } from './reports/reports.module';
 import { RolesModule } from './roles/roles.module';
 import { StatisticsModule } from './statistics/statistics.module';
-import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
 import { PortfoliosModule } from './portfolios/portfolios.module';
 
@@ -43,7 +39,6 @@ import { PortfoliosModule } from './portfolios/portfolios.module';
     PermissionsModule,
     AwsModule,
     EmailModule,
-    PaymentsModule,
     ChatbotModule,
     PlansModule,
     PersonsModule,
@@ -51,11 +46,8 @@ import { PortfoliosModule } from './portfolios/portfolios.module';
     BillingModule,
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
-    SyncModule,
     OcrModule,
     ExchangeRateModule,
-    PaymentTypesModule,
-    GoogleModule,
     PdfModule,
     RedisModule.forRootAsync({
       inject: [config.KEY],

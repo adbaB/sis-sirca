@@ -29,7 +29,6 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
-import { BillingService } from '../../billing/services/billing.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { DateTime } from 'luxon';
 import {
@@ -43,6 +42,7 @@ import { HealthDeclaration, HealthCategory } from '../entities/health-declaratio
 import { PdfService } from '../../pdf/services/pdf.service';
 import { AwsService } from '../../aws/aws.service';
 import { loadLogoBase64 } from '../../reports/report-utils';
+import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 
 export interface PipelineTotals {
   totalPipeline: number;
@@ -258,8 +258,8 @@ export class ContractsService {
     private affiliationHistoryRepository: Repository<AffiliationHistory>,
     @Inject(forwardRef(() => PersonsService))
     private personsService: PersonsService,
-    @Inject(forwardRef(() => BillingService))
-    private billingService: BillingService,
+    @Inject(forwardRef(() => InvoiceService))
+    private invoiceService: InvoiceService,
     private plansService: PlansService,
     private readonly pdfService: PdfService,
     private readonly awsService: AwsService,
@@ -593,7 +593,7 @@ export class ContractsService {
     // ── 5. Invoice Generation (after transaction commits) ──────────
     try {
       // Create initial invoice as "AFILIACION" instead of default "MENSUALIDAD"
-      await this.billingService.generateInvoiceForContract(savedContract.id, undefined, true);
+      await this.invoiceService.generateInvoiceForContract(savedContract.id, undefined, true);
       this.logger.log(`Invoice generated for contract ${savedContract.code}`);
     } catch (invoiceError) {
       const errorMessage =
@@ -1471,7 +1471,7 @@ export class ContractsService {
       await cpRepo.softRemove(contractPerson);
 
       // Billing es responsable de limpiar la línea MENSUALIDAD de la factura activa
-      await this.billingService.removeAffiliateLineFromActiveInvoice(
+      await this.invoiceService.removeAffiliateLineFromActiveInvoice(
         contractPerson.contract.id,
         contractPerson.person.id,
         manager,
