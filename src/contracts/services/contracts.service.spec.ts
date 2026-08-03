@@ -461,7 +461,7 @@ describe('ContractsService', () => {
           contract: { id: '1' },
           person: { status: PersonStatus.ACTIVE },
         },
-        relations: ['person', 'person.plan'],
+        relations: ['plan', 'person', 'person.plan'],
       });
       expect(repository.update).toHaveBeenCalledWith('1', { monthlyAmount: 30 }); // 10 + 20
     });
@@ -479,7 +479,7 @@ describe('ContractsService', () => {
           contract: { id: 'invalid-id' },
           person: { status: PersonStatus.ACTIVE },
         },
-        relations: ['person', 'person.plan'],
+        relations: ['plan', 'person', 'person.plan'],
       });
       expect(repository.update).toHaveBeenCalledWith('invalid-id', { monthlyAmount: 0 });
     });

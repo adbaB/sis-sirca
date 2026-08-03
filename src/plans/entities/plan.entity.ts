@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Person } from '../../persons/entities/person.entity';
+import type { ContractPerson } from '../../contracts/entities/contract-person.entity';
 
 export enum PlanStatus {
   ACTIVE = 'ACTIVE',
@@ -56,6 +57,9 @@ export class Plan {
 
   @OneToMany('Person', (person: Person) => person.plan)
   persons: Person[];
+
+  @OneToMany('ContractPerson', (cp: ContractPerson) => cp.plan)
+  contractPersons?: ContractPerson[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

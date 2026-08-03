@@ -59,6 +59,14 @@ export class PersonsService {
     } = createPersonDto;
     const resolvedRole = role || PersonRole.AFILIADO;
 
+    let plan = null;
+    if (resolvedRole === PersonRole.AFILIADO && planId) {
+      plan = await this.plansService.findOne(planId);
+      if (!plan) {
+        throw new NotFoundException(`Plan with ID "${planId}" not found`);
+      }
+    }
+
     // Check if a person with this identityCard already exists
     const person = await this.findByIdentityCard(
       personData.identityCard,
@@ -107,20 +115,22 @@ export class PersonsService {
             role: resolvedRole,
             isBillingOwner: isBillingOwner ?? false,
             relationship,
+            plan: resolvedRole === PersonRole.AFILIADO ? plan || person.plan : null,
           });
           const savedCp = await this.contractPersonRepository.save(contractPerson);
 
           await this.saveHealthDeclarations(healthDeclarations, savedCp);
 
           if (resolvedRole === PersonRole.AFILIADO) {
+            const effectivePlan = savedCp.plan || person.plan || null;
             // Registrar en historial
             await this.affiliationHistoryRepository.save(
               this.affiliationHistoryRepository.create({
                 contract: { id: contractId },
                 person,
-                plan: person.plan ?? null,
+                plan: effectivePlan,
                 action: AffiliationAction.AFILIACION,
-                amount: Number(person.plan?.amount ?? 0),
+                amount: Number(effectivePlan?.amount ?? 0),
               }),
             );
 
@@ -137,15 +147,6 @@ export class PersonsService {
     }
 
     // Normal flow when person does NOT exist:
-    // Titulars don't have a plan
-    let plan = null;
-    if (resolvedRole === PersonRole.AFILIADO && planId) {
-      plan = await this.plansService.findOne(planId);
-      if (!plan) {
-        throw new NotFoundException(`Plan with ID "${planId}" not found`);
-      }
-    }
-
     let contract = null;
     if (contractId) {
       contract = await this.contractsService.findOne(contractId);
@@ -169,6 +170,7 @@ export class PersonsService {
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
         relationship,
+        plan: resolvedRole === PersonRole.AFILIADO ? plan : null,
       });
       const savedCp = await this.contractPersonRepository.save(contractPerson);
 
@@ -178,13 +180,14 @@ export class PersonsService {
 
       // Registrar en historial
       if (resolvedRole === PersonRole.AFILIADO) {
+        const effectivePlan = savedCp?.plan || plan || null;
         await this.affiliationHistoryRepository.save(
           this.affiliationHistoryRepository.create({
             contract: { id: contractId },
             person: savedPerson,
-            plan: plan ?? null,
+            plan: effectivePlan,
             action: AffiliationAction.AFILIACION,
-            amount: Number(plan?.amount ?? 0),
+            amount: Number(effectivePlan?.amount ?? 0),
           }),
         );
 

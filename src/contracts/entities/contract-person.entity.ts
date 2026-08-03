@@ -13,6 +13,7 @@ import {
 import type { Contract } from './contract.entity';
 import type { Person } from '../../persons/entities/person.entity';
 import type { HealthDeclaration } from './health-declaration.entity';
+import type { Plan } from '../../plans/entities/plan.entity';
 
 export enum PersonRole {
   TITULAR = 'TITULAR',
@@ -46,6 +47,7 @@ export enum Parentesco {
 })
 @Index('IDX_contract_persons_contract_id', ['contract'])
 @Index('IDX_contract_persons_person_id', ['person'])
+@Index('IDX_contract_persons_plan_id', ['plan'])
 export class ContractPerson {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -57,6 +59,10 @@ export class ContractPerson {
   @ManyToOne('Person', (person: Person) => person.contractPersons, { nullable: false })
   @JoinColumn({ name: 'person_id' })
   person: Person;
+
+  @ManyToOne('Plan', { nullable: true })
+  @JoinColumn({ name: 'plan_id' })
+  plan?: Plan | null;
 
   @Column({ type: 'enum', enum: PersonRole, default: PersonRole.AFILIADO })
   role: PersonRole;

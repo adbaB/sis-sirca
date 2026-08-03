@@ -51,7 +51,12 @@ export class GenerateMonthlyInvoices {
     while (true) {
       const contracts = await this.contractRepository.find({
         where: { status: ContractStatus.ACTIVE },
-        relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+        relations: [
+          'contractPersons',
+          'contractPersons.plan',
+          'contractPersons.person',
+          'contractPersons.person.plan',
+        ],
         order: { id: 'ASC' },
         skip: offset,
         take: chunkSize,
@@ -112,40 +117,43 @@ export class GenerateMonthlyInvoices {
         return; // Skip this contract as it already has an invoice for this month
       }
 
-      const activeAfiliados =
-        contract.contractPersons
-          ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
-          .map((cp) => cp.person) || [];
+      const activeAfiliadoCps =
+        contract.contractPersons?.filter(
+          (cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE,
+        ) || [];
 
-      if (activeAfiliados.length === 0) {
+      if (activeAfiliadoCps.length === 0) {
         // No active afiliado persons, skip invoice generation
         await queryRunner.rollbackTransaction();
         return;
       }
 
-      const invalidPerson = activeAfiliados.find(
-        (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
-      );
-      if (invalidPerson) {
+      const invalidCp = activeAfiliadoCps.find((cp) => {
+        const plan = cp.plan || cp.person?.plan;
+        return !plan || plan.amount === null || plan.amount === undefined;
+      });
+
+      if (invalidCp) {
         throw new Error(
-          `Active afiliado ${invalidPerson.id} in contract ${contract.id} has no valid plan amount`,
+          `Active afiliado ${invalidCp.person.id} in contract ${contract.id} has no valid plan amount`,
         );
       }
 
       let totalAmount = 0;
-      const invoiceDetailsData = activeAfiliados.map((person) => {
-        const amount = Number(person.plan.amount);
+      const invoiceDetailsData = activeAfiliadoCps.map((cp) => {
+        const plan = (cp.plan || cp.person?.plan)!;
+        const amount = Number(plan.amount);
         totalAmount += amount;
 
         if (!Number.isFinite(amount) || amount < 0) {
           throw new Error(
-            `Invalid plan amount for afiliado ${person.id} in contract ${contract.id}`,
+            `Invalid plan amount for afiliado ${cp.person.id} in contract ${contract.id}`,
           );
         }
 
         return {
-          person: person,
-          plan: person.plan,
+          person: cp.person,
+          plan: plan,
           chargedAmount: amount,
         };
       });

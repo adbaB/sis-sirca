@@ -208,6 +208,7 @@ describe('PersonsService', () => {
         person: mockPerson,
         role: PersonRole.AFILIADO,
         isBillingOwner: false,
+        plan: mockPlan,
       });
       expect(cpRepository.save).toHaveBeenCalledWith(mockContractPerson);
       expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');

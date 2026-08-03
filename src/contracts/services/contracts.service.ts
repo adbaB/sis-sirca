@@ -539,6 +539,7 @@ export class ContractsService {
         const contractPerson = cpRepo.create({
           contract: savedContract,
           person,
+          plan: role === PersonRole.AFILIADO ? plan : null,
           role,
           isBillingOwner: resolvedIsBillingOwner,
           relationship,
@@ -580,6 +581,7 @@ export class ContractsService {
         where: { id: savedContract.id },
         relations: [
           'contractPersons',
+          'contractPersons.plan',
           'contractPersons.person',
           'contractPersons.person.plan',
           'advisor',
@@ -648,6 +650,7 @@ export class ContractsService {
         where: { id: contractId },
         relations: [
           'contractPersons',
+          'contractPersons.plan',
           'contractPersons.person',
           'contractPersons.person.plan',
           'contractPersons.healthDeclarations',
@@ -729,7 +732,7 @@ export class ContractsService {
             genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
             weight: person.weight || '-',
             height: person.height || '-',
-            planName: person.plan?.name || '-',
+            planName: cp.plan?.name || person.plan?.name || '-',
           };
         });
 
@@ -771,6 +774,7 @@ export class ContractsService {
 
       const isTitularAlsoBeneficiary = affiliateCps.some((cp) => isSamePerson(cp, titularCp));
 
+      const titularPlan = titularCp ? titularCp.plan || titularCp.person.plan : null;
       const titularRow =
         titularCp && !isTitularAlsoBeneficiary
           ? {
@@ -778,16 +782,14 @@ export class ContractsService {
               typeIdentityCard: titularCp.person.typeIdentityCard,
               identityCard: titularCp.person.identityCard,
               age: getAge(titularCp.person.birthDate),
-              planName: titularCp.person.plan?.name || 'TITULAR',
-              coverage: titularCp.person.plan?.coverage
-                ? Number(titularCp.person.plan.coverage).toLocaleString('en-US', {
+              planName: titularPlan?.name || 'TITULAR',
+              coverage: titularPlan?.coverage
+                ? Number(titularPlan.coverage).toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })
                 : '0.00',
-              monthlyCost: titularCp.person.plan?.amount
-                ? Number(titularCp.person.plan.amount).toFixed(2)
-                : '0.00',
+              monthlyCost: titularPlan?.amount ? Number(titularPlan.amount).toFixed(2) : '0.00',
             }
           : null;
 
@@ -1340,7 +1342,12 @@ export class ContractsService {
   async findByCode(code: string): Promise<Contract> {
     return this.contractsRepository.findOne({
       where: [{ code }, { legacyCode: code }],
-      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+      relations: [
+        'contractPersons',
+        'contractPersons.plan',
+        'contractPersons.person',
+        'contractPersons.person.plan',
+      ],
     });
   }
   async findOne(id: string): Promise<Contract> {
@@ -1460,13 +1467,13 @@ export class ContractsService {
         contract: { id: contractId },
         person: { status: PersonStatus.ACTIVE },
       },
-      relations: ['person', 'person.plan'],
+      relations: ['plan', 'person', 'person.plan'],
     });
 
     const totalAmount = affiliates.reduce((sum, cp) => {
-      // Sum the plan amount if the person is an AFILIADO and has a plan
-      if (cp.role === 'AFILIADO' && cp.person && cp.person.plan) {
-        return sum + Number(cp.person.plan.amount);
+      const plan = cp.plan || cp.person?.plan;
+      if (cp.role === 'AFILIADO' && plan) {
+        return sum + Number(plan.amount);
       }
       return sum;
     }, 0);

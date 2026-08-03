@@ -48,6 +48,7 @@ export class InvoicePdfService {
         'contract',
         'contract.advisor',
         'contract.contractPersons',
+        'contract.contractPersons.plan',
         'contract.contractPersons.person',
         'contract.contractPersons.person.plan',
         'lines',

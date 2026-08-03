@@ -719,6 +719,7 @@ export class PaymentService {
         'invoice.contract',
         'invoice.contract.advisor',
         'invoice.contract.contractPersons',
+        'invoice.contract.contractPersons.plan',
         'invoice.contract.contractPersons.person',
         'invoice.contract.contractPersons.person.plan',
         'invoice.lines',
