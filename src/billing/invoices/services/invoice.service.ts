@@ -7,7 +7,16 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, IsNull, QueryRunner, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Equal,
+  In,
+  IsNull,
+  Not,
+  QueryRunner,
+  Repository,
+} from 'typeorm';
 import { ContractPerson } from '../../../contracts/entities/contract-person.entity';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
@@ -135,6 +144,7 @@ export class InvoiceService {
       const contractPersons = await this.dataSource.getRepository(ContractPerson).find({
         where: {
           person: { id: person.id },
+          contract: { status: Not(Equal(ContractStatus.INACTIVE)) },
         },
         relations: ['contract'],
       });
