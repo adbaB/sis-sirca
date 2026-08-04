@@ -9,6 +9,7 @@ export interface RequestContext {
   queryRunner: QueryRunner;
   requestId: string;
   startTime: number;
+  postCommitHooks?: Array<() => Promise<void> | void>;
 }
 
 /**
@@ -67,11 +68,46 @@ export function getQueryRunnerSafe(): QueryRunner | undefined {
 }
 
 /**
+ * Registra un callback que se ejecutará inmediatamente después de que
+ * la transacción principal realice su commit exitoso.
+ */
+export function registerPostCommitHook(hook: () => Promise<void> | void): void {
+  const ctx = getContextSafe();
+  if (ctx) {
+    if (!ctx.postCommitHooks) {
+      ctx.postCommitHooks = [];
+    }
+    ctx.postCommitHooks.push(hook);
+  }
+}
+
+/**
+ * Ejecuta todos los callbacks post-commit registrados en el contexto actual.
+ */
+export async function runPostCommitHooks(ctx?: RequestContext): Promise<void> {
+  const currentCtx = ctx || getContextSafe();
+  const hooks = currentCtx?.postCommitHooks;
+  if (hooks && hooks.length > 0) {
+    currentCtx.postCommitHooks = [];
+    for (const hook of hooks) {
+      try {
+        await hook();
+      } catch (err) {
+        console.error('[RequestContext] Error in post-commit hook:', err);
+      }
+    }
+  }
+}
+
+/**
  * Patrón puente para migración gradual.
  * Si se provee un QueryRunner explícito (de firmas heredadas), lo usa.
  * De lo contrario, intenta obtener el del contexto ALS.
  * Si no hay contexto ALS y se provee un fallback (DataSource u objeto con dataSource),
- * genera o recupera un QueryRunner del fallback.
+ * genera un nuevo QueryRunner del fallback.
+ *
+ * NOTA: Si se usa el fallback sin contexto ALS, la función llamadora es responsable de
+ * conectar, gestionar transacciones y liberar el QueryRunner (`release()`) retornado.
  *
  * @param explicit - QueryRunner explícito (opcional, para compatibilidad)
  * @param fallback - DataSource u objeto que contiene dataSource (opcional)

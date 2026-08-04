@@ -1,5 +1,11 @@
 import { DataSource } from 'typeorm';
-import { getQueryRunnerSafe } from '../context/request-context';
+import {
+  generateRequestId,
+  getContextSafe,
+  getQueryRunnerSafe,
+  requestContextStorage,
+  runPostCommitHooks,
+} from '../context/request-context';
 
 /**
  * Decorador de método que gestiona automáticamente el ciclo de vida de
@@ -10,7 +16,8 @@ import { getQueryRunnerSafe } from '../context/request-context';
  * - Si no hay transacción activa, inicia una nueva, realiza commit en éxito
  *   y rollback automático en caso de excepción.
  * - Si se ejecuta fuera de un request HTTP (ej: en tests unitarios o crons),
- *   utiliza el `dataSource` de la instancia para crear un QueryRunner temporal.
+ *   utiliza el `dataSource` de la instancia para crear un QueryRunner temporal,
+ *   y propaga la instancia en ALS para que métodos anidados compartan la misma transacción.
  *
  * IMPORTANTE: Es un Method Decorator (function wrapper), NO un interceptor
  * de NestJS. Esto lo hace aplicable a métodos de cualquier clase (services,
@@ -32,6 +39,7 @@ export function Transactional(): MethodDecorator {
         try {
           const result = await originalMethod.apply(this, args);
           await alsQr.commitTransaction();
+          await runPostCommitHooks();
           return result;
         } catch (err) {
           if (alsQr.isTransactionActive) {
@@ -42,15 +50,19 @@ export function Transactional(): MethodDecorator {
       }
 
       // Si no hay contexto ALS (ej: tests unitarios, scripts, crons):
-      // Si la clase del servicio posee `dataSource`, creamos un QueryRunner temporal.
+      // Si la clase del servicio posee `dataSource`, creamos un QueryRunner temporal y lo propagamos en ALS.
       const dataSource = (this as Record<string, unknown>)?.dataSource as DataSource | undefined;
       if (dataSource && typeof dataSource.createQueryRunner === 'function') {
         const qr = dataSource.createQueryRunner();
         await qr.connect();
         await qr.startTransaction();
         try {
-          const result = await originalMethod.apply(this, args);
+          const result = await requestContextStorage.run(
+            { queryRunner: qr, requestId: generateRequestId(), startTime: Date.now() },
+            () => originalMethod.apply(this, args),
+          );
           await qr.commitTransaction();
+          await runPostCommitHooks(getContextSafe());
           return result;
         } catch (err) {
           if (qr.isTransactionActive) {

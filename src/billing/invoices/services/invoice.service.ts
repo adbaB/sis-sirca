@@ -29,7 +29,11 @@ import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
 import { extractOcrDisplayFields } from '../../utils/ocr-display.util';
 import { Plan } from '../../../plans/entities/plan.entity';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
-import { getQueryRunner, resolveQueryRunner } from '../../../common/context/request-context';
+import {
+  getQueryRunner,
+  resolveQueryRunner,
+  registerPostCommitHook,
+} from '../../../common/context/request-context';
 
 @Injectable()
 export class InvoiceService {
@@ -52,10 +56,10 @@ export class InvoiceService {
    * Si se provee un QueryRunner explícito (compatibilidad heredada), lo usa.
    * De lo contrario, obtiene el QueryRunner del contexto ALS del request actual.
    */
-  async fetchInvoiceWithLock(queryRunner?: QueryRunner, invoiceId?: string): Promise<Invoice>;
+  async fetchInvoiceWithLock(invoiceId: string): Promise<Invoice>;
   async fetchInvoiceWithLock(queryRunner: QueryRunner, invoiceId: string): Promise<Invoice>;
   async fetchInvoiceWithLock(
-    queryRunnerOrId?: QueryRunner | string,
+    queryRunnerOrId: QueryRunner | string,
     invoiceId?: string,
   ): Promise<Invoice> {
     // Soporte para llamadas antiguas fetchInvoiceWithLock(qr, id) y nuevas fetchInvoiceWithLock(id)
@@ -305,22 +309,16 @@ export class InvoiceService {
 
     await qr.manager.save(invoiceLines);
 
-    // Apply surpluses DESPUÉS del commit (lo hace @Transactional al retornar)
-    // Capturamos el id para usarlo fuera de la transacción
     const savedInvoiceId = savedInvoice.id;
     const contractId2 = contract.id;
 
-    // Nota: el commit lo hace @Transactional() al retornar exitosamente.
-    // Guardamos el id para aplicar excedentes fuera de esta transacción.
-    // El Transactional hará commit, luego aplicamos excedentes abajo.
-    // Retornamos una Promise especial para continuar luego del commit:
-    const reloadedInvoice = await this.invoiceRepository.findOne({
+    const reloadedInvoice = await qr.manager.getRepository(Invoice).findOne({
       where: { id: savedInvoiceId },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });
 
-    // Aplicar excedentes (en su propia transacción separada, fuera de la principal)
-    setImmediate(async () => {
+    // Programar la aplicación de excedentes tras el commit exitoso de la transacción
+    registerPostCommitHook(async () => {
       try {
         await this.surplusService.applyPendingSurplusesToInvoice(contractId2, savedInvoiceId);
       } catch (surplusError) {
@@ -476,7 +474,7 @@ export class InvoiceService {
     await this.recalculateInvoicePaidAmount(invoice.id, qr);
 
     // Reload and return
-    return await this.invoiceRepository.findOne({
+    return await qr.manager.getRepository(Invoice).findOne({
       where: { id: invoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });
@@ -556,7 +554,7 @@ export class InvoiceService {
 
     await invoiceRepo.save(invoice);
 
-    return await this.invoiceRepository.findOne({
+    return await qr.manager.getRepository(Invoice).findOne({
       where: { id: invoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });
@@ -617,7 +615,7 @@ export class InvoiceService {
 
     await invoiceRepo.save(invoice);
 
-    return await this.invoiceRepository.findOne({
+    return await qr.manager.getRepository(Invoice).findOne({
       where: { id: invoice.id },
       relations: ['contract', 'lines', 'lines.person', 'lines.plan', 'payments'],
     });
