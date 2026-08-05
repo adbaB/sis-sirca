@@ -2,6 +2,7 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ContextInterceptor } from './common/interceptors/context.interceptor';
+import { GlobalExceptionFilter, TypeOrmExceptionFilter } from './common/filters';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
@@ -65,6 +66,14 @@ import { PortfoliosModule } from './portfolios/portfolios.module';
   controllers: [AppController],
   providers: [
     AppService,
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: TypeOrmExceptionFilter,
+    },
     {
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,
