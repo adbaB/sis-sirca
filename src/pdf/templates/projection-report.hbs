@@ -191,15 +191,16 @@
         <table class="report-table">
           <thead>
             <tr>
-              <th style="width: 9%;">CONTRATO</th>
-              <th style="width: 9%;">CONTRATO ANT.</th>
-              <th style="width: 9%;">FECHA AFILIACIÓN</th>
-              <th style="width: 11%;">CÉDULA / RIF</th>
-              <th class="text-left" style="width: 20%;">NOMBRE COMPLETO</th>
-              <th style="width: 14%;">PLAN</th>
-              <th style="width: 11%;">ASESOR</th>
-              <th class="text-right" style="width: 8.5%;">IMPORTE MENSUAL ($)</th>
-              <th class="text-right" style="width: 8.5%;">TOTAL CONTRATO ($)</th>
+              <th style="width: 8%;">CONTRATO</th>
+              <th style="width: 8%;">CONTRATO ANT.</th>
+              <th style="width: 8%;">FECHA AFILIACIÓN</th>
+              <th style="width: 10%;">CÉDULA / RIF</th>
+              <th class="text-left" style="width: 18%;">NOMBRE COMPLETO</th>
+              <th style="width: 7%;">BENEFICIARIO</th>
+              <th style="width: 13%;">PLAN</th>
+              <th style="width: 10%;">ASESOR</th>
+              <th class="text-right" style="width: 9%;">IMPORTE MENSUAL ($)</th>
+              <th class="text-right" style="width: 9%;">TOTAL CONTRATO ($)</th>
             </tr>
           </thead>
           <tbody>
@@ -210,6 +211,7 @@
                 <td>{{ affiliationDateES }}</td>
                 <td>{{ typeIdentityCard }}-{{ identityCard }}</td>
                 <td class="text-left">{{ personName }}</td>
+                <td>{{ isBeneficiary }}</td>
                 <td>{{ planName }}</td>
                 <td>{{ advisorName }}</td>
                 <td class="text-right">${{ planAmountFormatted }}</td>
@@ -224,7 +226,7 @@
             <!-- Subtotals Row -->
             <tr class="subtotal-row">
               <td class="text-left" colspan="3">Subtotal Cartera</td>
-              <td class="text-center" colspan="4">{{ subtotalCount }} Miembro(s)</td>
+              <td class="text-center" colspan="5">{{ subtotalCount }} Miembro(s)</td>
               <td class="text-right">${{ subtotalAmountFormatted }}</td>
               <td class="text-right">${{ subtotalAmountFormatted }}</td>
             </tr>

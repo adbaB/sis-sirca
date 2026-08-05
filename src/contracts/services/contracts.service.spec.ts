@@ -22,6 +22,7 @@ import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractsService } from './contracts.service';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
+import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { PdfService } from '../../pdf/services/pdf.service';
@@ -845,6 +846,123 @@ describe('ContractsService', () => {
       await expect(service.inactivate('1', dto)).rejects.toThrow(
         'El contrato ya se encuentra inactivo.',
       );
+    });
+  });
+
+  describe('activate', () => {
+    let mockManager: Partial<EntityManager>;
+    let mockContractRepo: {
+      findOne: jest.Mock;
+      save: jest.Mock;
+    };
+    let mockHistoryRepo: {
+      find: jest.Mock;
+      remove: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue({ ...mockContract, status: ContractStatus.INACTIVE }),
+        save: jest.fn().mockImplementation((c) => Promise.resolve(c)),
+      };
+      mockHistoryRepo = {
+        find: jest.fn().mockResolvedValue([]),
+        remove: jest.fn().mockResolvedValue([]),
+      };
+
+      mockManager = {
+        getRepository: jest
+          .fn()
+          .mockImplementation(
+            <Entity extends ObjectLiteral>(
+              entityClass: EntityTarget<Entity>,
+            ): Repository<Entity> => {
+              if (entityClass === Contract)
+                return mockContractRepo as unknown as Repository<Entity>;
+              if (entityClass === AffiliationHistory)
+                return mockHistoryRepo as unknown as Repository<Entity>;
+              return null as unknown as Repository<Entity>;
+            },
+          ),
+      };
+
+      jest
+        .spyOn(repository.manager, 'transaction')
+        .mockImplementation(
+          (
+            isolationLevelOrRunInTransaction: unknown,
+            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
+          ) => {
+            const cb =
+              typeof isolationLevelOrRunInTransaction === 'function'
+                ? (isolationLevelOrRunInTransaction as (
+                    entityManager: EntityManager,
+                  ) => Promise<unknown>)
+                : runInTransaction!;
+            return cb(mockManager as unknown as EntityManager) as Promise<unknown>;
+          },
+        );
+    });
+
+    it('should throw BadRequestException if contract is already active', async () => {
+      const activeContract = { ...mockContract, status: ContractStatus.ACTIVE };
+      jest.spyOn(service, 'findOne').mockResolvedValue(activeContract);
+
+      await expect(service.activate('1')).rejects.toThrow('El contrato ya se encuentra activo.');
+    });
+
+    it('should reactivate contract and remove disaffiliation history from same month', async () => {
+      const inactiveContract = {
+        ...mockContract,
+        status: ContractStatus.INACTIVE,
+        inactivationReason: 'Motivo previo',
+      };
+      jest.spyOn(service, 'findOne').mockResolvedValue(inactiveContract);
+
+      const now = new Date();
+      const sameMonthHistory = {
+        id: 'h1',
+        contract: { id: '1' },
+        action: AffiliationAction.DESAFILIACION,
+        createdAt: now,
+        actionDate: now,
+      };
+
+      mockContractRepo.findOne.mockResolvedValue(inactiveContract);
+      mockHistoryRepo.find.mockResolvedValue([sameMonthHistory]);
+
+      const result = await service.activate('1');
+
+      expect(result.status).toBe(ContractStatus.ACTIVE);
+      expect(result.inactivationReason).toBeNull();
+      expect(mockHistoryRepo.remove).toHaveBeenCalledWith([sameMonthHistory]);
+    });
+
+    it('should reactivate contract and keep disaffiliation history from a different month', async () => {
+      const inactiveContract = {
+        ...mockContract,
+        status: ContractStatus.INACTIVE,
+        inactivationReason: 'Motivo previo',
+      };
+      jest.spyOn(service, 'findOne').mockResolvedValue(inactiveContract);
+
+      const pastDate = new Date('2020-01-01');
+      const pastMonthHistory = {
+        id: 'h2',
+        contract: { id: '1' },
+        action: AffiliationAction.DESAFILIACION,
+        createdAt: pastDate,
+        actionDate: pastDate,
+      };
+
+      mockContractRepo.findOne.mockResolvedValue(inactiveContract);
+      mockHistoryRepo.find.mockResolvedValue([pastMonthHistory]);
+
+      const result = await service.activate('1');
+
+      expect(result.status).toBe(ContractStatus.ACTIVE);
+      expect(result.inactivationReason).toBeNull();
+      expect(mockHistoryRepo.remove).not.toHaveBeenCalled();
     });
   });
 

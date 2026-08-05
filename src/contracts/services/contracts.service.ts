@@ -986,6 +986,58 @@ export class ContractsService {
     });
   }
 
+  async activate(contractId: string): Promise<Contract> {
+    const contract = await this.findOne(contractId);
+
+    if (contract.status === ContractStatus.ACTIVE) {
+      throw new BadRequestException('El contrato ya se encuentra activo.');
+    }
+
+    return this.contractsRepository.manager.transaction(async (manager) => {
+      const contractRepo = manager.getRepository(Contract);
+      const historyRepo = manager.getRepository(AffiliationHistory);
+
+      const lockedContract = await contractRepo.findOne({
+        where: { id: contractId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedContract) {
+        throw new NotFoundException(`El contrato con ID "${contractId}" no fue encontrado.`);
+      }
+
+      if (lockedContract.status === ContractStatus.ACTIVE) {
+        throw new BadRequestException('El contrato ya se encuentra activo.');
+      }
+
+      lockedContract.status = ContractStatus.ACTIVE;
+      lockedContract.inactivationReason = null;
+      await contractRepo.save(lockedContract);
+
+      const disaffiliations = await historyRepo.find({
+        where: {
+          contract: { id: contractId },
+          action: AffiliationAction.DESAFILIACION,
+        },
+      });
+
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+
+      const sameMonthRecords = disaffiliations.filter((h) => {
+        const date = new Date(h.actionDate ?? h.createdAt);
+        return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
+      });
+
+      if (sameMonthRecords.length > 0) {
+        await historyRepo.remove(sameMonthRecords);
+      }
+
+      return lockedContract;
+    });
+  }
+
   async findAll(query: FindContractDto): Promise<PaginatedResult<Contract>> {
     const queryBuilder = this.contractsRepository.createQueryBuilder('contract');
     const targetBillingMonth = this.buildTargetBillingMonth(query);

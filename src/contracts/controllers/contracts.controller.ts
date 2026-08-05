@@ -107,6 +107,12 @@ export class ContractsController {
     return this.contractsService.inactivate(id, dto);
   }
 
+  @Patch(':id/activate')
+  @RequirePermissions('update:contracts')
+  activate(@Param('id') id: string) {
+    return this.contractsService.activate(id);
+  }
+
   @Post(':contractId/beneficiaries')
   @RequirePermissions('update:contracts')
   addBeneficiary(

@@ -136,7 +136,7 @@ describe('ProjectionReportService', () => {
       expect(result.advisorName).toBe('Todos los Asesores');
     });
 
-    it('should handle titular role correctly by setting plan amount to 0, not summing in total, and appending suffix to name', async () => {
+    it('should handle titular role correctly by setting plan amount to 0, not summing in total, appending suffix to name, and setting isBeneficiary', async () => {
       const mockRawWithTitular = [
         {
           contract_code: 'SIR-001-001',
@@ -146,6 +146,7 @@ describe('ProjectionReportService', () => {
           identity_card: '11111111',
           plan_name: 'PLAN CLASICO',
           plan_amount: '0.00',
+          person_role: 'TITULAR',
           contract_total_amount: '50.00',
           portfolio_code: 'APF',
           advisor_name: 'Carlos Asesor',
@@ -158,6 +159,7 @@ describe('ProjectionReportService', () => {
           identity_card: '22222222',
           plan_name: 'PLAN GOLD',
           plan_amount: '50.00',
+          person_role: 'AFILIADO',
           contract_total_amount: '50.00',
           portfolio_code: 'APF',
           advisor_name: 'Carlos Asesor',
@@ -178,11 +180,13 @@ describe('ProjectionReportService', () => {
       // Titular
       expect(section.rows[0].personName).toBe('Juan Perez (titular)');
       expect(section.rows[0].planAmount).toBe(0);
+      expect(section.rows[0].isBeneficiary).toBe(0);
       expect(section.rows[0].contractTotalAmount).toBeNull();
 
-      // Affiliate
+      // Affiliate / Beneficiary
       expect(section.rows[1].personName).toBe('Maria Perez');
       expect(section.rows[1].planAmount).toBe(50);
+      expect(section.rows[1].isBeneficiary).toBe(1);
       expect(section.rows[1].contractTotalAmount).toBe(50); // should only sum affiliate(s)
 
       expect(section.subtotalAmount).toBe(50);
