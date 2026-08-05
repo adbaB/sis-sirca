@@ -9,6 +9,7 @@ import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { InvoiceService } from '../../invoices/services/invoice.service';
+import { getQueryRunnerSafe } from '../../../common/context/request-context';
 
 @Injectable()
 export class SurplusService {
@@ -26,6 +27,15 @@ export class SurplusService {
   /**
    * Applies any pending surpluses for a contract to a specific invoice.
    * This should be called after an invoice is created.
+   */
+  /**
+   * Applies any pending surpluses for a contract to a specific invoice.
+   * This should be called after an invoice is created.
+   *
+   * NOTA: Este método gestiona su propio QueryRunner ya que puede ser invocado
+   * tanto desde requests HTTP (via setImmediate en generateInvoiceForContract)
+   * como desde cron jobs (applyPendingSurplusesToAllActiveInvoices), ambos
+   * fuera del contexto ALS del request.
    */
   async applyPendingSurplusesToInvoice(contractId: string, invoiceId: string): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
@@ -228,9 +238,12 @@ export class SurplusService {
   /**
    * Persists a Surplus record when the payment exceeds the invoice balance.
    * Returns the saved surplus ID, or null when no surplus exists.
+   *
+   * Si se provee un QueryRunner explícito, lo usa (llamadas desde PaymentService);
+   * de lo contrario usa el QueryRunner del contexto ALS.
    */
   async persistSurplus(
-    queryRunner: QueryRunner,
+    queryRunnerOrNull: QueryRunner | null,
     invoice: Invoice,
     savedPayment: Payment,
     paymentDate: Date,
@@ -240,8 +253,11 @@ export class SurplusService {
     if (surplusAmountUsd === null && surplusAmountBs === null) {
       return null;
     }
-    const saved = await queryRunner.manager.save(
-      queryRunner.manager.create(Surplus, {
+    const manager =
+      queryRunnerOrNull?.manager || getQueryRunnerSafe()?.manager || this.surplusRepository.manager;
+
+    const saved = await manager.save(
+      manager.create(Surplus, {
         amountBs: surplusAmountBs,
         amountUsd: surplusAmountUsd,
         date: paymentDate,
