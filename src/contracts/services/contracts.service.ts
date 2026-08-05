@@ -14,7 +14,7 @@ import { MONTH_NAMES_ES } from '../../reports/report-utils';
 
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
-import { Person, PersonStatus } from '../../persons/entities/person.entity';
+import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
@@ -469,6 +469,7 @@ export class ContractsService {
                 action: AffiliationAction.CAMBIO_CONTRATO,
                 amount: Number(oldCp.person?.plan?.amount ?? 0),
                 reason: `Migrado al contrato ${savedContract.code}`,
+                actionDate: savedContract.affiliationDate ?? new Date(),
               }),
             );
 
@@ -567,6 +568,7 @@ export class ContractsService {
               action: AffiliationAction.AFILIACION,
               amount: Number(plan?.amount ?? 0),
               reason: affiliationReason,
+              actionDate: savedContract.affiliationDate ?? new Date(),
             }),
           );
         }
@@ -714,24 +716,41 @@ export class ContractsService {
       const contractPlan = planPerson?.plan;
       const planName = contractPlan?.name || '';
 
-      const beneficiaries = affiliateCps
-        .filter((cp) => !isSamePerson(cp, titularCp))
-        .map((cp, idx) => {
-          const person = cp.person;
-          return {
-            index: String(idx + 1).padStart(2, '0'),
-            name: person.name,
-            typeIdentityCard: person.typeIdentityCard,
-            identityCard: person.identityCard,
-            relationship: cp.relationship || '-',
-            birthDateFormatted: formatDate(person.birthDate),
-            age: getAge(person.birthDate),
-            genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
-            weight: person.weight || '-',
-            height: person.height || '-',
-            planName: person.plan?.name || '-',
-          };
-        });
+      const beneficiariesCps = affiliateCps.filter((cp) => !isSamePerson(cp, titularCp));
+      const beneficiariesList =
+        beneficiariesCps.length > 0
+          ? beneficiariesCps
+          : affiliateCps.length > 0
+            ? affiliateCps
+            : titularCp
+              ? [titularCp]
+              : [];
+
+      const beneficiaries = beneficiariesList.map((cp, idx) => {
+        const person = cp.person;
+        const isTitular = isSamePerson(cp, titularCp);
+        const plan = person?.plan || contractPlan;
+        const coverage = plan?.coverage
+          ? Number(plan.coverage).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : '0.00';
+        return {
+          index: String(idx + 1).padStart(2, '0'),
+          name: person.name,
+          typeIdentityCard: person.typeIdentityCard,
+          identityCard: person.identityCard,
+          relationship: cp.relationship || (isTitular ? 'TITULAR' : '-'),
+          birthDateFormatted: formatDate(person.birthDate),
+          age: getAge(person.birthDate),
+          genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
+          weight: person.weight || '-',
+          height: person.height || '-',
+          planName: plan?.name || '-',
+          coverage,
+        };
+      });
 
       const emptyRows: string[] = [];
       for (let i = beneficiaries.length + 1; i <= 7; i++) {
@@ -769,32 +788,28 @@ export class ContractsService {
         };
       });
 
-      const isTitularAlsoBeneficiary = affiliateCps.some((cp) => isSamePerson(cp, titularCp));
-
-      const titularRow =
-        titularCp && !isTitularAlsoBeneficiary
-          ? {
-              name: titularCp.person.name,
-              typeIdentityCard: titularCp.person.typeIdentityCard,
-              identityCard: titularCp.person.identityCard,
-              age: getAge(titularCp.person.birthDate),
-              planName: titularCp.person.plan?.name || 'TITULAR',
-              coverage: titularCp.person.plan?.coverage
-                ? Number(titularCp.person.plan.coverage).toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '0.00',
-              monthlyCost: titularCp.person.plan?.amount
-                ? Number(titularCp.person.plan.amount).toFixed(2)
-                : '0.00',
-            }
-          : null;
+      const titularPlan = titularCp?.person?.plan || contractPlan;
+      const titularRow = titularCp
+        ? {
+            name: titularCp.person.name,
+            typeIdentityCard: titularCp.person.typeIdentityCard,
+            identityCard: titularCp.person.identityCard,
+            age: getAge(titularCp.person.birthDate),
+            planName: titularPlan?.name || 'TITULAR',
+            coverage: titularPlan?.coverage
+              ? Number(titularPlan.coverage).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })
+              : '0.00',
+            monthlyCost: titularPlan?.amount ? Number(titularPlan.amount).toFixed(2) : '0.00',
+          }
+        : null;
 
       const beneficiariesRow = affiliateCps
         .filter((cp) => !isSamePerson(cp, titularCp))
         .map((cp) => {
-          const plan = cp.person?.plan;
+          const plan = cp.person?.plan || contractPlan;
           const coverage = plan?.coverage
             ? Number(plan.coverage).toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -852,6 +867,25 @@ export class ContractsService {
         totalCost: data.totalCost.toFixed(2),
       }));
 
+      const uniquePersonsMap = new Map<string, Person>();
+      for (const cp of fullContract.contractPersons) {
+        if (cp.person) {
+          const key = `${cp.person.typeIdentityCard}-${cp.person.identityCard}`;
+          if (!uniquePersonsMap.has(key)) {
+            uniquePersonsMap.set(key, cp.person);
+          }
+        }
+      }
+      const allMembers = Array.from(uniquePersonsMap.values()).map((person) => {
+        const ageNum = person.birthDate ? getAge(person.birthDate) : 99;
+        return {
+          name: person.name,
+          isPN:
+            person.typeIdentityCard === TypeIdentityCard.PN ||
+            (Boolean(person.birthDate) && ageNum < 18),
+        };
+      });
+
       const {
         day: dayNumber,
         monthIndex,
@@ -879,6 +913,7 @@ export class ContractsService {
         titularRow,
         beneficiariesRow,
         contractedPlansList,
+        allMembers,
       };
 
       return this.pdfService.generatePdf('contract-affiliation', pdfData);
@@ -1537,26 +1572,40 @@ export class ContractsService {
     });
   }
 
-  async getAffiliationStats(month: number, year: number) {
-    const start = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE }).startOf(
-      'day',
-    );
-    const end = start.endOf('month');
-    const startDate = start.toJSDate();
-    const endDate = end.toJSDate();
+  async getAffiliationStats(month: number, year: number, mode: 'billing' | 'calendar' = 'billing') {
+    const monthDt = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE });
+    let start: DateTime;
+    let end: DateTime;
+
+    if (mode === 'calendar') {
+      start = monthDt.startOf('month');
+      end = monthDt.endOf('month');
+    } else {
+      // Billing cycle mode: from day 25 of previous month to day 24 of target month
+      start = monthDt.minus({ months: 1 }).set({ day: 25 }).startOf('day');
+      end = monthDt.set({ day: 24 }).endOf('day');
+    }
+
+    const startDateStr = start.toFormat('yyyy-MM-dd HH:mm:ss');
+    const endDateStr = end.toFormat('yyyy-MM-dd HH:mm:ss');
 
     const stats = await this.affiliationHistoryRepository
       .createQueryBuilder('h')
       .select([
         `SUM(CASE WHEN h.action = 'AFILIACION' THEN 1 ELSE 0 END) AS new_affiliations`,
-        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN 1 ELSE 0 END) AS disaffiliations`,
+        `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN 1 ELSE 0 END) AS disaffiliations`,
         `SUM(CASE WHEN h.action = 'AFILIACION' THEN h.amount ELSE 0 END) AS revenue_gained`,
-        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN h.amount ELSE 0 END) AS revenue_lost`,
+        `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN h.amount ELSE 0 END) AS revenue_lost`,
       ])
-      .where('h.action_date BETWEEN :startDate AND :endDate', { startDate, endDate })
+      .where('h.action_date BETWEEN :startDateStr AND :endDateStr', { startDateStr, endDateStr })
       .getRawOne();
 
     return {
+      mode,
+      period: {
+        startDate: start.toFormat('yyyy-MM-dd'),
+        endDate: end.toFormat('yyyy-MM-dd'),
+      },
       newAffiliations: Number(stats?.new_affiliations ?? 0),
       disaffiliations: Number(stats?.disaffiliations ?? 0),
       revenueGained: Number(stats?.revenue_gained ?? 0),

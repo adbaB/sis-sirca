@@ -80,8 +80,9 @@ export class PaymentService {
     externalQueryRunner: QueryRunner | undefined,
     skipRelease: boolean = false,
   ): Promise<TransactionResult> {
-    if (!externalQueryRunner) {
-      await queryRunner.connect();
+    const isOwnedTransaction = !queryRunner.isTransactionActive;
+
+    if (isOwnedTransaction) {
       await queryRunner.startTransaction();
     }
 
@@ -245,7 +246,7 @@ export class PaymentService {
         await this.invoiceService.recalculateInvoicePaidAmount(invId, queryRunner);
       }
 
-      if (!externalQueryRunner) {
+      if (isOwnedTransaction && queryRunner.isTransactionActive) {
         await queryRunner.commitTransaction();
       }
 
@@ -275,12 +276,12 @@ export class PaymentService {
         remainingUnpaidBs,
       };
     } catch (error) {
-      if (!externalQueryRunner) {
+      if (isOwnedTransaction && queryRunner.isTransactionActive) {
         await queryRunner.rollbackTransaction();
       }
       throw error;
     } finally {
-      if (!externalQueryRunner && !skipRelease) {
+      if (isOwnedTransaction && !skipRelease) {
         await queryRunner.release();
       }
     }
@@ -517,7 +518,7 @@ export class PaymentService {
       await this.invoiceService.recalculateInvoicePaidAmount(payment.invoice.id, qr);
     }
 
-    const reloadedPayment = await this.paymentRepository.findOne({
+    const reloadedPayment = await paymentRepo.findOne({
       where: { id },
       relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
     });
@@ -573,7 +574,7 @@ export class PaymentService {
       await this.invoiceService.recalculateInvoicePaidAmount(payment.invoice.id, qr);
     }
 
-    const reloadedPayment = await this.paymentRepository.findOne({
+    const reloadedPayment = await paymentRepo.findOne({
       where: { id },
       relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
     });
@@ -696,7 +697,7 @@ export class PaymentService {
 
     await this.invoiceService.recalculateInvoicePaidAmount(invoice.id, qr);
 
-    const reloadedPayment = await this.paymentRepository.findOne({
+    const reloadedPayment = await paymentRepo.findOne({
       where: { id },
       relations: ['person', 'invoice', 'invoice.contract', 'surpluses'],
     });

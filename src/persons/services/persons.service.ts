@@ -121,6 +121,7 @@ export class PersonsService {
                 plan: person.plan ?? null,
                 action: AffiliationAction.AFILIACION,
                 amount: Number(person.plan?.amount ?? 0),
+                actionDate: contract?.affiliationDate ?? new Date(),
               }),
             );
 
@@ -185,6 +186,7 @@ export class PersonsService {
             plan: plan ?? null,
             action: AffiliationAction.AFILIACION,
             amount: Number(plan?.amount ?? 0),
+            actionDate: contract?.affiliationDate ?? new Date(),
           }),
         );
 

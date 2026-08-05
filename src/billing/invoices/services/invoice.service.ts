@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, QueryRunner, Repository } from 'typeorm';
+import { DataSource, Equal, In, Not, QueryRunner, Repository } from 'typeorm';
 import { ContractPerson } from '../../../contracts/entities/contract-person.entity';
-import { Contract } from '../../../contracts/entities/contract.entity';
+import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
 import { Person, TypeIdentityCard } from '../../../persons/entities/person.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { AddInvoiceLineInput } from '../dto/add-invoice-line.input';
@@ -47,10 +47,10 @@ export class InvoiceService {
    * Obtiene la factura con un lock pesimístico de escritura para evitar
    * condiciones de carrera. Lanza NotFoundException si no existe.
    */
-  async fetchInvoiceWithLock(queryRunner?: QueryRunner, invoiceId?: string): Promise<Invoice>;
+  async fetchInvoiceWithLock(invoiceId: string): Promise<Invoice>;
   async fetchInvoiceWithLock(queryRunner: QueryRunner, invoiceId: string): Promise<Invoice>;
   async fetchInvoiceWithLock(
-    queryRunnerOrId?: QueryRunner | string,
+    queryRunnerOrId: QueryRunner | string,
     invoiceId?: string,
   ): Promise<Invoice> {
     let qr: QueryRunner;
@@ -126,7 +126,10 @@ export class InvoiceService {
       }
 
       const contractPersons = await this.dataSource.getRepository(ContractPerson).find({
-        where: { person: { id: person.id } },
+        where: {
+          person: { id: person.id },
+          contract: { status: Not(Equal(ContractStatus.INACTIVE)) },
+        },
         relations: ['contract'],
       });
 
