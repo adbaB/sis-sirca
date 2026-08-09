@@ -18,12 +18,12 @@ export function resolveInvoiceStatus(
 ): InvoiceStatus {
   const amountDue = Math.max(0, totalAmount - retentionAmount);
 
-  if (amountDue > 0 && paidAmount >= amountDue) {
+  if (totalAmount > 0 && paidAmount >= amountDue) {
     return InvoiceStatus.PAID;
   }
 
   if (paidAmount > 0) {
-    return InvoiceStatus.PARTIAL;
+    return paidAmount >= amountDue ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
   }
 
   return InvoiceStatus.PENDING;

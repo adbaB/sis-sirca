@@ -99,9 +99,7 @@ describe('AwsService', () => {
       } as unknown as ConfigType<typeof config>);
 
       await expect(service.uploadFile(mockFile)).rejects.toThrow(ExternalServiceException);
-      await expect(service.uploadFile(mockFile)).rejects.toThrow(
-        'Failed to upload file to S3: S3 Error',
-      );
+      expect(mockSend).toHaveBeenCalledTimes(3);
     });
   });
 });

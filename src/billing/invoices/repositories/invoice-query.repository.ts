@@ -55,6 +55,7 @@ export class InvoiceQueryRepository {
       .andWhere('payment.status IN (:...statuses)', {
         statuses: [PaymentStatus.PROCESSING, PaymentStatus.COMPLETED],
       })
+      .andWhere('payment.deleted_at IS NULL')
       .getRawOne<{ total: string }>();
 
     return Number(result?.total ?? 0);

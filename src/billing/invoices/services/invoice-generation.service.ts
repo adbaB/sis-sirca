@@ -9,7 +9,11 @@ import { InvoiceLine } from '../entities/invoice-line.entity';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { INVOICE_CREATED, InvoiceCreatedEvent } from '../events/invoice.events';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
-import { getQueryRunner } from '../../../common/context/request-context';
+import {
+  getContextSafe,
+  getQueryRunner,
+  registerPostCommitHook,
+} from '../../../common/context/request-context';
 import {
   getBillingMonth,
   getCaracasNow,
@@ -161,12 +165,18 @@ export class InvoiceGenerationService {
 
     // El @Transactional hace commit al retornar. Emitimos el evento DESPUÉS
     // del commit para que SurplusService opere en su propia transacción limpia.
-    setImmediate(() => {
+    const emitEvent = () => {
       this.eventEmitter.emit(INVOICE_CREATED, new InvoiceCreatedEvent(savedInvoice.id, contractId));
       this.logger.log(
         `[invoice] Evento '${INVOICE_CREATED}' emitido para factura ${savedInvoice.id}`,
       );
-    });
+    };
+
+    if (getContextSafe()) {
+      registerPostCommitHook(emitEvent);
+    } else {
+      setImmediate(emitEvent);
+    }
 
     return reloadedInvoice;
   }
