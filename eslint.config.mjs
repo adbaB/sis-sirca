@@ -55,6 +55,7 @@ export default [
       '.eslintrc.json',
       '*.hbs',
       '*.yml',
+      '.agents',
     ],
   },
   { languageOptions: { globals: globals.browser } },

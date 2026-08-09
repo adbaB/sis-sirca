@@ -2,22 +2,38 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { InvoiceLine } from './entities/invoice-line.entity';
+import { Contract } from '../../contracts/entities/contract.entity';
 import { InvoiceController } from './controllers/invoice.controller';
 import { InvoiceBillingController } from './controllers/invoice-billing.controller';
 import { InvoiceService } from './services/invoice.service';
+import { InvoiceGenerationService } from './services/invoice-generation.service';
+import { InvoiceCalculationService } from './services/invoice-calculation.service';
+import { InvoiceLineService } from './services/invoice-line.service';
+import { InvoicePdfService } from './services/invoice-pdf.service';
+import { InvoiceQueryRepository } from './repositories/invoice-query.repository';
 import { PaymentModule } from '../payments/payment.module';
 import { ExchangeRateModule } from '../../exchange-rate/exchange-rate.module';
 import { PdfModule } from '../../pdf/pdf.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Invoice, InvoiceLine]),
-    forwardRef(() => PaymentModule),
+    TypeOrmModule.forFeature([Invoice, InvoiceLine, Contract]),
+    forwardRef(() => PaymentModule), // Necesario para SurplusService → InvoiceCalculationService
     ExchangeRateModule,
     PdfModule,
   ],
   controllers: [InvoiceController, InvoiceBillingController],
-  providers: [InvoiceService],
-  exports: [InvoiceService],
+  providers: [
+    InvoiceService,
+    InvoiceGenerationService,
+    InvoiceCalculationService,
+    InvoiceLineService,
+    InvoicePdfService,
+    InvoiceQueryRepository,
+  ],
+  exports: [
+    InvoiceService,
+    InvoiceCalculationService, // Exportado para que SurplusService lo inyecte directamente
+  ],
 })
 export class InvoiceModule {}

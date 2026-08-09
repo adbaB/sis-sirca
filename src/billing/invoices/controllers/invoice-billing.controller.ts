@@ -1,15 +1,16 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Res } from '@nestjs/common';
 import { RequirePermissions } from '../../../auth/decorators';
 import { InvoiceService } from '../services/invoice.service';
+import { InvoicePdfService } from '../services/invoice-pdf.service';
 import type { Response } from 'express';
-import { PdfService } from '../../../pdf/services/pdf.service';
 import { CreateAdditionalChargeDto } from '../dto/create-additional-charge.dto';
+import { AddInvoiceLineInput } from '../dto/add-invoice-line.input';
 
 @Controller('billing')
 export class InvoiceBillingController {
   constructor(
     private readonly invoiceService: InvoiceService,
-    private readonly pdfService: PdfService,
+    private readonly invoicePdfService: InvoicePdfService,
   ) {}
 
   @Patch('invoices/:invoiceId/recalculate')
@@ -33,10 +34,7 @@ export class InvoiceBillingController {
     @Param('invoiceId') invoiceId: string,
     @Res() res: Response,
   ): Promise<void> {
-    const { pdfBuffer, filename } = await this.invoiceService.buildInvoicePdf(
-      invoiceId,
-      this.pdfService,
-    );
+    const { pdfBuffer, filename } = await this.invoicePdfService.buildInvoicePdf(invoiceId);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
@@ -51,7 +49,9 @@ export class InvoiceBillingController {
     @Param('invoiceId') invoiceId: string,
     @Body() dto: CreateAdditionalChargeDto,
   ) {
-    return this.invoiceService.addAdditionalCharge(invoiceId, dto);
+    // El @IsEnum del DTO garantiza en runtime que category nunca es MENSUALIDAD.
+    // El cast es necesario para alinear InvoiceLineCategory con Exclude<..., MENSUALIDAD>.
+    return this.invoiceService.addAdditionalCharge(invoiceId, dto as AddInvoiceLineInput);
   }
 
   @Delete('invoices/:invoiceId/charges/:lineId')

@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EmailService } from './email.service';
-import { InternalServerErrorException } from '@nestjs/common';
 import { SESClient } from '@aws-sdk/client-ses';
 import configurations from '../config/configurations';
 import { SubmitPaymentDto } from '../billing/payments/dto/submit-payment.dto';
+import { ExternalServiceException } from '../common/exceptions';
 
 jest.mock('@aws-sdk/client-ses', () => {
   return {
@@ -75,7 +75,7 @@ describe('EmailService', () => {
       expect(commandArgs.Message.Body.Html.Data).toContain(receiptUrl);
     });
 
-    it('should throw InternalServerErrorException on mail failure', async () => {
+    it('should throw ExternalServiceException on mail failure after retries', async () => {
       sesClientSendMock.mockRejectedValue(new Error('SES Error'));
 
       const userInfo: SubmitPaymentDto = {
@@ -85,11 +85,9 @@ describe('EmailService', () => {
 
       await expect(
         service.sendPaymentConfirmation('recipient@test.com', userInfo, 'url'),
-      ).rejects.toThrow(InternalServerErrorException);
+      ).rejects.toThrow(ExternalServiceException);
 
-      await expect(
-        service.sendPaymentConfirmation('recipient@test.com', userInfo, 'url'),
-      ).rejects.toThrow('Failed to send email: SES Error');
+      expect(sesClientSendMock).toHaveBeenCalledTimes(3);
     });
   });
 });

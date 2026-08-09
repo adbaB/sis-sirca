@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import OpenAI from 'openai';
 import config from '../config/configurations';
+import { ExternalServiceException, ErrorCode } from '../common/exceptions';
 
 export interface ReceiptData {
   monto: number | null;
@@ -229,9 +230,13 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
       };
       return parsedData;
     } catch (error) {
-      this.logger.error('Error processing receipt:', error);
-      // @ts-expect-error ts(2554) underlying TS config doesn't support error cause yet
-      throw new Error('Failed to extract receipt data', { cause: error });
+      this.logger.error('Error processing receipt with OpenAI Vision OCR:', error);
+      throw new ExternalServiceException(
+        'OpenAI OCR',
+        `Failed to extract receipt data: ${error instanceof Error ? error.message : String(error)}`,
+        ErrorCode.OCR_PROCESSING_ERROR,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 }

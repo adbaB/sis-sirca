@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AwsService } from './aws.service';
-import { InternalServerErrorException } from '@nestjs/common';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { ConfigType } from '@nestjs/config';
 import config from '../config/configurations';
+import { ExternalServiceException } from '../common/exceptions';
 
 // Mock the AWS SDK
 jest.mock('@aws-sdk/client-s3');
@@ -50,7 +50,6 @@ describe('AwsService', () => {
         send: mockSend,
       }));
 
-      // Re-initialize the service to use the mocked S3Client
       service = new AwsService({
         aws: {
           region: 'us-east-1',
@@ -68,7 +67,7 @@ describe('AwsService', () => {
       );
     });
 
-    it('should throw an error if AWS_S3_BUCKET is not configured', async () => {
+    it('should throw ExternalServiceException if AWS_S3_BUCKET is not configured', async () => {
       service = new AwsService({
         aws: {
           region: 'us-east-1',
@@ -78,13 +77,13 @@ describe('AwsService', () => {
         },
       } as unknown as ConfigType<typeof config>);
 
-      await expect(service.uploadFile(mockFile)).rejects.toThrow(InternalServerErrorException);
+      await expect(service.uploadFile(mockFile)).rejects.toThrow(ExternalServiceException);
       await expect(service.uploadFile(mockFile)).rejects.toThrow(
         'Failed to upload file to S3: AWS_S3_BUCKET is not configured.',
       );
     });
 
-    it('should throw InternalServerErrorException on S3 upload failure', async () => {
+    it('should throw ExternalServiceException on S3 upload failure after retries', async () => {
       const mockSend = jest.fn().mockRejectedValue(new Error('S3 Error'));
       (S3Client as jest.Mock).mockImplementation(() => ({
         send: mockSend,
@@ -99,10 +98,8 @@ describe('AwsService', () => {
         },
       } as unknown as ConfigType<typeof config>);
 
-      await expect(service.uploadFile(mockFile)).rejects.toThrow(InternalServerErrorException);
-      await expect(service.uploadFile(mockFile)).rejects.toThrow(
-        'Failed to upload file to S3: S3 Error',
-      );
+      await expect(service.uploadFile(mockFile)).rejects.toThrow(ExternalServiceException);
+      expect(mockSend).toHaveBeenCalledTimes(3);
     });
   });
 });
