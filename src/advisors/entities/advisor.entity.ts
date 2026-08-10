@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import type { Contract } from '../../contracts/entities/contract.entity';
 import { Exclude, Expose } from 'class-transformer';
+import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 
 @Entity('advisors')
 export class Advisor {
@@ -21,6 +22,16 @@ export class Advisor {
 
   @Column({ type: 'boolean', default: true })
   status: boolean;
+
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0.0,
+    name: 'commission',
+    transformer: decimalTransformer,
+  })
+  commission: number;
 
   @Column({ type: 'integer', name: 'code', unique: true })
   @Generated('increment')

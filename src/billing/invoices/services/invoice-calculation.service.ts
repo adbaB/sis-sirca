@@ -55,8 +55,9 @@ export class InvoiceCalculationService {
 
     const totalAmount = Number(invoice.totalAmount);
     const retentionAmount = Number(invoice.retentionAmount || 0);
+    const amountDue = Math.max(0, totalAmount - retentionAmount);
 
-    invoice.paidAmount = Math.min(newPaidAmount, totalAmount);
+    invoice.paidAmount = Math.min(newPaidAmount, amountDue);
     invoice.status = resolveInvoiceStatus(invoice.paidAmount, totalAmount, retentionAmount);
 
     await repo.save(invoice);
@@ -103,13 +104,6 @@ export class InvoiceCalculationService {
     invoice.retentionPercentage = retentionPercentage;
     invoice.retentionAmount = retentionAmount;
 
-    const amountDue = Math.max(0, calculatedTotal - retentionAmount);
-
-    // Evitar violar el constraint de BD: paidAmount <= totalAmount
-    if (invoice.paidAmount > amountDue) {
-      invoice.paidAmount = amountDue;
-    }
-
     await invoiceRepo.save(invoice);
 
     // Recalcular desde pagos reales dentro de la misma transacción
@@ -136,7 +130,12 @@ export class InvoiceCalculationService {
       .getMany();
 
     const totalAmount = invoices.reduce(
-      (sum, inv) => sum + (Number(inv.totalAmount) - Number(inv.paidAmount)),
+      (sum, inv) =>
+        sum +
+        Math.max(
+          0,
+          Number(inv.totalAmount) - Number(inv.retentionAmount || 0) - Number(inv.paidAmount),
+        ),
       0,
     );
 

@@ -11,11 +11,14 @@ describe('SipCommissionsService', () => {
   const mockPortfolios = [{ code: 'APF' }, { code: 'GMP' }, { code: 'HER' }];
 
   // Billing month: April 2026 (2026-04)
-  // Query window: [2026-03-06, 2026-04-05]
-  // Classification: billing_month = '2026-04' → Cobranza/Nuevos, billing_month ≠ '2026-04' → Extemporaneidad
+  // Windows:
+  // - Oportunos (Nuevos): [2026-03-20, 2026-04-05]
+  // - Extemporaneos (Nuevos): [2026-03-06, 2026-03-19]
   const mockRawData = [
-    // 1. Nuevos (billing_month = '2026-04', affiliation within billing month)
+    // 1. Nuevos Oportunos (billing_month = '2026-04', line_category = 'INCLUSION', affiliation = '2026-04-05')
     {
+      line_id: 'l1',
+      line_category: 'INCLUSION',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -29,9 +32,41 @@ describe('SipCommissionsService', () => {
       due_date: '2026-04-15',
       issue_date: '2026-04-01',
       affiliate_count: '2',
+      advisor_name: 'Carlos Perez',
+      advisor_code: '1',
+      advisor_commission_percentage: '10.00',
+      affiliate_id_type: 'V',
+      affiliate_id_number: '12345678',
+      affiliate_name: 'Juan Perez',
     },
-    // 2. Cobranzas Nuevo Convenio (billing_month = '2026-04', NOT new, NOT convenio inicial)
+    // 2. Nuevos Extemporaneos (billing_month = '2026-04', line_category = 'INCLUSION', affiliation = '2026-03-12')
     {
+      line_id: 'l1b',
+      line_category: 'INCLUSION',
+      plan_name: 'PLAN A',
+      plan_amount: '50.00',
+      commission_amount: '5.00',
+      portfolio_code: 'APF',
+      contract_code: 'SIR-002-101',
+      legacy_code: null,
+      billing_month: '2026-04',
+      affiliation_date: '2026-03-12',
+      payment_date: '2026-04-01',
+      operation_date: '2026-03-28',
+      due_date: '2026-04-15',
+      issue_date: '2026-04-01',
+      affiliate_count: '1',
+      advisor_name: 'Carlos Perez',
+      advisor_code: '1',
+      advisor_commission_percentage: '10.00',
+      affiliate_id_type: 'V',
+      affiliate_id_number: '12345679',
+      affiliate_name: 'Pedro Perez',
+    },
+    // 3. Cobranzas Nuevo Convenio (billing_month = '2026-04', line_category = 'MENSUALIDAD', affiliation = '2026-03-01', NOT convenio inicial)
+    {
+      line_id: 'l2',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -45,9 +80,17 @@ describe('SipCommissionsService', () => {
       due_date: '2026-04-15',
       issue_date: '2026-04-01',
       affiliate_count: '3',
+      advisor_name: 'Carlos Perez',
+      advisor_code: '1',
+      advisor_commission_percentage: '10.00',
+      affiliate_id_type: 'V',
+      affiliate_id_number: '23456789',
+      affiliate_name: 'Maria Gomez',
     },
-    // 3. Cobranzas Convenio Inicial (billing_month = '2026-04', NOT new, IS convenio inicial)
+    // 4. Cobranzas Convenio Inicial (billing_month = '2026-04', line_category = 'MENSUALIDAD', affiliation = '2026-03-01', IS convenio inicial)
     {
+      line_id: 'l3',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN B',
       plan_amount: '100.00',
       commission_amount: '10.00',
@@ -61,9 +104,17 @@ describe('SipCommissionsService', () => {
       due_date: '2026-04-15',
       issue_date: '2026-04-01',
       affiliate_count: '1',
+      advisor_name: 'Ana Lopez',
+      advisor_code: '2',
+      advisor_commission_percentage: '15.00',
+      affiliate_id_type: 'V',
+      affiliate_id_number: '34567890',
+      affiliate_name: 'Pedro Rodriguez',
     },
-    // 4. Extemporaneos Nuevo Convenio (billing_month = '2026-03' ≠ '2026-04', NOT convenio inicial)
+    // 5. Extemporaneos Nuevo Convenio (billing_month = '2026-03' ≠ '2026-04', line_category = 'MENSUALIDAD', NOT convenio inicial)
     {
+      line_id: 'l4',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN A',
       plan_amount: '50.00',
       commission_amount: '5.00',
@@ -77,9 +128,17 @@ describe('SipCommissionsService', () => {
       due_date: '2026-03-15',
       issue_date: '2026-03-01',
       affiliate_count: '5',
+      advisor_name: 'Carlos Perez',
+      advisor_code: '1',
+      advisor_commission_percentage: '10.00',
+      affiliate_id_type: 'V',
+      affiliate_id_number: '45678901',
+      affiliate_name: 'Luis Fernandez',
     },
-    // 5. Extemporaneos Convenio Inicial (billing_month = '2026-02' ≠ '2026-04', IS convenio inicial)
+    // 6. Extemporaneos Convenio Inicial (billing_month = '2026-02' ≠ '2026-04', line_category = 'MENSUALIDAD', IS convenio inicial)
     {
+      line_id: 'l5',
+      line_category: 'MENSUALIDAD',
       plan_name: 'PLAN B',
       plan_amount: '100.00',
       commission_amount: '10.00',
@@ -93,6 +152,12 @@ describe('SipCommissionsService', () => {
       due_date: '2026-02-15',
       issue_date: '2026-02-01',
       affiliate_count: '4',
+      advisor_name: 'Ana Lopez',
+      advisor_code: '2',
+      advisor_commission_percentage: '15.00',
+      affiliate_id_type: 'V',
+      affiliate_id_number: '56789012',
+      affiliate_name: 'Elena Sanchez',
     },
   ];
 
@@ -125,7 +190,7 @@ describe('SipCommissionsService', () => {
   });
 
   describe('buildReportData', () => {
-    it('should query and classify records correctly into 5 sections', async () => {
+    it('should query and classify records correctly into 6 sections', async () => {
       const querySpy = jest
         .spyOn(dataSource, 'query')
         .mockResolvedValueOnce(mockPortfolios) // first query: portfolios
@@ -135,72 +200,99 @@ describe('SipCommissionsService', () => {
 
       expect(querySpy).toHaveBeenCalledTimes(2);
 
-      // Verify the SQL query uses date window params instead of billing_month
       const secondCall = querySpy.mock.calls[1];
       expect(secondCall[1]).toEqual(['2026-03-06', '2026-04-05']);
 
       expect(result.portfolioCodes).toEqual(['APF', 'GMP', 'HER']);
 
       // Verify sections
-      expect(result.sections).toHaveLength(5);
+      expect(result.sections).toHaveLength(6);
 
-      // 1. Nuevos (billing_month = '2026-04', affiliation in billing month)
-      const nuevos = result.sections[0];
-      expect(nuevos.title).toBe('AFILIACIONES NUEVOS CONTRATOS');
-      expect(nuevos.rows).toHaveLength(1);
-      expect(nuevos.rows[0].planName).toBe('PLAN A');
-      expect(nuevos.rows[0].totalAffiliates).toBe(2);
-      expect(nuevos.rows[0].totalCommission).toBe(10); // 5.00 * 2
+      // 1. Nuevos Oportunos (20 M-1 a 5 M)
+      const nuevosOp = result.sections[0];
+      expect(nuevosOp.title).toBe('AFILIACIONES NUEVOS CONTRATOS');
+      expect(nuevosOp.rows).toHaveLength(1);
+      expect(nuevosOp.rows[0].planName).toBe('PLAN A');
+      expect(nuevosOp.rows[0].totalAffiliates).toBe(2);
+      expect(nuevosOp.rows[0].totalCommission).toBe(10);
+      expect(nuevosOp.affiliateDetails).toHaveLength(1);
+      expect(nuevosOp.affiliateDetails[0].fullAdvisorName).toBe('001 - Carlos Perez');
+      expect(nuevosOp.affiliateDetails[0].affiliateName).toBe('Juan Perez');
+      expect(nuevosOp.affiliateDetails[0].advisorCommissionPercentage).toBe(10);
+      expect(nuevosOp.affiliateDetails[0].advisorCommissionAmount).toBe(5); // 50.00 * 10%
 
-      // 2. Cobranzas Nuevo Convenio (billing_month = '2026-04', not new, not convenio)
-      const cobranzasNuevo = result.sections[1];
+      // 2. Nuevos Extemporaneos (6 M-1 a 19 M-1)
+      const nuevosExt = result.sections[1];
+      expect(nuevosExt.title).toBe('AFILIACIONES EXTEMPORÁNEAS NUEVOS CONTRATOS');
+      expect(nuevosExt.rows).toHaveLength(1);
+      expect(nuevosExt.rows[0].totalAffiliates).toBe(1);
+      expect(nuevosExt.rows[0].totalCommission).toBe(5);
+      expect(nuevosExt.affiliateDetails).toHaveLength(1);
+      expect(nuevosExt.affiliateDetails[0].affiliateName).toBe('Pedro Perez');
+
+      // 3. Cobranzas Nuevo Convenio
+      const cobranzasNuevo = result.sections[2];
       expect(cobranzasNuevo.title).toBe('COBRANZAS EJECUTADAS (SEGÚN NUEVO CONVENIO)');
       expect(cobranzasNuevo.rows).toHaveLength(1);
       expect(cobranzasNuevo.rows[0].totalAffiliates).toBe(3);
-      expect(cobranzasNuevo.rows[0].totalCommission).toBe(15); // 5.00 * 3
+      expect(cobranzasNuevo.rows[0].totalCommission).toBe(15);
+      expect(cobranzasNuevo.affiliateDetails).toHaveLength(1);
 
-      // 3. Cobranzas Convenio Inicial (billing_month = '2026-04', not new, IS convenio)
-      const cobranzasInicial = result.sections[2];
+      // 4. Cobranzas Convenio Inicial
+      const cobranzasInicial = result.sections[3];
       expect(cobranzasInicial.title).toBe(
         'COBRANZAS EJECUTADAS: CONVENIO INICIAL DESDE 002-001 HASTA 002-060',
       );
       expect(cobranzasInicial.rows).toHaveLength(1);
       expect(cobranzasInicial.rows[0].totalAffiliates).toBe(1);
-      expect(cobranzasInicial.rows[0].totalCommission).toBe(10); // 10.00 * 1
+      expect(cobranzasInicial.rows[0].totalCommission).toBe(10);
+      expect(cobranzasInicial.affiliateDetails).toHaveLength(1);
+      expect(cobranzasInicial.affiliateDetails[0].advisorCommissionPercentage).toBe(15);
+      expect(cobranzasInicial.affiliateDetails[0].advisorCommissionAmount).toBe(15); // 100.00 * 15%
 
-      // 4. Extemporaneos Nuevo Convenio (billing_month = '2026-03' ≠ '2026-04')
-      const extNuevo = result.sections[3];
+      // 5. Extemporaneos Nuevo Convenio
+      const extNuevo = result.sections[4];
       expect(extNuevo.title).toBe('COBRANZAS EJECUTADA CON EXTEMPORANEIDAD (SEGÚN NUEVO CONVENIO)');
       expect(extNuevo.rows).toHaveLength(1);
       expect(extNuevo.rows[0].totalAffiliates).toBe(5);
-      expect(extNuevo.rows[0].totalCommission).toBe(25); // 5.00 * 5
+      expect(extNuevo.rows[0].totalCommission).toBe(25);
+      expect(extNuevo.affiliateDetails).toHaveLength(1);
 
-      // 5. Extemporaneos Convenio Inicial (billing_month = '2026-02' ≠ '2026-04')
-      const extInicial = result.sections[4];
+      // 6. Extemporaneos Convenio Inicial
+      const extInicial = result.sections[5];
       expect(extInicial.title).toBe('COBRANZAS EJECUTADA CON EXTEMPORANEIDAD');
       expect(extInicial.rows).toHaveLength(1);
       expect(extInicial.rows[0].totalAffiliates).toBe(4);
-      expect(extInicial.rows[0].totalCommission).toBe(40); // 10.00 * 4
+      expect(extInicial.rows[0].totalCommission).toBe(40);
+      expect(extInicial.affiliateDetails).toHaveLength(1);
 
-      // Grand total: 10 + 15 + 10 + 25 + 40 = 100
-      expect(result.grandTotalCommission).toBe(100);
+      // Grand total: 10 + 5 + 15 + 10 + 25 + 40 = 105
+      expect(result.grandTotalCommission).toBe(105);
     });
 
     it('should classify all billing_month mismatches as extemporaneidad', async () => {
       const oldMonthRecord = {
+        line_id: 'lx',
+        line_category: 'MENSUALIDAD',
         plan_name: 'PLAN C',
         plan_amount: '75.00',
         commission_amount: '7.50',
         portfolio_code: 'APF',
         contract_code: 'SIR-002-100',
         legacy_code: null,
-        billing_month: '2026-01', // Old billing month
+        billing_month: '2026-01',
         affiliation_date: '2025-12-01',
         payment_date: '2026-03-20',
         operation_date: '2026-03-20',
         due_date: '2026-01-15',
         issue_date: '2026-01-01',
         affiliate_count: '2',
+        advisor_name: 'Carlos Perez',
+        advisor_code: '1',
+        advisor_commission_percentage: '10.00',
+        affiliate_id_type: 'V',
+        affiliate_id_number: '99999999',
+        affiliate_name: 'Prueba Extemporaneo',
       };
 
       jest
@@ -210,55 +302,18 @@ describe('SipCommissionsService', () => {
 
       const result = await service.buildReportData(2026, 4);
 
-      // Should be extemporaneidad (nuevo convenio, since contract code is not initial)
-      const extNuevo = result.sections[3];
+      const extNuevo = result.sections[4];
       expect(extNuevo.rows).toHaveLength(1);
       expect(extNuevo.rows[0].totalAffiliates).toBe(2);
-      expect(extNuevo.rows[0].totalCommission).toBe(15); // 7.50 * 2
-
-      // Cobranza sections should be empty
-      expect(result.sections[0].rows).toHaveLength(0); // nuevos
-      expect(result.sections[1].rows).toHaveLength(0); // cobranza nuevo
-      expect(result.sections[2].rows).toHaveLength(0); // cobranza inicial
-    });
-
-    it('should classify billing_month match as cobranza ejecutada', async () => {
-      const currentMonthRecord = {
-        plan_name: 'PLAN D',
-        plan_amount: '60.00',
-        commission_amount: '6.00',
-        portfolio_code: 'GMP',
-        contract_code: 'SIR-002-100',
-        legacy_code: null,
-        billing_month: '2026-04', // Matches report month
-        affiliation_date: '2026-02-01', // Not new
-        payment_date: '2026-03-28',
-        operation_date: '2026-03-28',
-        due_date: '2026-04-15',
-        issue_date: '2026-04-01',
-        affiliate_count: '1',
-      };
-
-      jest
-        .spyOn(dataSource, 'query')
-        .mockResolvedValueOnce(mockPortfolios)
-        .mockResolvedValueOnce([currentMonthRecord]);
-
-      const result = await service.buildReportData(2026, 4);
-
-      // Should be cobranza ejecutada (nuevo convenio)
-      const cobranzasNuevo = result.sections[1];
-      expect(cobranzasNuevo.rows).toHaveLength(1);
-      expect(cobranzasNuevo.rows[0].totalAffiliates).toBe(1);
-
-      // Extemporaneidad should be empty
-      expect(result.sections[3].rows).toHaveLength(0);
-      expect(result.sections[4].rows).toHaveLength(0);
+      expect(extNuevo.rows[0].totalCommission).toBe(15);
+      expect(extNuevo.affiliateDetails).toHaveLength(1);
+      expect(extNuevo.affiliateDetails[0].affiliateName).toBe('Prueba Extemporaneo');
+      expect(extNuevo.affiliateDetails[0].advisorCommissionAmount).toBe(7.5); // 75.00 * 10%
     });
   });
 
   describe('generateExcel', () => {
-    it('should generate an Excel sheet successfully', async () => {
+    it('should generate an Excel workbook with 2 sheets successfully', async () => {
       jest
         .spyOn(dataSource, 'query')
         .mockResolvedValueOnce(mockPortfolios)
@@ -271,7 +326,7 @@ describe('SipCommissionsService', () => {
   });
 
   describe('generatePdf', () => {
-    it('should generate a PDF buffer successfully', async () => {
+    it('should generate a PDF buffer successfully with affiliate details', async () => {
       jest
         .spyOn(dataSource, 'query')
         .mockResolvedValueOnce(mockPortfolios)
@@ -285,7 +340,7 @@ describe('SipCommissionsService', () => {
           startDateES: '01-04-2026',
           endDateES: '30-04-2026',
           colspan: 7,
-          grandTotalCommissionFormatted: '100.00',
+          grandTotalCommissionFormatted: '105.00',
         }),
         { landscape: true },
       );

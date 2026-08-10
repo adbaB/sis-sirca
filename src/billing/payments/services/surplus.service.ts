@@ -11,7 +11,7 @@ import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { InvoiceCalculationService } from '../../invoices/services/invoice-calculation.service';
 import { INVOICE_CREATED, InvoiceCreatedEvent } from '../../invoices/events/invoice.events';
-import { resolveQueryRunner } from '../../../common/context/request-context';
+import { getQueryRunnerSafe } from '../../../common/context/request-context';
 
 @Injectable()
 export class SurplusService {
@@ -273,9 +273,11 @@ export class SurplusService {
     if (surplusAmountUsd === null && surplusAmountBs === null) {
       return null;
     }
-    const qr = resolveQueryRunner(queryRunnerOrNull ?? undefined, this.dataSource);
-    const saved = await qr.manager.save(
-      qr.manager.create(Surplus, {
+    const manager =
+      queryRunnerOrNull?.manager || getQueryRunnerSafe()?.manager || this.surplusRepository.manager;
+
+    const saved = await manager.save(
+      manager.create(Surplus, {
         amountBs: surplusAmountBs,
         amountUsd: surplusAmountUsd,
         date: paymentDate,

@@ -50,7 +50,11 @@ export class ContractsController {
 
   @Get('affiliation-stats')
   @RequirePermissions('read:contracts')
-  getAffiliationStats(@Query('month') month: string, @Query('year') year: string) {
+  getAffiliationStats(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Query('mode') mode?: 'billing' | 'calendar',
+  ) {
     const parsedMonth = Number(month);
     const parsedYear = Number(year);
 
@@ -61,7 +65,7 @@ export class ContractsController {
       throw new BadRequestException('El parámetro year debe ser un año de 4 dígitos válido.');
     }
 
-    return this.contractsService.getAffiliationStats(parsedMonth, parsedYear);
+    return this.contractsService.getAffiliationStats(parsedMonth, parsedYear, mode ?? 'billing');
   }
 
   @Get(':id')
@@ -101,6 +105,12 @@ export class ContractsController {
   @RequirePermissions('update:contracts')
   inactivate(@Param('id') id: string, @Body() dto: InactivateContractDto) {
     return this.contractsService.inactivate(id, dto);
+  }
+
+  @Patch(':id/activate')
+  @RequirePermissions('update:contracts')
+  activate(@Param('id') id: string) {
+    return this.contractsService.activate(id);
   }
 
   @Post(':contractId/beneficiaries')

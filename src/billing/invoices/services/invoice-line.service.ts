@@ -69,6 +69,10 @@ export class InvoiceLineService {
       lock: { mode: 'pessimistic_write' },
     });
 
+    if (!invoice) {
+      throw new NotFoundException(`Factura con ID ${invoiceId} no encontrada`);
+    }
+
     const line = qr.manager.create(InvoiceLine, {
       invoice,
       category: dto.category,
@@ -86,10 +90,9 @@ export class InvoiceLineService {
     const additionalAmount = await this.queryRepo.sumAdditionalLines(qr.manager, invoiceId);
     invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
 
-    // Ajustar status si el paidAmount queda por debajo del nuevo total
-    if (invoice.paidAmount < invoice.totalAmount) {
-      invoice.status = invoice.paidAmount > 0 ? InvoiceStatus.PARTIAL : InvoiceStatus.PENDING;
-    }
+    // Ajustar status usando la regla común del helper
+    const retentionAmount = Number(invoice.retentionAmount || 0);
+    invoice.status = resolveInvoiceStatus(invoice.paidAmount, invoice.totalAmount, retentionAmount);
 
     await invoiceRepo.save(invoice);
 

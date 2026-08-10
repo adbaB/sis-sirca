@@ -130,7 +130,8 @@ export class PersonsService {
                 person,
                 plan: effectivePlan,
                 action: AffiliationAction.AFILIACION,
-                amount: Number(effectivePlan?.amount ?? 0),
+                amount: Number(person.plan?.amount ?? 0),
+                actionDate: contract?.affiliationDate ?? new Date(),
               }),
             );
 
@@ -187,7 +188,8 @@ export class PersonsService {
             person: savedPerson,
             plan: effectivePlan,
             action: AffiliationAction.AFILIACION,
-            amount: Number(effectivePlan?.amount ?? 0),
+            amount: Number(plan?.amount ?? 0),
+            actionDate: contract?.affiliationDate ?? new Date(),
           }),
         );
 

@@ -1,7 +1,9 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import ExcelJS from 'exceljs';
+import { DateTime } from 'luxon';
 import { DataSource } from 'typeorm';
 import {
+  CARACAS_ZONE,
   formatToISODateString,
   getBillingDateWindows,
   getCaracasDateTime,
@@ -21,7 +23,7 @@ import {
 } from './report-utils';
 
 /** One row in the commission report grid */
-interface CommissionRow {
+export interface CommissionRow {
   planName: string;
   planAmount: number;
   commissionAmount: number;
@@ -30,17 +32,39 @@ interface CommissionRow {
   totalCommission: number;
 }
 
+/** One detailed affiliate row for the second sheet / PDF detail */
+export interface SipAffiliateDetailRow {
+  lineId: string;
+  contractCode: string;
+  legacyCode: string | null;
+  affiliateCard: string;
+  affiliateName: string;
+  advisorCode: string;
+  advisorName: string;
+  fullAdvisorName: string;
+  advisorCommissionPercentage: number;
+  advisorCommissionAmount: number;
+  portfolioCode: string;
+  planName: string;
+  planAmount: number;
+  commissionAmount: number;
+  affiliationDate: string;
+  paymentDate: string;
+  billingMonth: string;
+}
+
 /** A full section of the report */
-interface ReportSection {
+export interface ReportSection {
   title: string;
   rows: CommissionRow[];
   subtotalAffiliatesByPortfolio: Record<string, number>;
   subtotalAffiliates: number;
   subtotalCommission: number;
+  affiliateDetails: SipAffiliateDetailRow[];
 }
 
 /** Complete report data */
-interface SipCommissionReport {
+export interface SipCommissionReport {
   startDate: string;
   endDate: string;
   sections: ReportSection[];
@@ -48,7 +72,9 @@ interface SipCommissionReport {
   portfolioCodes: string[];
 }
 
-interface SipCommissionQueryRow {
+export interface SipCommissionQueryRow {
+  line_id?: string;
+  line_category?: string;
   plan_name: string;
   plan_amount: string | number;
   commission_amount: string | number;
@@ -61,7 +87,13 @@ interface SipCommissionQueryRow {
   operation_date: string | Date;
   due_date: string | Date;
   issue_date: string | Date;
-  affiliate_count: string | number;
+  affiliate_count?: string | number;
+  advisor_name?: string;
+  advisor_code?: string | number;
+  advisor_commission_percentage?: string | number;
+  affiliate_id_type?: string;
+  affiliate_id_number?: string;
+  affiliate_name?: string;
 }
 
 // Use BRAND_COLORS from shared report-utils
@@ -114,24 +146,36 @@ export class SipCommissionsService {
       rawData = await this.dataSource.query(
         `
         SELECT
+          il.id        AS line_id,
+          il.category  AS line_category,
           p.name       AS plan_name,
-          p.amount     AS plan_amount,
+          COALESCE(il.amount, p.amount) AS plan_amount,
           p.commission_amount,
           COALESCE(pf.code, 'SIN_CARTERA') AS portfolio_code,
           c.code       AS contract_code,
           c.legacy_code,
           inv.billing_month,
-          c.affiliation_date,
+          COALESCE(c.affiliation_date, c.created_at) AS affiliation_date,
           pay.payment_date,
           COALESCE(pay.operation_date, pay.payment_date) AS operation_date,
           inv.due_date,
           inv.issue_date,
-          COUNT(DISTINCT il.id) AS affiliate_count
+          1            AS affiliate_count,
+          COALESCE(adv.name, 'Sin asesor') AS advisor_name,
+          adv.code     AS advisor_code,
+          COALESCE(adv.commission, 0)      AS advisor_commission_percentage,
+          COALESCE(pers.type_identity_card, titular_pers.type_identity_card) AS affiliate_id_type,
+          COALESCE(pers.identity_card, titular_pers.identity_card)           AS affiliate_id_number,
+          COALESCE(pers.name, titular_pers.name, 'Sin afiliado')              AS affiliate_name
         FROM invoice_lines il
-        JOIN invoices inv    ON il.invoice_id = inv.id AND inv.deleted_at IS NULL
-        JOIN contracts c     ON inv.contract_id = c.id AND c.deleted_at IS NULL
-        JOIN plans p         ON il.plan_id = p.id AND p.deleted_at IS NULL
-        LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
+        JOIN invoices inv        ON il.invoice_id = inv.id AND inv.deleted_at IS NULL
+        JOIN contracts c         ON inv.contract_id = c.id AND c.deleted_at IS NULL
+        JOIN plans p             ON il.plan_id = p.id AND p.deleted_at IS NULL
+        LEFT JOIN portfolios pf  ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
+        LEFT JOIN advisors adv   ON c.advisor_id = adv.id AND adv.deleted_at IS NULL
+        LEFT JOIN persons pers   ON il.person_id = pers.id AND pers.deleted_at IS NULL
+        LEFT JOIN contract_persons cp ON cp.contract_id = c.id AND cp.is_billing_owner = true AND cp.deleted_at IS NULL
+        LEFT JOIN persons titular_pers ON cp.person_id = titular_pers.id AND titular_pers.deleted_at IS NULL
         JOIN (
           SELECT invoice_id,
                  MAX(payment_date) AS payment_date,
@@ -141,14 +185,10 @@ export class SipCommissionsService {
           GROUP BY invoice_id
         ) pay ON pay.invoice_id = inv.id
         WHERE c.status = 'ACTIVE'
-          AND il.category = 'MENSUALIDAD'
+          AND il.category IN ('MENSUALIDAD', 'INCLUSION')
           AND il.deleted_at IS NULL
           AND COALESCE(pay.operation_date, pay.payment_date)::date >= $1::date
           AND COALESCE(pay.operation_date, pay.payment_date)::date <= $2::date
-        GROUP BY p.name, p.amount, p.commission_amount, pf.code,
-                 c.code, c.legacy_code, inv.billing_month, c.affiliation_date,
-                 pay.payment_date, pay.operation_date,
-                 inv.due_date, inv.issue_date
         `,
         [windows.queryStart, windows.queryEnd],
       );
@@ -176,7 +216,8 @@ export class SipCommissionsService {
 
     // 5. Aggregate each bucket into sections
     const sectionDefs: Array<{ key: string; title: string }> = [
-      { key: 'nuevos', title: 'AFILIACIONES NUEVOS CONTRATOS' },
+      { key: 'nuevosOportunos', title: 'AFILIACIONES NUEVOS CONTRATOS' },
+      { key: 'nuevosExtemporaneos', title: 'AFILIACIONES EXTEMPORÁNEAS NUEVOS CONTRATOS' },
       { key: 'cobranzasNuevoConvenio', title: 'COBRANZAS EJECUTADAS (SEGÚN NUEVO CONVENIO)' },
       {
         key: 'cobranzasConvenioInicial',
@@ -208,7 +249,8 @@ export class SipCommissionsService {
     month: number,
   ): Record<string, SipCommissionQueryRow[]> {
     const buckets: Record<string, SipCommissionQueryRow[]> = {
-      nuevos: [],
+      nuevosOportunos: [],
+      nuevosExtemporaneos: [],
       cobranzasNuevoConvenio: [],
       cobranzasConvenioInicial: [],
       extemporaneosNuevoConvenio: [],
@@ -217,11 +259,23 @@ export class SipCommissionsService {
 
     const billingMonth = `${year}-${String(month).padStart(2, '0')}`;
 
+    // Date windows for month M
+    const dtM = DateTime.fromObject({ year, month, day: 1 }, { zone: CARACAS_ZONE });
+    const prevMonth = dtM.minus({ months: 1 });
+
+    // 20 of (M - 1) to 5 of M
+    const startOportunosStr = prevMonth.set({ day: 20 }).toFormat('yyyy-MM-dd');
+    const endOportunosStr = dtM.set({ day: 5 }).toFormat('yyyy-MM-dd');
+
+    // 6 of (M - 1) to 19 of (M - 1)
+    const startExtempStr = prevMonth.set({ day: 6 }).toFormat('yyyy-MM-dd');
+    const endExtempStr = prevMonth.set({ day: 19 }).toFormat('yyyy-MM-dd');
+
     for (const row of rawData) {
       const isConvenioInicial = row.legacy_code ? convenioRe.test(row.legacy_code) : false;
       const isBillingMonthMatch = row.billing_month === billingMonth;
 
-      // Extemporaneidad: invoice belongs to a different billing month
+      // Extemporaneidad de cobranza: invoice belongs to a different billing month (billing_month != M)
       if (!isBillingMonthMatch) {
         if (isConvenioInicial) {
           buckets.extemporaneosConvenioInicial.push(row);
@@ -231,10 +285,18 @@ export class SipCommissionsService {
         continue;
       }
 
-      // billing_month = M: check if new or cobranza ejecutada
-      const isNew = this.checkIsNew(row);
+      // billing_month = M: check if new affiliation or regular cobranza
+      const affDateStr = this.formatToDateString(row.affiliation_date);
+      const isNew = row.line_category === 'INCLUSION' || this.checkIsNew(row);
+
       if (isNew) {
-        buckets.nuevos.push(row);
+        if (affDateStr >= startOportunosStr && affDateStr <= endOportunosStr) {
+          buckets.nuevosOportunos.push(row);
+        } else if (affDateStr >= startExtempStr && affDateStr <= endExtempStr) {
+          buckets.nuevosExtemporaneos.push(row);
+        } else {
+          buckets.nuevosOportunos.push(row);
+        }
       } else if (isConvenioInicial) {
         buckets.cobranzasConvenioInicial.push(row);
       } else {
@@ -260,14 +322,15 @@ export class SipCommissionsService {
   }
 
   /**
-   * Aggregate raw rows into a report section, grouped by (planName + planAmount).
+   * Aggregate raw rows into a report section, grouped by (planName + planAmount),
+   * and build detailed affiliate list sorted by Advisor.
    */
   private aggregateSection(
     title: string,
     rows: SipCommissionQueryRow[],
     portfolioCodes: string[],
   ): ReportSection {
-    // Group by plan_name + plan_amount key
+    // Group by plan_name + plan_amount key for summary table
     const grouped = new Map<
       string,
       {
@@ -277,6 +340,8 @@ export class SipCommissionsService {
         affiliatesByPortfolio: Record<string, number>;
       }
     >();
+
+    const affiliateDetails: SipAffiliateDetailRow[] = [];
 
     for (const row of rows) {
       const key = `${row.plan_name}|${Number(row.plan_amount).toFixed(2)}`;
@@ -291,11 +356,45 @@ export class SipCommissionsService {
         grouped.set(key, group);
       }
       const code = row.portfolio_code;
-      group.affiliatesByPortfolio[code] =
-        (group.affiliatesByPortfolio[code] || 0) + Number(row.affiliate_count);
+      const count = Number(row.affiliate_count || 1);
+      group.affiliatesByPortfolio[code] = (group.affiliatesByPortfolio[code] || 0) + count;
+
+      // Build affiliate detail record
+      const advCode = row.advisor_code != null ? String(row.advisor_code).padStart(3, '0') : '';
+      const advName = row.advisor_name || 'Sin asesor';
+      const fullAdvName = advCode ? `${advCode} - ${advName}` : advName;
+
+      const affType = row.affiliate_id_type || '';
+      const affNum = row.affiliate_id_number || '';
+      const affCard = affType && affNum ? `${affType}-${affNum}` : affNum || 'Sin cédula';
+
+      const planAmount = Number(row.plan_amount);
+      const commissionAmount = Number(row.commission_amount);
+      const advCommissionPct = Number(row.advisor_commission_percentage || 0);
+      const advCommissionAmt = planAmount * (advCommissionPct / 100);
+
+      affiliateDetails.push({
+        lineId: row.line_id || '',
+        contractCode: row.contract_code,
+        legacyCode: row.legacy_code,
+        affiliateCard: affCard,
+        affiliateName: row.affiliate_name || 'Sin afiliado',
+        advisorCode: advCode,
+        advisorName: advName,
+        fullAdvisorName: fullAdvName,
+        advisorCommissionPercentage: advCommissionPct,
+        advisorCommissionAmount: advCommissionAmt,
+        portfolioCode: row.portfolio_code,
+        planName: row.plan_name,
+        planAmount,
+        commissionAmount,
+        affiliationDate: formatDateES(row.affiliation_date),
+        paymentDate: formatDateES(row.payment_date),
+        billingMonth: row.billing_month,
+      });
     }
 
-    // Build final rows
+    // Build final summary rows
     const commissionRows: CommissionRow[] = [];
     for (const group of grouped.values()) {
       const totalAffiliates = Object.values(group.affiliatesByPortfolio).reduce((s, v) => s + v, 0);
@@ -309,12 +408,20 @@ export class SipCommissionsService {
       });
     }
 
-    // Sort by plan name then amount
+    // Sort summary rows by plan name then amount
     commissionRows.sort(
       (a, b) => a.planName.localeCompare(b.planName) || a.planAmount - b.planAmount,
     );
 
-    // Subtotals
+    // Sort affiliate details by Advisor, then Contract Code, then Affiliate Name
+    affiliateDetails.sort(
+      (a, b) =>
+        a.fullAdvisorName.localeCompare(b.fullAdvisorName) ||
+        a.contractCode.localeCompare(b.contractCode) ||
+        a.affiliateName.localeCompare(b.affiliateName),
+    );
+
+    // Subtotals for summary table
     const subtotalAffiliatesByPortfolio: Record<string, number> = {};
     for (const code of portfolioCodes) {
       subtotalAffiliatesByPortfolio[code] = commissionRows.reduce(
@@ -331,22 +438,24 @@ export class SipCommissionsService {
       subtotalAffiliatesByPortfolio,
       subtotalAffiliates,
       subtotalCommission,
+      affiliateDetails,
     };
   }
 
   /**
    * Generate the formatted Excel workbook buffer.
+   * Includes Sheet 1: 'CUADRO DE COMISIONES MES' (Resumen)
+   * and Sheet 2: 'Detalle de Afiliados' (Desglose por Asesor)
    */
   async generateExcel(year: number, month: number): Promise<Buffer> {
     const report = await this.buildReportData(year, month);
+
+    // === SHEET 1: RESUMEN DE COMISIONES ===
     const { workbook, ws } = createWorkbook('CUADRO DE COMISIONES MES');
 
-    // Determine portfolio columns dynamically
     const portfolioCodes = report.portfolioCodes;
-    // Columns: Plan | Importe Mensual | Comisión x Afiliado | ...portfolio cols... | Total Afiliac. | Comisión Total
     const totalCols = 3 + portfolioCodes.length + 2;
 
-    // Set column widths
     const colWidths = [
       35, // A: Plan
       18, // B: Importe Mensual
@@ -357,29 +466,21 @@ export class SipCommissionsService {
     ];
     ws.columns = colWidths.map((w) => ({ width: w }));
 
-    // Load logo
     const logoPath = await loadLogoImagePath(this.logger);
     this.renderLogo(workbook, ws, logoPath);
 
-    // Empty rows for logo space
     let currentRow = 4;
-
-    // Render Title & Subtitle Headers
     currentRow = this.renderExcelHeaders(ws, report, totalCols, currentRow);
 
-    // === SECTIONS ===
     for (const section of report.sections) {
-      if (section.rows.length === 0) continue; // Skip empty sections
-
+      if (section.rows.length === 0) continue;
       currentRow = this.writeSection(ws, section, portfolioCodes, totalCols, currentRow);
-      currentRow += 2; // spacing between sections
+      currentRow += 2;
     }
 
-    // === GRAND TOTAL ===
     currentRow++;
     currentRow = this.renderExcelGrandTotal(ws, totalCols, report.grandTotalCommission, currentRow);
 
-    // === FOOTER ===
     currentRow += 3;
     const footerRow = ws.getRow(currentRow);
     ws.mergeCells(currentRow, 1, currentRow, totalCols);
@@ -388,8 +489,260 @@ export class SipCommissionsService {
     footerCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: BRAND.lightText } };
     footerCell.alignment = { horizontal: 'center' };
 
-    // Generate buffer
+    // === SHEET 2: DETALLE DE AFILIADOS ===
+    const wsDetails = workbook.addWorksheet('Detalle de Afiliados', {
+      pageSetup: { paperSize: 9, orientation: 'landscape' },
+    });
+
+    const detailsColWidths = [
+      30, // A: ASESOR
+      18, // B: CÓDIGO CONTRATO
+      18, // C: CÓDIGO ANTERIOR
+      16, // D: CÉDULA AFILIADO
+      30, // E: NOMBRE AFILIADO
+      14, // F: CARTERA
+      25, // G: PLAN DE SALUD
+      16, // H: IMPORTE MENSUAL
+      18, // I: COMISIÓN PLAN
+      18, // J: COMISIÓN ASESOR ($)
+      16, // K: MES FACTURADO
+      16, // L: FECHA AFILIACIÓN
+      16, // M: FECHA PAGO
+    ];
+    wsDetails.columns = detailsColWidths.map((w) => ({ width: w }));
+
+    this.renderLogo(workbook, wsDetails, logoPath);
+
+    let detailRowIdx = 4;
+
+    // Header sheet 2
+    const titleRow2 = wsDetails.getRow(detailRowIdx);
+    wsDetails.mergeCells(detailRowIdx, 1, detailRowIdx, 13);
+    const titleCell2 = titleRow2.getCell(1);
+    titleCell2.value = 'DETALLE DE AFILIADOS SIP POR CATEGORÍA Y ASESOR';
+    titleCell2.font = {
+      name: 'Calibri',
+      size: 16,
+      bold: true,
+      color: { argb: BRAND.primaryGreen },
+    };
+    titleCell2.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleRow2.height = 30;
+    detailRowIdx++;
+
+    const companyRow2 = wsDetails.getRow(detailRowIdx);
+    wsDetails.mergeCells(detailRowIdx, 1, detailRowIdx, 13);
+    const companyCell2 = companyRow2.getCell(1);
+    companyCell2.value = 'Salud Integral El Rosario C.A.';
+    companyCell2.font = { name: 'Calibri', size: 11, color: { argb: BRAND.mediumText } };
+    companyCell2.alignment = { horizontal: 'center', vertical: 'middle' };
+    detailRowIdx++;
+
+    const corteRow2 = wsDetails.getRow(detailRowIdx);
+    wsDetails.mergeCells(detailRowIdx, 1, detailRowIdx, 13);
+    const corteCell2 = corteRow2.getCell(1);
+    corteCell2.value = `Corte: Del ${formatDateES(report.startDate)} Al ${formatDateES(report.endDate)}`;
+    corteCell2.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BRAND.darkText } };
+    corteCell2.alignment = { horizontal: 'center', vertical: 'middle' };
+    detailRowIdx += 2;
+
+    for (const section of report.sections) {
+      if (section.affiliateDetails.length === 0) continue;
+      detailRowIdx = this.writeDetailsSection(wsDetails, section, detailRowIdx);
+      detailRowIdx += 2;
+    }
+
+    // Sheet 2 Footer
+    detailRowIdx += 1;
+    const footerRow2 = wsDetails.getRow(detailRowIdx);
+    wsDetails.mergeCells(detailRowIdx, 1, detailRowIdx, 13);
+    const footerCell2 = footerRow2.getCell(1);
+    footerCell2.value = 'P/Administración SIRCA';
+    footerCell2.font = {
+      name: 'Calibri',
+      size: 10,
+      italic: true,
+      color: { argb: BRAND.lightText },
+    };
+    footerCell2.alignment = { horizontal: 'center' };
+
     return finishWorkbook(workbook);
+  }
+
+  /**
+   * Helper to write detailed affiliates table for a single section in Excel.
+   */
+  private writeDetailsSection(
+    ws: ExcelJS.Worksheet,
+    section: ReportSection,
+    startRow: number,
+  ): number {
+    let currentRow = startRow;
+
+    // Section title bar
+    const titleRow = ws.getRow(currentRow);
+    ws.mergeCells(currentRow, 1, currentRow, 13);
+    const titleCell = titleRow.getCell(1);
+    titleCell.value = `${section.title} (${section.affiliateDetails.length} AFILIADOS)`;
+    titleCell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: BRAND.white } };
+    titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: BRAND.primaryGreen },
+    };
+    titleRow.height = 24;
+    currentRow++;
+
+    // Table Headers
+    const headers = [
+      'ASESOR',
+      'CÓDIGO CONTRATO',
+      'CÓDIGO ANTERIOR',
+      'CÉDULA AFILIADO',
+      'NOMBRE AFILIADO',
+      'CARTERA',
+      'PLAN DE SALUD',
+      'IMPORTE MENSUAL',
+      'COMISIÓN PLAN',
+      'COMISIÓN ASESOR ($)',
+      'MES FACTURADO',
+      'FECHA AFILIACIÓN',
+      'FECHA PAGO',
+    ];
+    const headerRow = ws.getRow(currentRow);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BRAND.white } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: BRAND.primaryGreen },
+      };
+      cell.border = this.thinBorder();
+    });
+    headerRow.height = 22;
+    currentRow++;
+
+    let sectionPlanAmount = 0;
+    let sectionCommissionAmount = 0;
+    let sectionAdvisorCommissionAmount = 0;
+
+    section.affiliateDetails.forEach((aff, idx) => {
+      const dataRow = ws.getRow(currentRow);
+      const isAlt = idx % 2 === 1;
+
+      dataRow.getCell(1).value = aff.fullAdvisorName;
+      dataRow.getCell(2).value = aff.contractCode;
+      dataRow.getCell(3).value = aff.legacyCode || '';
+      dataRow.getCell(4).value = aff.affiliateCard;
+      dataRow.getCell(5).value = aff.affiliateName;
+      dataRow.getCell(6).value = aff.portfolioCode;
+      dataRow.getCell(7).value = aff.planName;
+
+      dataRow.getCell(8).value = aff.planAmount;
+      dataRow.getCell(8).numFmt = '$#,##0.00';
+
+      dataRow.getCell(9).value = aff.commissionAmount;
+      dataRow.getCell(9).numFmt = '$#,##0.00';
+
+      dataRow.getCell(10).value = aff.advisorCommissionAmount;
+      dataRow.getCell(10).numFmt = '$#,##0.00';
+
+      dataRow.getCell(11).value = aff.billingMonth;
+      dataRow.getCell(12).value = aff.affiliationDate;
+      dataRow.getCell(13).value = aff.paymentDate;
+
+      // Alignments
+      dataRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      dataRow.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(5).alignment = { horizontal: 'left', vertical: 'middle' };
+      dataRow.getCell(6).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(7).alignment = { horizontal: 'left', vertical: 'middle' };
+      dataRow.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+      dataRow.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+      dataRow.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+      dataRow.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
+
+      for (let c = 1; c <= 13; c++) {
+        const cell = dataRow.getCell(c);
+        cell.font = { name: 'Calibri', size: 10, color: { argb: BRAND.darkText } };
+        cell.border = this.thinBorder();
+        if (isAlt) {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: BRAND.altBackground },
+          };
+        }
+      }
+
+      sectionPlanAmount += aff.planAmount;
+      sectionCommissionAmount += aff.commissionAmount;
+      sectionAdvisorCommissionAmount += aff.advisorCommissionAmount;
+      currentRow++;
+    });
+
+    // Subtotal Row
+    const subtotalRow = ws.getRow(currentRow);
+    ws.mergeCells(currentRow, 1, currentRow, 7);
+    const subLabelCell = subtotalRow.getCell(1);
+    subLabelCell.value = `SUBTOTAL ${section.title} (${section.affiliateDetails.length} AFILIADOS)`;
+    subLabelCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BRAND.darkText } };
+    subLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    subtotalRow.getCell(8).value = sectionPlanAmount;
+    subtotalRow.getCell(8).numFmt = '$#,##0.00';
+    subtotalRow.getCell(8).font = {
+      name: 'Calibri',
+      size: 10,
+      bold: true,
+      color: { argb: BRAND.darkText },
+    };
+    subtotalRow.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+
+    subtotalRow.getCell(9).value = sectionCommissionAmount;
+    subtotalRow.getCell(9).numFmt = '$#,##0.00';
+    subtotalRow.getCell(9).font = {
+      name: 'Calibri',
+      size: 10,
+      bold: true,
+      color: { argb: BRAND.darkText },
+    };
+    subtotalRow.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+
+    subtotalRow.getCell(10).value = sectionAdvisorCommissionAmount;
+    subtotalRow.getCell(10).numFmt = '$#,##0.00';
+    subtotalRow.getCell(10).font = {
+      name: 'Calibri',
+      size: 10,
+      bold: true,
+      color: { argb: BRAND.darkText },
+    };
+    subtotalRow.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+
+    subtotalRow.getCell(11).value = '';
+    subtotalRow.getCell(12).value = '';
+    subtotalRow.getCell(13).value = '';
+
+    for (let c = 1; c <= 13; c++) {
+      const cell = subtotalRow.getCell(c);
+      cell.border = this.thinBorder();
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'e8f5e9' },
+      };
+    }
+    currentRow++;
+
+    return currentRow;
   }
 
   /**
@@ -680,26 +1033,49 @@ export class SipCommissionsService {
     const logoBase64 = await loadLogoBase64(this.logger);
 
     // Format fields for handlebars rendering
-    const formattedSections = report.sections.map((section) => ({
-      title: section.title,
-      rows: section.rows.map((row) => ({
-        planName: row.planName,
-        planAmountFormatted: Number(row.planAmount).toFixed(2),
-        commissionAmountFormatted: Number(row.commissionAmount).toFixed(2),
-        affiliatesByPortfolio: report.portfolioCodes.reduce(
-          (acc, code) => {
-            acc[code] = row.affiliatesByPortfolio[code] || 0;
-            return acc;
-          },
-          {} as Record<string, number>,
-        ),
-        totalAffiliates: row.totalAffiliates,
-        totalCommissionFormatted: Number(row.totalCommission).toFixed(2),
-      })),
-      subtotalAffiliatesByPortfolio: section.subtotalAffiliatesByPortfolio,
-      subtotalAffiliates: section.subtotalAffiliates,
-      subtotalCommissionFormatted: Number(section.subtotalCommission).toFixed(2),
-    }));
+    const formattedSections = report.sections.map((section) => {
+      const sectionPlanAmount = section.affiliateDetails.reduce((s, a) => s + a.planAmount, 0);
+      const sectionCommissionAmount = section.affiliateDetails.reduce(
+        (s, a) => s + a.commissionAmount,
+        0,
+      );
+      const sectionAdvisorCommissionAmount = section.affiliateDetails.reduce(
+        (s, a) => s + a.advisorCommissionAmount,
+        0,
+      );
+
+      return {
+        title: section.title,
+        rows: section.rows.map((row) => ({
+          planName: row.planName,
+          planAmountFormatted: Number(row.planAmount).toFixed(2),
+          commissionAmountFormatted: Number(row.commissionAmount).toFixed(2),
+          affiliatesByPortfolio: report.portfolioCodes.reduce(
+            (acc, code) => {
+              acc[code] = row.affiliatesByPortfolio[code] || 0;
+              return acc;
+            },
+            {} as Record<string, number>,
+          ),
+          totalAffiliates: row.totalAffiliates,
+          totalCommissionFormatted: Number(row.totalCommission).toFixed(2),
+        })),
+        subtotalAffiliatesByPortfolio: section.subtotalAffiliatesByPortfolio,
+        subtotalAffiliates: section.subtotalAffiliates,
+        subtotalCommissionFormatted: Number(section.subtotalCommission).toFixed(2),
+        affiliateDetails: section.affiliateDetails.map((aff) => ({
+          ...aff,
+          planAmountFormatted: Number(aff.planAmount).toFixed(2),
+          commissionAmountFormatted: Number(aff.commissionAmount).toFixed(2),
+          advisorCommissionPercentageFormatted: Number(aff.advisorCommissionPercentage).toFixed(2),
+          advisorCommissionAmountFormatted: Number(aff.advisorCommissionAmount).toFixed(2),
+        })),
+        subtotalPlanAmountFormatted: Number(sectionPlanAmount).toFixed(2),
+        subtotalAffiliateCommissionFormatted: Number(sectionCommissionAmount).toFixed(2),
+        subtotalAdvisorCommissionAmountFormatted: Number(sectionAdvisorCommissionAmount).toFixed(2),
+        hasAffiliates: section.affiliateDetails.length > 0,
+      };
+    });
 
     const templateData = {
       logo: logoBase64,

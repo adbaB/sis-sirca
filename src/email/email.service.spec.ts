@@ -87,9 +87,7 @@ describe('EmailService', () => {
         service.sendPaymentConfirmation('recipient@test.com', userInfo, 'url'),
       ).rejects.toThrow(ExternalServiceException);
 
-      await expect(
-        service.sendPaymentConfirmation('recipient@test.com', userInfo, 'url'),
-      ).rejects.toThrow('Failed to send email: SES Error');
+      expect(sesClientSendMock).toHaveBeenCalledTimes(3);
     });
   });
 });

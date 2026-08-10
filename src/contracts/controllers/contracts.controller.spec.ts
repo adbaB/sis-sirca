@@ -42,6 +42,7 @@ describe('ContractsController', () => {
             update: jest.fn(),
             remove: jest.fn(),
             inactivate: jest.fn(),
+            activate: jest.fn(),
           },
         },
       ],
@@ -87,6 +88,17 @@ describe('ContractsController', () => {
       const result = await controller.inactivate('1', dto);
 
       expect(service.inactivate).toHaveBeenCalledWith('1', dto);
+      expect(result).toEqual(mockContract);
+    });
+  });
+
+  describe('activate', () => {
+    it('should delegate to service.activate', async () => {
+      jest.spyOn(service, 'activate').mockResolvedValue(mockContract);
+
+      const result = await controller.activate('1');
+
+      expect(service.activate).toHaveBeenCalledWith('1');
       expect(result).toEqual(mockContract);
     });
   });
