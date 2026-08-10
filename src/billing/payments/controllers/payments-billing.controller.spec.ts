@@ -1,8 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PaymentBillingController } from './payments-billing.controller';
 import { PaymentService } from '../services/payment.service';
-import { AwsService } from '../../../aws/aws.service';
-import { OcrService } from '../../../ocr/ocr.service';
+import { ReceiptAnalysisService } from '../services/receipt-analysis.service';
 
 describe('PaymentBillingController', () => {
   let controller: PaymentBillingController;
@@ -16,16 +15,16 @@ describe('PaymentBillingController', () => {
     updatePaymentDate: jest.fn(),
   };
 
-  const mockAwsService = { uploadFile: jest.fn() };
-  const mockOcrService = { extractReceiptData: jest.fn() };
+  const mockReceiptAnalysisService = {
+    analyzeReceipt: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PaymentBillingController],
       providers: [
         { provide: PaymentService, useValue: mockPaymentService },
-        { provide: AwsService, useValue: mockAwsService },
-        { provide: OcrService, useValue: mockOcrService },
+        { provide: ReceiptAnalysisService, useValue: mockReceiptAnalysisService },
       ],
     }).compile();
 
@@ -38,57 +37,25 @@ describe('PaymentBillingController', () => {
   });
 
   describe('analyzeReceipt', () => {
-    it('should assign amountBs when currency is BS', async () => {
+    it('should delegate analyzeReceipt to ReceiptAnalysisService', async () => {
       const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
-      mockAwsService.uploadFile.mockResolvedValue('http://s3/test.jpg');
-      mockOcrService.extractReceiptData.mockResolvedValue({
-        monto: 500,
-        referencia: '123456',
-        moneda: 'Bs',
-        fecha: '22/07/2026',
-        nombreBanco: 'Mercantil',
-      });
+      const mockResult = {
+        referenceNumber: '123456',
+        amount: null,
+        amountBs: 500,
+        paymentDate: '2026-07-22',
+        operationDate: '2026-07-22',
+        paymentMethod: 'PAGO_MOVIL',
+        bank: 'Mercantil',
+        url: 'http://s3/test.jpg',
+        rawOcr: {},
+      };
+      mockReceiptAnalysisService.analyzeReceipt.mockResolvedValue(mockResult);
 
       const result = await controller.analyzeReceipt(mockFile);
 
-      expect(result.amountBs).toBe(500);
-      expect(result.amount).toBeNull();
-      expect(result.referenceNumber).toBe('123456');
-    });
-
-    it('should assign amountBs when currency is VES (legacy)', async () => {
-      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
-      mockAwsService.uploadFile.mockResolvedValue('http://s3/test.jpg');
-      mockOcrService.extractReceiptData.mockResolvedValue({
-        monto: 300,
-        referencia: '654321',
-        moneda: 'VES',
-        fecha: '22/07/2026',
-        nombreBanco: 'Banesco',
-      });
-
-      const result = await controller.analyzeReceipt(mockFile);
-
-      expect(result.amountBs).toBe(300);
-      expect(result.amount).toBeNull();
-    });
-
-    it('should assign amount when currency is USD', async () => {
-      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
-      mockAwsService.uploadFile.mockResolvedValue('http://s3/test.jpg');
-      mockOcrService.extractReceiptData.mockResolvedValue({
-        monto: 100,
-        referencia: 'WFCT123',
-        moneda: 'USD',
-        fecha: '22/07/2026',
-        nombreBanco: 'Wells Fargo',
-      });
-
-      const result = await controller.analyzeReceipt(mockFile);
-
-      expect(result.amount).toBe(100);
-      expect(result.amountBs).toBeNull();
-      expect(result.paymentMethod).toBe('ZELLE');
+      expect(mockReceiptAnalysisService.analyzeReceipt).toHaveBeenCalledWith(mockFile);
+      expect(result).toEqual(mockResult);
     });
   });
 });

@@ -1498,7 +1498,7 @@ export class ContractsService {
   async removeAffiliate(contractPersonId: string): Promise<void> {
     const contractPerson = await this.contractPersonsRepository.findOne({
       where: { id: contractPersonId },
-      relations: ['contract', 'person', 'person.plan'],
+      relations: ['contract', 'person', 'person.plan', 'plan'],
     });
 
     if (!contractPerson) {
@@ -1517,14 +1517,16 @@ export class ContractsService {
       const historyRepo = manager.getRepository(AffiliationHistory);
       const cpRepo = manager.getRepository(ContractPerson);
 
+      const effectivePlan = contractPerson.plan ?? contractPerson.person?.plan ?? null;
+
       // Registrar en historial ANTES de eliminar
       await historyRepo.save(
         historyRepo.create({
           contract: contractPerson.contract,
           person: contractPerson.person,
-          plan: contractPerson.person?.plan ?? null,
+          plan: effectivePlan,
           action: AffiliationAction.DESAFILIACION,
-          amount: Number(contractPerson.person?.plan?.amount ?? 0),
+          amount: Number(effectivePlan?.amount ?? 0),
           reason: null,
         }),
       );

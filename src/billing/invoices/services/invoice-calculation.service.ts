@@ -4,7 +4,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { getCaracasTodayJSDate } from '../../../common/utils/date.util';
-import { getQueryRunner } from '../../../common/context/request-context';
+import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
 import { InvoiceQueryRepository } from '../repositories/invoice-query.repository';
 import { resolveInvoiceStatus } from '../helpers/invoice-status.helper';
@@ -39,10 +39,15 @@ export class InvoiceCalculationService {
    * @param invoiceId - ID de la factura a recalcular
    * @param manager   - EntityManager opcional para operar dentro de una transacción existente
    */
+  @Transactional()
   async recalculateInvoicePaidAmount(invoiceId: string, manager?: EntityManager): Promise<void> {
-    const repo = manager ? manager.getRepository(Invoice) : this.invoiceRepository;
-
-    const entityManager = manager ?? this.dataSource.manager;
+    const qr = getQueryRunnerSafe();
+    const entityManager = manager ?? qr?.manager ?? this.dataSource?.manager;
+    const repo = manager
+      ? manager.getRepository(Invoice)
+      : qr
+        ? qr.manager.getRepository(Invoice)
+        : this.invoiceRepository;
 
     const invoice = await repo.findOne({ where: { id: invoiceId } });
 

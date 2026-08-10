@@ -22,6 +22,7 @@ import { ContractPerson, PersonRole } from '../../contracts/entities/contract-pe
 import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { Plan } from '../../plans/entities/plan.entity';
 import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 
@@ -130,13 +131,13 @@ export class PersonsService {
                 person,
                 plan: effectivePlan,
                 action: AffiliationAction.AFILIACION,
-                amount: Number(person.plan?.amount ?? 0),
+                amount: Number(effectivePlan?.amount ?? 0),
                 actionDate: contract?.affiliationDate ?? new Date(),
               }),
             );
 
             // Auto-generar cargo INCLUSION en la factura activa del mes
-            await this.autoAddInclusionCharge(contractId, person);
+            await this.autoAddInclusionCharge(contractId, person, effectivePlan);
           }
 
           await this.contractsService.recalculateMonthlyAmount(contractId);
@@ -188,13 +189,13 @@ export class PersonsService {
             person: savedPerson,
             plan: effectivePlan,
             action: AffiliationAction.AFILIACION,
-            amount: Number(plan?.amount ?? 0),
+            amount: Number(effectivePlan?.amount ?? 0),
             actionDate: contract?.affiliationDate ?? new Date(),
           }),
         );
 
         // Auto-generar cargo INCLUSION en la factura activa del mes
-        await this.autoAddInclusionCharge(contractId, savedPerson);
+        await this.autoAddInclusionCharge(contractId, savedPerson, effectivePlan);
       }
     }
 
@@ -325,11 +326,12 @@ export class PersonsService {
     const contractsToRecalculate = new Set<string>();
 
     if (existingJunction) {
-      // Actualizar role, isBillingOwner y relationship solo si alguno cambió.
+      // Actualizar role, isBillingOwner, relationship y plan solo si alguno cambió.
       const junctionNeedsUpdate =
         (role !== undefined && existingJunction.role !== role) ||
         (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner) ||
-        (relationship !== undefined && existingJunction.relationship !== relationship);
+        (relationship !== undefined && existingJunction.relationship !== relationship) ||
+        (planId !== undefined && existingJunction.plan?.id !== planId);
 
       if (junctionNeedsUpdate) {
         if (role !== undefined) {
@@ -343,15 +345,19 @@ export class PersonsService {
         }
         if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
         if (relationship !== undefined) existingJunction.relationship = relationship;
+        if (planId !== undefined) {
+          existingJunction.plan = resolvedRole === PersonRole.AFILIADO ? (plan ?? null) : null;
+        }
         await this.contractPersonRepository.save(existingJunction);
       }
     } else {
-      // Crear nueva junction con role e isBillingOwner.
+      // Crear nueva junction con role, isBillingOwner y plan.
       const contractPerson = this.contractPersonRepository.create({
         contract,
         person: savedPerson,
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
+        plan: resolvedRole === PersonRole.AFILIADO ? plan || savedPerson.plan : null,
       });
       existingJunction = await this.contractPersonRepository.save(contractPerson);
     }
@@ -427,7 +433,11 @@ export class PersonsService {
    * Esto cubre el caso donde la factura ya fue generada por el cron (día 25)
    * y el afiliado se incorpora después de esa fecha.
    */
-  private async autoAddInclusionCharge(contractId: string, person: Person): Promise<void> {
+  private async autoAddInclusionCharge(
+    contractId: string,
+    person: Person,
+    effectivePlan?: Plan | null,
+  ): Promise<void> {
     const billingMonth = getBillingMonth();
 
     // Buscar factura activa del mes actual para este contrato
@@ -455,18 +465,19 @@ export class PersonsService {
     // Ya tiene mensualidad — la factura estaba actualizada, no hace falta INCLUSION
     if (existingMensualidad) return;
 
-    const planAmount = Number(person.plan?.amount ?? 0);
+    const planToUse = effectivePlan ?? person.plan ?? null;
+    const planAmount = Number(planToUse?.amount ?? 0);
     if (planAmount <= 0) return;
 
     // Crear línea INCLUSION (no proyectable — cargo puntual por incorporación)
     const line = this.invoiceLineRepository.create({
       invoice,
       category: InvoiceLineCategory.INCLUSION,
-      description: `Inclusión: ${person.name} - ${person.plan?.name ?? 'Plan'}`,
+      description: `Inclusión: ${person.name} - ${planToUse?.name ?? 'Plan'}`,
       amount: planAmount,
       quantity: 1,
       person,
-      plan: person.plan ?? null,
+      plan: planToUse,
       isProjectable: false,
     });
 

@@ -15,6 +15,7 @@ export class RelocatePlanToContractPerson1785773204942 implements MigrationInter
             SET "plan_id" = p."plan_id"
             FROM "persons" p
             WHERE cp."person_id" = p."id"
+              AND cp."role" = 'AFILIADO'
               AND p."plan_id" IS NOT NULL
               AND cp."plan_id" IS NULL
         `);

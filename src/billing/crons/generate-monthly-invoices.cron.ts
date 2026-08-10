@@ -7,7 +7,6 @@ import { PersonStatus } from '../../persons/entities/person.entity';
 import { InvoiceLineCategory } from '../invoices/enums/invoice-line-category.enum';
 import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
 import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
-import { SurplusService } from '../payments/services/surplus.service';
 import {
   getCaracasNow,
   getStartOfMonth,
@@ -24,7 +23,6 @@ export class GenerateMonthlyInvoices {
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
     private readonly dataSource: DataSource,
-    private readonly surplusService: SurplusService,
   ) {}
 
   @Cron('1 0 25 * *')
@@ -190,16 +188,6 @@ export class GenerateMonthlyInvoices {
 
       await queryRunner.commitTransaction();
       this.logger.log(`Created invoice ${savedInvoice.id} for contract ${contract.id}`);
-
-      // Apply any pending surpluses to the new invoice
-      try {
-        await this.surplusService.applyPendingSurplusesToInvoice(contract.id, savedInvoice.id);
-      } catch (surplusError) {
-        this.logger.error(
-          `Error applying surpluses for contract ${contract.id} to invoice ${savedInvoice.id}`,
-          surplusError,
-        );
-      }
     } catch (error: unknown) {
       if (queryRunner.isTransactionActive) {
         await queryRunner.rollbackTransaction();

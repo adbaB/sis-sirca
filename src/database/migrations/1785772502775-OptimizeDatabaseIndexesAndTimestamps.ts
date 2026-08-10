@@ -4,6 +4,9 @@ export class OptimizeDatabaseIndexesAndTimestamps1785772502775 implements Migrat
   name = 'OptimizeDatabaseIndexesAndTimestamps1785772502775';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Pin PostgreSQL session timezone to America/Caracas so naive timestamp conversions retain expected wall-clock times
+    await queryRunner.query(`SET LOCAL TimeZone = 'America/Caracas'`);
+
     // Safe timestamp -> timestamptz conversions using ALTER COLUMN TYPE (preserves existing data)
     await queryRunner.query(
       `ALTER TABLE "users" ALTER COLUMN "created_at" TYPE TIMESTAMP WITH TIME ZONE`,
@@ -160,7 +163,6 @@ export class OptimizeDatabaseIndexesAndTimestamps1785772502775 implements Migrat
     );
 
     // Index creations IF NOT EXISTS
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_email" ON "users" ("email")`);
     await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS "IDX_users_role_id" ON "users" ("role_id")`,
     );
@@ -208,7 +210,7 @@ export class OptimizeDatabaseIndexesAndTimestamps1785772502775 implements Migrat
       `CREATE INDEX IF NOT EXISTS "IDX_chatbot_phone" ON "chatbot_interactions" ("phone")`,
     );
     await queryRunner.query(
-      `CREATE INDEX IF NOT EXISTS "IDX_payments_status" ON "payments" ("status")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_payments_status_send_at" ON "payments" ("status", "send_at")`,
     );
     await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS "IDX_payments_payment_date" ON "payments" ("payment_date")`,
@@ -243,6 +245,9 @@ export class OptimizeDatabaseIndexesAndTimestamps1785772502775 implements Migrat
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Pin PostgreSQL session timezone to America/Caracas for reverse conversions
+    await queryRunner.query(`SET LOCAL TimeZone = 'America/Caracas'`);
+
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_invoice_lines_person_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_invoice_lines_plan_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_surpluses_contract_id"`);
@@ -253,7 +258,7 @@ export class OptimizeDatabaseIndexesAndTimestamps1785772502775 implements Migrat
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_payments_person_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_payments_reference_number"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_payments_payment_date"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_payments_status"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_payments_status_send_at"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_chatbot_phone"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_invoices_contract_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_invoices_billing_month"`);
@@ -270,7 +275,6 @@ export class OptimizeDatabaseIndexesAndTimestamps1785772502775 implements Migrat
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_contracts_advisor_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_users_advisor_id"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_users_role_id"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_users_email"`);
 
     await queryRunner.query(`ALTER TABLE "invoice_lines" ALTER COLUMN "deleted_at" TYPE TIMESTAMP`);
     await queryRunner.query(`ALTER TABLE "invoice_lines" ALTER COLUMN "updated_at" TYPE TIMESTAMP`);

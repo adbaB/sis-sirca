@@ -9,7 +9,7 @@ import { InvoiceQueryRepository } from '../repositories/invoice-query.repository
 import { InvoiceCalculationService } from './invoice-calculation.service';
 import { resolveInvoiceStatus } from '../helpers/invoice-status.helper';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
-import { getQueryRunner } from '../../../common/context/request-context';
+import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
 import { getBillingMonth, getCaracasTodayJSDate } from '../../../common/utils/date.util';
 import { Person } from '../../../persons/entities/person.entity';
 import { Plan } from '../../../plans/entities/plan.entity';
@@ -165,21 +165,27 @@ export class InvoiceLineService {
    * en la factura activa del mes en curso y recalcula montos + status.
    * Si queda excedente (paidAmount > totalAmount), genera un registro Surplus.
    */
+  @Transactional()
   async removeAffiliateLineFromActiveInvoice(
     contractId: string,
     personId: string,
     manager?: EntityManager,
   ): Promise<void> {
-    const invoiceRepo = manager ? manager.getRepository(Invoice) : this.invoiceRepository;
-    const invoiceLineRepo = manager
-      ? manager.getRepository(InvoiceLine)
+    const qr = getQueryRunnerSafe();
+    const activeManager = manager ?? qr?.manager;
+    const invoiceRepo = activeManager
+      ? activeManager.getRepository(Invoice)
+      : this.invoiceRepository;
+    const invoiceLineRepo = activeManager
+      ? activeManager.getRepository(InvoiceLine)
       : this.invoiceLineRepository;
-    const paymentRepo = manager
-      ? manager.getRepository(Payment)
+    const paymentRepo = activeManager
+      ? activeManager.getRepository(Payment)
       : this.dataSource.getRepository(Payment);
-    const surplusRepo = manager
-      ? manager.getRepository(Surplus)
+    const surplusRepo = activeManager
+      ? activeManager.getRepository(Surplus)
       : this.dataSource.getRepository(Surplus);
+    const entityManager = activeManager ?? this.dataSource.manager;
 
     const billingMonth = getBillingMonth();
 
@@ -223,8 +229,6 @@ export class InvoiceLineService {
     }
 
     if (!mensualidadLine && !inclusionLine) return;
-
-    const entityManager = manager ?? this.dataSource.manager;
 
     // Recalcular baseAmount y total
     const baseAmount = await this.queryRepo.sumBaseLines(entityManager, invoice.id);
@@ -274,7 +278,7 @@ export class InvoiceLineService {
     await invoiceRepo.save(invoice);
 
     // Recalcular status final desde pagos reales
-    await this.calculationService.recalculateInvoicePaidAmount(invoice.id, manager);
+    await this.calculationService.recalculateInvoicePaidAmount(invoice.id, entityManager);
 
     this.logger.log(`[billing] Líneas removidas para persona ${personId} en factura ${invoice.id}`);
   }
@@ -283,6 +287,7 @@ export class InvoiceLineService {
    * Actualiza la línea MENSUALIDAD de un afiliado en la factura activa
    * cuando se cambia su plan. Recalcula baseAmount y totalAmount.
    */
+  @Transactional()
   async updatePlanLineOnActiveInvoice(
     contractId: string,
     personId: string,
@@ -290,9 +295,19 @@ export class InvoiceLineService {
     newPlanAmount: number,
     newPlanName: string,
   ): Promise<void> {
+    const qr = getQueryRunnerSafe();
+    const activeManager = qr?.manager;
+    const invoiceRepo = activeManager
+      ? activeManager.getRepository(Invoice)
+      : this.invoiceRepository;
+    const invoiceLineRepo = activeManager
+      ? activeManager.getRepository(InvoiceLine)
+      : this.invoiceLineRepository;
+    const entityManager = activeManager ?? this.dataSource.manager;
+
     const billingMonth = getBillingMonth();
 
-    const invoice = await this.invoiceRepository.findOne({
+    const invoice = await invoiceRepo.findOne({
       where: {
         contract: { id: contractId },
         billingMonth,
@@ -302,7 +317,7 @@ export class InvoiceLineService {
 
     if (!invoice) return;
 
-    const line = await this.invoiceLineRepository.findOne({
+    const line = await invoiceLineRepo.findOne({
       where: {
         invoice: { id: invoice.id },
         person: { id: personId },
@@ -318,14 +333,11 @@ export class InvoiceLineService {
     line.plan = { id: newPlanId } as Plan;
     const personName = line.description.split(' - ')[0];
     line.description = `${personName} - ${newPlanName}`;
-    await this.invoiceLineRepository.save(line);
+    await invoiceLineRepo.save(line);
 
     // Recalcular baseAmount y totalAmount
-    const baseAmount = await this.queryRepo.sumBaseLines(this.dataSource.manager, invoice.id);
-    const additionalAmount = await this.queryRepo.sumAdditionalLines(
-      this.dataSource.manager,
-      invoice.id,
-    );
+    const baseAmount = await this.queryRepo.sumBaseLines(entityManager, invoice.id);
+    const additionalAmount = await this.queryRepo.sumAdditionalLines(entityManager, invoice.id);
 
     invoice.baseAmount = baseAmount;
     invoice.totalAmount = baseAmount + additionalAmount;
@@ -335,10 +347,10 @@ export class InvoiceLineService {
       invoice.paidAmount = invoice.totalAmount;
     }
 
-    await this.invoiceRepository.save(invoice);
+    await invoiceRepo.save(invoice);
 
     // Recalcular status final
-    await this.calculationService.recalculateInvoicePaidAmount(invoice.id);
+    await this.calculationService.recalculateInvoicePaidAmount(invoice.id, entityManager);
 
     this.logger.log(
       `[billing] Línea MENSUALIDAD actualizada (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,

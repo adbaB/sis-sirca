@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -13,25 +12,48 @@ import {
 import { RequirePermissions } from '../../../auth/decorators';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { PaymentService } from '../services/payment.service';
-import { AwsService } from '../../../aws/aws.service';
-import { OcrService } from '../../../ocr/ocr.service';
+import { ReceiptAnalysisService } from '../services/receipt-analysis.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { parseOcrDateToISO } from '../../../common/utils/date.util';
 
+/**
+ * Controlador de facturación enfocado en la gestión HTTP de pagos y análisis de comprobantes.
+ * Expone los endpoints de la ruta base `/billing`.
+ */
 @Controller('billing')
 export class PaymentBillingController {
   constructor(
     private readonly paymentService: PaymentService,
-    private readonly awsService: AwsService,
-    private readonly ocrService: OcrService,
+    private readonly receiptAnalysisService: ReceiptAnalysisService,
   ) {}
 
+  /**
+   * Crea y procesa un nuevo pago asociado a una o varias facturas.
+   *
+   * Requiere el permiso `create:payments`.
+   *
+   * @param createPaymentDto - Datos de creación del pago (referencia, monto, método, facturas).
+   * @returns Promesa con el resultado de la transacción (pago guardado, factura, saldo pendiente, etc.).
+   */
   @Post('payment')
   @RequirePermissions('create:payments')
   createPayment(@Body() createPaymentDto: CreatePaymentDto) {
     return this.paymentService.createPayment(createPaymentDto);
   }
 
+  /**
+   * Obtiene la lista paginada y filtrada de pagos registrados.
+   * Permite filtrar por estado (status), término de búsqueda (search) y período (mes/año).
+   *
+   * Requiere el permiso `read:payments`.
+   *
+   * @param page - Número de página actual (por defecto: 1).
+   * @param limit - Cantidad de registros por página (por defecto: 10).
+   * @param status - Estado del pago ('PROCESSING', 'COMPLETED', 'REJECTED').
+   * @param search - Término de búsqueda (referencia, cédula, nombre, código de contrato).
+   * @param month - Mes de facturación (1-12).
+   * @param year - Año de facturación (e.g. 2026).
+   * @returns Lista paginada de pagos junto con sus metadatos de paginación.
+   */
   @Get('payments')
   @RequirePermissions('read:payments')
   getPayments(
@@ -52,6 +74,13 @@ export class PaymentBillingController {
     );
   }
 
+  /**
+   * Obtiene la cantidad total de pagos que se encuentran en estado pendiente (`PROCESSING`).
+   *
+   * Requiere el permiso `read:payments`.
+   *
+   * @returns Objeto con la propiedad `count` indicando el número de pagos pendientes.
+   */
   @Get('payments/pending-count')
   @RequirePermissions('read:payments')
   async getPendingCount() {
@@ -59,70 +88,66 @@ export class PaymentBillingController {
     return { count };
   }
 
+  /**
+   * Aprueba administrativamente un pago previamente registrado en estado `PROCESSING`.
+   * Actualiza su estado a `COMPLETED` y recalculó el saldo abonado en la factura.
+   *
+   * Requiere el permiso `update:payments`.
+   *
+   * @param id - Identificador único UUID del pago a aprobar.
+   * @returns El registro de pago actualizado.
+   */
   @Patch('payments/:id/approve')
   @RequirePermissions('update:payments')
   approvePayment(@Param('id') id: string) {
     return this.paymentService.approvePayment(id);
   }
 
+  /**
+   * Rechaza un pago pendiente indicando el motivo correspondiente.
+   * Modifica el estado del pago a `REJECTED` y anula los excedentes asociados.
+   *
+   * Requiere el permiso `update:payments`.
+   *
+   * @param id - Identificador único UUID del pago.
+   * @param reason - Razón o justificación del rechazo.
+   * @returns El registro de pago actualizado con su motivo de rechazo en los metadatos.
+   */
   @Patch('payments/:id/reject')
   @RequirePermissions('update:payments')
   rejectPayment(@Param('id') id: string, @Body('reason') reason: string) {
     return this.paymentService.rejectPayment(id, reason || 'Rechazado por el administrador');
   }
 
+  /**
+   * Corrige/actualiza la fecha de un pago existente y recalcula las conversiones
+   * de tasa de cambio y excedentes en función de la nueva fecha.
+   *
+   * Requiere el permiso `update:payments`.
+   *
+   * @param id - Identificador único UUID del pago.
+   * @param paymentDate - Nueva fecha de pago (cadena de texto en formato fecha).
+   * @returns El registro de pago actualizado.
+   */
   @Patch('payments/:id/date')
   @RequirePermissions('update:payments')
   updatePaymentDate(@Param('id') id: string, @Body('paymentDate') paymentDate: string) {
     return this.paymentService.updatePaymentDate(id, paymentDate);
   }
 
+  /**
+   * Sube y analiza un archivo de comprobante bancario (imagen/PDF) mediante OCR y AWS.
+   * Extrae automáticamente la referencia, fecha, monto, moneda y método de pago.
+   *
+   * Requiere el permiso `create:advisor-payments`.
+   *
+   * @param file - Archivo subido mediante el interceptor de Multer (`file`).
+   * @returns Objeto con los datos extraídos del comprobante y la URL almacenada en S3.
+   */
   @Post('payments/analyze-receipt')
   @RequirePermissions('create:advisor-payments')
   @UseInterceptors(FileInterceptor('file'))
-  async analyzeReceipt(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('Se requiere un archivo de comprobante.');
-    }
-
-    const s3Url = await this.awsService.uploadFile(file);
-    const ocrResult = await this.ocrService.extractReceiptData(s3Url);
-    const formattedDate = parseOcrDateToISO(ocrResult.fecha);
-
-    const currency = ocrResult.moneda ? ocrResult.moneda.trim().toUpperCase() : '';
-    let mappedMethod = 'PAGO_MOVIL';
-    if (currency === 'USD') {
-      mappedMethod = 'ZELLE';
-    } else if (ocrResult.origen) {
-      const originUpper = ocrResult.origen.toUpperCase();
-      if (originUpper.includes('ZELLE')) {
-        mappedMethod = 'ZELLE';
-      } else if (originUpper.includes('TRANS') || originUpper.includes('DEP')) {
-        mappedMethod = 'TRANSFERENCIA';
-      }
-    }
-
-    // Set Bs or USD based on currency, without automatic conversion
-    let amountUsd: number | null = null;
-    let amountBsVal: number | null = null;
-    const ocrAmount = ocrResult.monto || 0;
-
-    if (currency === 'BS' || currency === 'VES') {
-      amountBsVal = ocrAmount;
-    } else {
-      amountUsd = ocrAmount;
-    }
-
-    return {
-      referenceNumber: ocrResult.referencia || '',
-      amount: amountUsd,
-      amountBs: amountBsVal,
-      paymentDate: formattedDate,
-      operationDate: formattedDate,
-      paymentMethod: mappedMethod,
-      bank: ocrResult.nombreBanco || ocrResult.origen || '',
-      url: s3Url,
-      rawOcr: ocrResult,
-    };
+  analyzeReceipt(@UploadedFile() file: Express.Multer.File) {
+    return this.receiptAnalysisService.analyzeReceipt(file);
   }
 }

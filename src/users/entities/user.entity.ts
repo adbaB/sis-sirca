@@ -17,7 +17,6 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Index('IDX_users_email')
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
