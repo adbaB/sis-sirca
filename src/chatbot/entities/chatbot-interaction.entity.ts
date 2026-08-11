@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinTable,
   ManyToMany,
   PrimaryGeneratedColumn,
@@ -17,6 +18,7 @@ export enum InteractionStatus {
 }
 
 @Entity('chatbot_interactions')
+@Index('IDX_chatbot_phone', ['phone'])
 export class ChatbotInteraction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -42,12 +44,12 @@ export class ChatbotInteraction {
   })
   invoices: Invoice[];
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   started_at: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   completed_at: Date;
 }

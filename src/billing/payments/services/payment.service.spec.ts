@@ -3,13 +3,17 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PaymentService } from './payment.service';
+import { PaymentCreationService } from './payment-creation.service';
+import { PaymentStateService } from './payment-state.service';
+import { PaymentUpdateService } from './payment-update.service';
+import { PaymentQueryService } from './payment-query.service';
 import { Payment } from '../entities/payment.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { InvoiceService } from '../../invoices/services/invoice.service';
 import { SurplusService } from './surplus.service';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 
-describe('PaymentService', () => {
+describe('PaymentService & PaymentCreationService', () => {
   let service: PaymentService;
 
   const mockQueryRunner = {
@@ -47,10 +51,27 @@ describe('PaymentService', () => {
     persistSurplus: jest.fn(),
   };
 
+  const mockPaymentStateService = {
+    approvePayment: jest.fn(),
+    rejectPayment: jest.fn(),
+    markPaymentsAsSent: jest.fn(),
+  };
+
+  const mockPaymentUpdateService = {
+    updatePaymentDate: jest.fn(),
+  };
+
+  const mockPaymentQueryService = {
+    findPayments: jest.fn(),
+    countPendingPayments: jest.fn(),
+    findUnsetPayment: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentService,
+        PaymentCreationService,
         {
           provide: getRepositoryToken(Payment),
           useValue: mockPaymentRepository,
@@ -70,6 +91,18 @@ describe('PaymentService', () => {
         {
           provide: SurplusService,
           useValue: mockSurplusService,
+        },
+        {
+          provide: PaymentStateService,
+          useValue: mockPaymentStateService,
+        },
+        {
+          provide: PaymentUpdateService,
+          useValue: mockPaymentUpdateService,
+        },
+        {
+          provide: PaymentQueryService,
+          useValue: mockPaymentQueryService,
         },
       ],
     }).compile();

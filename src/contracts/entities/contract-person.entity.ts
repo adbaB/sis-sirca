@@ -13,6 +13,7 @@ import {
 import type { Contract } from './contract.entity';
 import type { Person } from '../../persons/entities/person.entity';
 import type { HealthDeclaration } from './health-declaration.entity';
+import type { Plan } from '../../plans/entities/plan.entity';
 
 export enum PersonRole {
   TITULAR = 'TITULAR',
@@ -44,6 +45,9 @@ export enum Parentesco {
   unique: true,
   where: '"deleted_at" IS NULL',
 })
+@Index('IDX_contract_persons_contract_id', ['contract'])
+@Index('IDX_contract_persons_person_id', ['person'])
+@Index('IDX_contract_persons_plan_id', ['plan'])
 export class ContractPerson {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -55,6 +59,10 @@ export class ContractPerson {
   @ManyToOne('Person', (person: Person) => person.contractPersons, { nullable: false })
   @JoinColumn({ name: 'person_id' })
   person: Person;
+
+  @ManyToOne('Plan', { nullable: true })
+  @JoinColumn({ name: 'plan_id' })
+  plan?: Plan | null;
 
   @Column({ type: 'enum', enum: PersonRole, default: PersonRole.AFILIADO })
   role: PersonRole;
@@ -68,12 +76,12 @@ export class ContractPerson {
   @OneToMany('HealthDeclaration', (hd: HealthDeclaration) => hd.contractPerson)
   healthDeclarations?: HealthDeclaration[];
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt: Date;
 }

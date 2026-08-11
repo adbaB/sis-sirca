@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -26,6 +27,7 @@ export class User {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
+  @Index('IDX_users_role_id')
   @Column({ type: 'uuid', name: 'role_id', nullable: true })
   roleId: string;
 
@@ -37,6 +39,7 @@ export class User {
   @JoinColumn({ name: 'role_id', foreignKeyConstraintName: 'FK_users_role' })
   role: Role;
 
+  @Index('IDX_users_advisor_id')
   @Column({ type: 'uuid', name: 'advisor_id', nullable: true })
   advisorId: string;
 
@@ -50,10 +53,10 @@ export class User {
   advisor: Advisor;
 
   @Exclude()
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
   @Exclude()
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 }

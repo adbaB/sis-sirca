@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -32,6 +33,7 @@ import { nullableDecimalTransformer } from '../../common/transformers/decimal.tr
 
 @Entity('persons')
 @Unique(['typeIdentityCard', 'identityCard'])
+@Index('IDX_persons_name', ['name'])
 export class Person {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -57,6 +59,7 @@ export class Person {
   @Column({ type: 'varchar', length: 20, nullable: true, name: 'alternate_phone' })
   alternatePhone?: string;
 
+  @Index('IDX_persons_email')
   @Column({ type: 'varchar', length: 100, nullable: true })
   email?: string;
 
@@ -96,6 +99,7 @@ export class Person {
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'legal_representative' })
   legalRepresentative?: string;
 
+  @Index('IDX_persons_plan_id')
   @ManyToOne('Plan', (plan: Plan) => plan.persons, { nullable: true })
   @JoinColumn({ name: 'plan_id' })
   plan: Plan;
@@ -106,12 +110,12 @@ export class Person {
   @Column({ type: 'enum', enum: PersonStatus, default: PersonStatus.ACTIVE })
   status?: PersonStatus;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt?: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt?: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt?: Date;
 }

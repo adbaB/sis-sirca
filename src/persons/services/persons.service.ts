@@ -22,6 +22,7 @@ import { ContractPerson, PersonRole } from '../../contracts/entities/contract-pe
 import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
+import { Plan } from '../../plans/entities/plan.entity';
 import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 
@@ -58,6 +59,14 @@ export class PersonsService {
       ...personData
     } = createPersonDto;
     const resolvedRole = role || PersonRole.AFILIADO;
+
+    let plan = null;
+    if (resolvedRole === PersonRole.AFILIADO && planId) {
+      plan = await this.plansService.findOne(planId);
+      if (!plan) {
+        throw new NotFoundException(`Plan with ID "${planId}" not found`);
+      }
+    }
 
     // Check if a person with this identityCard already exists
     const person = await this.findByIdentityCard(
@@ -107,26 +116,28 @@ export class PersonsService {
             role: resolvedRole,
             isBillingOwner: isBillingOwner ?? false,
             relationship,
+            plan: resolvedRole === PersonRole.AFILIADO ? plan || person.plan : null,
           });
           const savedCp = await this.contractPersonRepository.save(contractPerson);
 
           await this.saveHealthDeclarations(healthDeclarations, savedCp);
 
           if (resolvedRole === PersonRole.AFILIADO) {
+            const effectivePlan = savedCp.plan || person.plan || null;
             // Registrar en historial
             await this.affiliationHistoryRepository.save(
               this.affiliationHistoryRepository.create({
                 contract: { id: contractId },
                 person,
-                plan: person.plan ?? null,
+                plan: effectivePlan,
                 action: AffiliationAction.AFILIACION,
-                amount: Number(person.plan?.amount ?? 0),
+                amount: Number(effectivePlan?.amount ?? 0),
                 actionDate: contract?.affiliationDate ?? new Date(),
               }),
             );
 
             // Auto-generar cargo INCLUSION en la factura activa del mes
-            await this.autoAddInclusionCharge(contractId, person);
+            await this.autoAddInclusionCharge(contractId, person, effectivePlan);
           }
 
           await this.contractsService.recalculateMonthlyAmount(contractId);
@@ -138,15 +149,6 @@ export class PersonsService {
     }
 
     // Normal flow when person does NOT exist:
-    // Titulars don't have a plan
-    let plan = null;
-    if (resolvedRole === PersonRole.AFILIADO && planId) {
-      plan = await this.plansService.findOne(planId);
-      if (!plan) {
-        throw new NotFoundException(`Plan with ID "${planId}" not found`);
-      }
-    }
-
     let contract = null;
     if (contractId) {
       contract = await this.contractsService.findOne(contractId);
@@ -163,6 +165,11 @@ export class PersonsService {
     const savedPerson = await this.personsRepository.save(newPerson);
 
     if (contract) {
+      if (resolvedRole === PersonRole.AFILIADO && !plan) {
+        throw new BadRequestException(
+          'Se requiere un plan para afiliar a una persona a este contrato.',
+        );
+      }
       // Create junction table entry
       const contractPerson = this.contractPersonRepository.create({
         contract,
@@ -170,6 +177,7 @@ export class PersonsService {
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
         relationship,
+        plan: resolvedRole === PersonRole.AFILIADO ? plan : null,
       });
       const savedCp = await this.contractPersonRepository.save(contractPerson);
 
@@ -179,19 +187,20 @@ export class PersonsService {
 
       // Registrar en historial
       if (resolvedRole === PersonRole.AFILIADO) {
+        const effectivePlan = savedCp?.plan || plan || null;
         await this.affiliationHistoryRepository.save(
           this.affiliationHistoryRepository.create({
             contract: { id: contractId },
             person: savedPerson,
-            plan: plan ?? null,
+            plan: effectivePlan,
             action: AffiliationAction.AFILIACION,
-            amount: Number(plan?.amount ?? 0),
+            amount: Number(effectivePlan?.amount ?? 0),
             actionDate: contract?.affiliationDate ?? new Date(),
           }),
         );
 
         // Auto-generar cargo INCLUSION en la factura activa del mes
-        await this.autoAddInclusionCharge(contractId, savedPerson);
+        await this.autoAddInclusionCharge(contractId, savedPerson, effectivePlan);
       }
     }
 
@@ -322,11 +331,12 @@ export class PersonsService {
     const contractsToRecalculate = new Set<string>();
 
     if (existingJunction) {
-      // Actualizar role, isBillingOwner y relationship solo si alguno cambió.
+      // Actualizar role, isBillingOwner, relationship y plan solo si alguno cambió.
       const junctionNeedsUpdate =
         (role !== undefined && existingJunction.role !== role) ||
         (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner) ||
-        (relationship !== undefined && existingJunction.relationship !== relationship);
+        (relationship !== undefined && existingJunction.relationship !== relationship) ||
+        (planId !== undefined && existingJunction.plan?.id !== planId);
 
       if (junctionNeedsUpdate) {
         if (role !== undefined) {
@@ -340,15 +350,21 @@ export class PersonsService {
         }
         if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
         if (relationship !== undefined) existingJunction.relationship = relationship;
+        if (resolvedRole === PersonRole.TITULAR) {
+          existingJunction.plan = null;
+        } else if (planId !== undefined || !existingJunction.plan) {
+          existingJunction.plan = plan ?? existingJunction.plan ?? savedPerson.plan ?? null;
+        }
         await this.contractPersonRepository.save(existingJunction);
       }
     } else {
-      // Crear nueva junction con role e isBillingOwner.
+      // Crear nueva junction con role, isBillingOwner y plan.
       const contractPerson = this.contractPersonRepository.create({
         contract,
         person: savedPerson,
         role: resolvedRole,
         isBillingOwner: isBillingOwner ?? false,
+        plan: resolvedRole === PersonRole.AFILIADO ? plan || savedPerson.plan : null,
       });
       existingJunction = await this.contractPersonRepository.save(contractPerson);
     }
@@ -424,7 +440,11 @@ export class PersonsService {
    * Esto cubre el caso donde la factura ya fue generada por el cron (día 25)
    * y el afiliado se incorpora después de esa fecha.
    */
-  private async autoAddInclusionCharge(contractId: string, person: Person): Promise<void> {
+  private async autoAddInclusionCharge(
+    contractId: string,
+    person: Person,
+    effectivePlan?: Plan | null,
+  ): Promise<void> {
     const billingMonth = getBillingMonth();
 
     // Buscar factura activa del mes actual para este contrato
@@ -452,18 +472,19 @@ export class PersonsService {
     // Ya tiene mensualidad — la factura estaba actualizada, no hace falta INCLUSION
     if (existingMensualidad) return;
 
-    const planAmount = Number(person.plan?.amount ?? 0);
+    const planToUse = effectivePlan ?? person.plan ?? null;
+    const planAmount = Number(planToUse?.amount ?? 0);
     if (planAmount <= 0) return;
 
     // Crear línea INCLUSION (no proyectable — cargo puntual por incorporación)
     const line = this.invoiceLineRepository.create({
       invoice,
       category: InvoiceLineCategory.INCLUSION,
-      description: `Inclusión: ${person.name} - ${person.plan?.name ?? 'Plan'}`,
+      description: `Inclusión: ${person.name} - ${planToUse?.name ?? 'Plan'}`,
       amount: planAmount,
       quantity: 1,
       person,
-      plan: person.plan ?? null,
+      plan: planToUse,
       isProjectable: false,
     });
 

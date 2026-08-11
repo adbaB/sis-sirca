@@ -4,6 +4,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -29,6 +30,9 @@ import { decimalTransformer } from '../../../common/transformers/decimal.transfo
 @Check('"paid_amount" <= "total_amount"')
 @Check('CHK_invoices_base_amount', '"base_amount" >= 0')
 @Unique(['contract', 'billingMonth'])
+@Index('IDX_invoices_contract_id', ['contract'])
+@Index('IDX_invoices_billing_month', ['billingMonth'])
+@Index('IDX_invoices_status', ['status'])
 export class Invoice {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -104,12 +108,12 @@ export class Invoice {
   @OneToMany('Payment', (payment: Payment) => payment.invoice)
   payments: Payment[];
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
 
-  @DeleteDateColumn({ type: 'timestamp', name: 'deleted_at' })
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at' })
   deletedAt: Date;
 }

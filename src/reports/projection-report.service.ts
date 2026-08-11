@@ -107,7 +107,7 @@ export class ProjectionReportService {
       FROM contracts c
       JOIN contract_persons cp ON cp.contract_id = c.id AND cp.deleted_at IS NULL
       JOIN persons p ON cp.person_id = p.id AND p.deleted_at IS NULL
-      LEFT JOIN plans pl ON p.plan_id = pl.id AND pl.deleted_at IS NULL
+      LEFT JOIN plans pl ON COALESCE(cp.plan_id, p.plan_id) = pl.id AND pl.deleted_at IS NULL
       LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
       LEFT JOIN advisors adv ON c.advisor_id = adv.id AND adv.deleted_at IS NULL
       WHERE c.status = 'ACTIVE'

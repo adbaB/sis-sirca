@@ -540,6 +540,7 @@ export class ContractsService {
         const contractPerson = cpRepo.create({
           contract: savedContract,
           person,
+          plan: role === PersonRole.AFILIADO ? plan : null,
           role,
           isBillingOwner: resolvedIsBillingOwner,
           relationship,
@@ -582,6 +583,7 @@ export class ContractsService {
         where: { id: savedContract.id },
         relations: [
           'contractPersons',
+          'contractPersons.plan',
           'contractPersons.person',
           'contractPersons.person.plan',
           'advisor',
@@ -650,6 +652,7 @@ export class ContractsService {
         where: { id: contractId },
         relations: [
           'contractPersons',
+          'contractPersons.plan',
           'contractPersons.person',
           'contractPersons.person.plan',
           'contractPersons.healthDeclarations',
@@ -729,7 +732,7 @@ export class ContractsService {
       const beneficiaries = beneficiariesList.map((cp, idx) => {
         const person = cp.person;
         const isTitular = isSamePerson(cp, titularCp);
-        const plan = person?.plan || contractPlan;
+        const plan = cp.plan || person?.plan || contractPlan;
         const coverage = plan?.coverage
           ? Number(plan.coverage).toLocaleString('en-US', {
               minimumFractionDigits: 2,
@@ -788,7 +791,9 @@ export class ContractsService {
         };
       });
 
-      const titularPlan = titularCp?.person?.plan || contractPlan;
+      const titularPlan = titularCp
+        ? titularCp.plan || titularCp.person?.plan || contractPlan
+        : null;
       const titularRow = titularCp
         ? {
             name: titularCp.person.name,
@@ -809,7 +814,7 @@ export class ContractsService {
       const beneficiariesRow = affiliateCps
         .filter((cp) => !isSamePerson(cp, titularCp))
         .map((cp) => {
-          const plan = cp.person?.plan || contractPlan;
+          const plan = cp.plan || cp.person?.plan || contractPlan;
           const coverage = plan?.coverage
             ? Number(plan.coverage).toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -833,7 +838,7 @@ export class ContractsService {
       >();
 
       for (const cp of fullContract.contractPersons) {
-        const plan = cp.person?.plan;
+        const plan = cp.plan || cp.person?.plan;
         if (plan) {
           const planName = plan.name.toUpperCase();
           const unitCost = Number(plan.amount) || 0;
@@ -1427,7 +1432,12 @@ export class ContractsService {
   async findByCode(code: string): Promise<Contract> {
     return this.contractsRepository.findOne({
       where: [{ code }, { legacyCode: code }],
-      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+      relations: [
+        'contractPersons',
+        'contractPersons.plan',
+        'contractPersons.person',
+        'contractPersons.person.plan',
+      ],
     });
   }
   async findOne(id: string): Promise<Contract> {
@@ -1488,7 +1498,7 @@ export class ContractsService {
   async removeAffiliate(contractPersonId: string): Promise<void> {
     const contractPerson = await this.contractPersonsRepository.findOne({
       where: { id: contractPersonId },
-      relations: ['contract', 'person', 'person.plan'],
+      relations: ['contract', 'person', 'person.plan', 'plan'],
     });
 
     if (!contractPerson) {
@@ -1507,14 +1517,16 @@ export class ContractsService {
       const historyRepo = manager.getRepository(AffiliationHistory);
       const cpRepo = manager.getRepository(ContractPerson);
 
+      const effectivePlan = contractPerson.plan ?? contractPerson.person?.plan ?? null;
+
       // Registrar en historial ANTES de eliminar
       await historyRepo.save(
         historyRepo.create({
           contract: contractPerson.contract,
           person: contractPerson.person,
-          plan: contractPerson.person?.plan ?? null,
+          plan: effectivePlan,
           action: AffiliationAction.DESAFILIACION,
-          amount: Number(contractPerson.person?.plan?.amount ?? 0),
+          amount: Number(effectivePlan?.amount ?? 0),
           reason: null,
         }),
       );
@@ -1547,13 +1559,13 @@ export class ContractsService {
         contract: { id: contractId },
         person: { status: PersonStatus.ACTIVE },
       },
-      relations: ['person', 'person.plan'],
+      relations: ['plan', 'person', 'person.plan'],
     });
 
     const totalAmount = affiliates.reduce((sum, cp) => {
-      // Sum the plan amount if the person is an AFILIADO and has a plan
-      if (cp.role === 'AFILIADO' && cp.person && cp.person.plan) {
-        return sum + Number(cp.person.plan.amount);
+      const plan = cp.plan || cp.person?.plan;
+      if (cp.role === 'AFILIADO' && plan) {
+        return sum + Number(plan.amount);
       }
       return sum;
     }, 0);
@@ -1582,16 +1594,28 @@ export class ContractsService {
     await this.contractPersonsRepository.manager.transaction(async (entityManager) => {
       const isAlreadyTitular = target.role === PersonRole.TITULAR;
 
-      // Revertir a todos los demás titulares actuales a afiliados (AFILIADO)
-      await entityManager.update(
-        ContractPerson,
-        { contract: { id: contractId }, deletedAt: IsNull() },
-        { role: PersonRole.AFILIADO },
-      );
+      // Revertir a todos los titulares actuales a afiliados (AFILIADO)
+      const currentTitulars = await entityManager.find(ContractPerson, {
+        where: { contract: { id: contractId }, role: PersonRole.TITULAR, deletedAt: IsNull() },
+        relations: ['person', 'person.plan'],
+      });
+
+      for (const titular of currentTitulars) {
+        titular.role = PersonRole.AFILIADO;
+        if (!titular.plan) {
+          titular.plan = titular.person?.plan ?? null;
+        }
+        await entityManager.save(ContractPerson, titular);
+      }
 
       // Si antes era titular, al hacer click de nuevo se desmarca (se vuelve AFILIADO).
       // Si no lo era, pasa a ser el nuevo titular (TITULAR).
       target.role = isAlreadyTitular ? PersonRole.AFILIADO : PersonRole.TITULAR;
+      if (target.role === PersonRole.TITULAR) {
+        target.plan = null;
+      } else if (!target.plan) {
+        target.plan = target.person?.plan ?? null;
+      }
       await entityManager.save(ContractPerson, target);
     });
 

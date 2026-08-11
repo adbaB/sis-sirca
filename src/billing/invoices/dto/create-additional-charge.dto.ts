@@ -8,11 +8,15 @@ import {
   IsUUID,
   Min,
   MaxLength,
+  IsNotIn,
 } from 'class-validator';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 
 export class CreateAdditionalChargeDto {
   @IsEnum(InvoiceLineCategory)
+  @IsNotIn([InvoiceLineCategory.MENSUALIDAD], {
+    message: 'MENSUALIDAD no es un cargo adicional válido',
+  })
   @IsNotEmpty()
   category: InvoiceLineCategory;
 

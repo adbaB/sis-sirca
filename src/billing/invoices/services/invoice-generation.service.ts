@@ -62,7 +62,12 @@ export class InvoiceGenerationService {
     // sin necesitar un contexto ALS activo.
     const preContract = await this.contractRepository.findOne({
       where: { id: contractId },
-      relations: ['contractPersons', 'contractPersons.person', 'contractPersons.person.plan'],
+      relations: [
+        'contractPersons',
+        'contractPersons.plan',
+        'contractPersons.person',
+        'contractPersons.person.plan',
+      ],
     });
 
     if (!preContract) {
@@ -85,21 +90,23 @@ export class InvoiceGenerationService {
     }
 
     // Validaciones de negocio sobre los afiliados
-    const activeAfiliados =
-      preContract.contractPersons
-        ?.filter((cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE)
-        .map((cp) => cp.person) || [];
+    const activeAfiliadoCps =
+      preContract.contractPersons?.filter(
+        (cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE,
+      ) || [];
 
-    if (activeAfiliados.length === 0) {
+    if (activeAfiliadoCps.length === 0) {
       throw new BadRequestException('El contrato no tiene afiliados activos');
     }
 
-    const invalidPerson = activeAfiliados.find(
-      (p) => !p.plan || p.plan.amount === null || p.plan.amount === undefined,
-    );
-    if (invalidPerson) {
+    const invalidCp = activeAfiliadoCps.find((cp) => {
+      const plan = cp.plan || cp.person?.plan;
+      return !plan || plan.amount === null || plan.amount === undefined;
+    });
+
+    if (invalidCp) {
       throw new BadRequestException(
-        `El afiliado ${invalidPerson.name} no tiene un plan de salud válido asignado`,
+        `El afiliado ${invalidCp.person.name} no tiene un plan de salud válido asignado`,
       );
     }
 
@@ -108,15 +115,17 @@ export class InvoiceGenerationService {
 
     // Calcular monto total y preparar líneas
     let totalAmount = 0;
-    const invoiceDetailsData = activeAfiliados.map((person) => {
-      const amount = Number(person.plan.amount);
+    const invoiceDetailsData = activeAfiliadoCps.map((cp) => {
+      const plan = cp.plan || cp.person?.plan;
+      const person = cp.person;
+      const amount = Number(plan!.amount);
 
       if (!Number.isFinite(amount) || amount < 0) {
         throw new BadRequestException(`El monto del plan del afiliado ${person.name} no es válido`);
       }
 
       totalAmount += amount;
-      return { person, plan: person.plan, chargedAmount: amount };
+      return { person, plan: plan!, chargedAmount: amount };
     });
 
     const now = getCaracasNow();

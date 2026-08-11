@@ -11,8 +11,15 @@ import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { InvoiceCalculationService } from '../../invoices/services/invoice-calculation.service';
 import { INVOICE_CREATED, InvoiceCreatedEvent } from '../../invoices/events/invoice.events';
-import { getQueryRunnerSafe } from '../../../common/context/request-context';
+import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
+import { Transactional } from '../../../common/decorators/transactional.decorator';
+import { calculateSurplusApplication } from '../utils/surplus-calculator.util';
 
+/**
+ * Servicio encargado de gestionar los saldos a favor / excedentes de pago de los contratos.
+ * Se encarga de aplicar automáticamente excedentes pendientes a facturas recién creadas o activas,
+ * escuchar eventos del sistema y persistir registros de saldo a favor.
+ */
 @Injectable()
 export class SurplusService {
   private readonly logger = new Logger(SurplusService.name);
@@ -26,182 +33,143 @@ export class SurplusService {
   ) {}
 
   /**
-   * Applies any pending surpluses for a contract to a specific invoice.
-   * This should be called after an invoice is created.
-   */
-  /**
-   * Applies any pending surpluses for a contract to a specific invoice.
-   * This should be called after an invoice is created.
+   * Aplica los excedentes pendientes (`PENDING`) de un contrato específico a una factura determinada.
+   * Ejecutado transaccionalmente con bloqueo pesimista de la factura y de los registros de excedente.
+   * Genera registros sintéticos de {@link Payment} por cada porción de excedente imputada.
    *
-   * NOTA: Este método gestiona su propio QueryRunner ya que puede ser invocado
-   * tanto desde requests HTTP (via setImmediate en generateInvoiceForContract)
-   * como desde cron jobs (applyPendingSurplusesToAllActiveInvoices), ambos
-   * fuera del contexto ALS del request.
+   * @param contractId - Identificador del contrato titular del saldo a favor.
+   * @param invoiceId - Identificador de la factura a la cual se aplicarán los excedentes.
+   * @returns Promesa que se resuelve al finalizar el proceso.
+   * @throws Error Si la factura especificada no existe o no se encuentra tasa de cambio requerida.
    */
+  @Transactional()
   async applyPendingSurplusesToInvoice(contractId: string, invoiceId: string): Promise<void> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const queryRunner = getQueryRunner();
 
-    try {
-      const invoice = await queryRunner.manager
-        .createQueryBuilder(Invoice, 'invoice')
-        .setQueryRunner(queryRunner)
-        .where('invoice.id = :id', { id: invoiceId })
-        .setLock('pessimistic_write')
-        .getOne();
+    const invoice = await queryRunner.manager
+      .createQueryBuilder(Invoice, 'invoice')
+      .setQueryRunner(queryRunner)
+      .where('invoice.id = :id', { id: invoiceId })
+      .setLock('pessimistic_write')
+      .getOne();
 
-      if (!invoice) {
-        throw new Error(`Invoice ${invoiceId} not found`);
-      }
-
-      // Fetch pending surpluses inside the transaction with a lock to prevent concurrent applications.
-      // We lock the records without loading relations first to prevent PostgreSQL from throwing:
-      // "FOR UPDATE cannot be applied to the nullable side of an outer join".
-      const surpluses = await queryRunner.manager.find(Surplus, {
-        where: {
-          contract: { id: contractId },
-          status: SurplusStatus.PENDING,
-          invoice: IsNull(),
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!surpluses.length) {
-        await queryRunner.rollbackTransaction();
-        return;
-      }
-
-      // Safely load the relations for the already locked surpluses.
-      const surplusesWithRelations = await queryRunner.manager.find(Surplus, {
-        where: {
-          id: In(surpluses.map((s) => s.id)),
-        },
-        relations: ['payment', 'payment.person', 'contract'],
-      });
-
-      const fechaVe = getCaracasTodayJSDate();
-      let exchangeRate: ExchangeRate | null = null;
-      let remainingBalanceUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
-
-      const appliedSurplusIds: string[] = [];
-      const newLeftoverSurpluses: Surplus[] = [];
-
-      for (const surplus of surplusesWithRelations) {
-        if (remainingBalanceUsd <= 0.01) {
-          // Invoice is already fully covered. Leave remaining surpluses pending.
-          break;
-        }
-
-        let paymentAmountUsd = 0;
-        let paymentAmountBs = 0;
-
-        // If the surplus is in Bs (non-Zelle), convert to USD at current rate
-        if (surplus.amountBs && surplus.amountBs > 0) {
-          // Lazy fetch the exchange rate only if we actually need it
-          if (!exchangeRate) {
-            exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
-            if (!exchangeRate) {
-              throw new Error('Exchange rate not found for current date to apply Bs surplus');
-            }
-          }
-
-          const rateUsd = Number(exchangeRate.rateUsd);
-          if (!Number.isFinite(rateUsd) || rateUsd <= 0) {
-            throw new Error('Invalid exchange rate for current date to apply Bs surplus');
-          }
-
-          paymentAmountBs = Number(surplus.amountBs);
-          paymentAmountUsd = paymentAmountBs / rateUsd;
-        } else if (surplus.amountUsd && surplus.amountUsd > 0) {
-          paymentAmountUsd = Number(surplus.amountUsd);
-        }
-
-        if (paymentAmountUsd > 0) {
-          // Cap the surplus application to the remaining invoice balance
-          let amountToApplyUsd = paymentAmountUsd;
-          let amountToApplyBs = paymentAmountBs;
-          if (paymentAmountUsd > remainingBalanceUsd) {
-            amountToApplyUsd = remainingBalanceUsd;
-
-            // Calculate the proportional Bs reduction if it was originally a Bs payment
-            const proportion = amountToApplyUsd / paymentAmountUsd;
-            amountToApplyBs = paymentAmountBs * proportion;
-
-            const leftoverUsd = paymentAmountUsd - amountToApplyUsd;
-            const leftoverBs = paymentAmountBs - amountToApplyBs;
-
-            // Create a NEW pending surplus for the remainder, tied to the original payment
-            const remainingSurplus = queryRunner.manager.create(Surplus, {
-              amountUsd: surplus.amountUsd !== null ? leftoverUsd : null,
-              amountBs: surplus.amountBs !== null ? leftoverBs : null,
-              date: surplus.date, // keep original date
-              payment: surplus.payment, // trace back to original payment
-              invoice: null,
-              contract: surplus.contract,
-              status: SurplusStatus.PENDING,
-            });
-            const savedRemainingSurplus = await queryRunner.manager.save(remainingSurplus);
-            newLeftoverSurpluses.push(savedRemainingSurplus);
-          }
-
-          // Create a new Payment record applying this surplus segment to the invoice
-          const surplusPayment = queryRunner.manager.create(Payment, {
-            paymentDate: getCaracasTodayJSDate(),
-            status: PaymentStatus.COMPLETED,
-            invoice: invoice,
-            person: surplus.payment ? surplus.payment.person : null,
-            referenceNumber: surplus.payment
-              ? `SURPLUS-${surplus.payment.referenceNumber}`
-              : `SURPLUS-SYSTEM-${surplus.id ? surplus.id.slice(0, 8) : 'NEW'}`,
-            amount: amountToApplyUsd,
-            amountBs: amountToApplyBs > 0 ? amountToApplyBs : 0,
-            paymentMethod: surplus.payment ? surplus.payment.paymentMethod : 'SURPLUS_AJUSTE',
-            url: surplus.payment ? surplus.payment.url : null,
-          }) as Payment;
-
-          await queryRunner.manager.save(surplusPayment);
-
-          // Update the CURRENT surplus to the consumed amount and mark it APPLIED
-          surplus.amountUsd = surplus.amountUsd !== null ? amountToApplyUsd : null;
-          surplus.amountBs = surplus.amountBs !== null ? amountToApplyBs : null;
-          surplus.status = SurplusStatus.APPLIED;
-          surplus.invoice = invoice;
-          await queryRunner.manager.save(surplus);
-
-          // Deduct from the running balance tracking
-          remainingBalanceUsd -= amountToApplyUsd;
-
-          this.logger.log(
-            `Applied surplus ${surplus.id} to invoice ${invoiceId} (applied USD: $${amountToApplyUsd.toFixed(2)})`,
-          );
-
-          appliedSurplusIds.push(surplus.id);
-        }
-      }
-
-      // We recalculate INSIDE the transaction to rollback everything if it fails
-      await this.invoiceCalculationService.recalculateInvoicePaidAmount(
-        invoiceId,
-        queryRunner.manager,
-      );
-
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      this.logger.error(
-        `Error applying surpluses to invoice ${invoiceId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw error;
-    } finally {
-      await queryRunner.release();
+    if (!invoice) {
+      throw new Error(`Invoice ${invoiceId} not found`);
     }
+
+    // Fetch pending surpluses with lock (without relations to prevent PG outer join lock error)
+    const surpluses = await queryRunner.manager.find(Surplus, {
+      where: {
+        contract: { id: contractId },
+        status: SurplusStatus.PENDING,
+        invoice: IsNull(),
+      },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!surpluses.length) {
+      return;
+    }
+
+    // Load relations safely for locked surpluses
+    const surplusesWithRelations = await queryRunner.manager.find(Surplus, {
+      where: {
+        id: In(surpluses.map((s) => s.id)),
+      },
+      relations: ['payment', 'payment.person', 'contract'],
+    });
+
+    const fechaVe = getCaracasTodayJSDate();
+    let exchangeRate: ExchangeRate | null = null;
+    let remainingBalanceUsd = Math.max(
+      0,
+      Number(invoice.totalAmount) -
+        Number(invoice.retentionAmount || 0) -
+        Number(invoice.paidAmount),
+    );
+
+    for (const surplus of surplusesWithRelations) {
+      if (remainingBalanceUsd <= 0.01) {
+        break;
+      }
+
+      // Fetch exchange rate lazily if surplus contains Bs amount
+      let rateUsd: number | undefined;
+      if (surplus.amountBs && surplus.amountBs > 0) {
+        if (!exchangeRate) {
+          exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
+          if (!exchangeRate) {
+            throw new Error('Exchange rate not found for current date to apply Bs surplus');
+          }
+        }
+        rateUsd = Number(exchangeRate.rateUsd);
+      }
+
+      const calc = calculateSurplusApplication(
+        surplus.amountUsd !== null ? Number(surplus.amountUsd) : null,
+        surplus.amountBs !== null ? Number(surplus.amountBs) : null,
+        remainingBalanceUsd,
+        rateUsd,
+      );
+
+      if (calc.amountToApplyUsd > 0) {
+        if (calc.hasLeftover) {
+          // Create a NEW pending surplus for the remainder
+          const remainingSurplus = queryRunner.manager.create(Surplus, {
+            amountUsd: calc.leftoverUsd,
+            amountBs: calc.leftoverBs,
+            date: surplus.date,
+            payment: surplus.payment,
+            invoice: null,
+            contract: surplus.contract,
+            status: SurplusStatus.PENDING,
+          });
+          await queryRunner.manager.save(remainingSurplus);
+        }
+
+        // Create a synthetic Payment record applying this surplus segment to the invoice
+        const surplusPayment = queryRunner.manager.create(Payment, {
+          paymentDate: getCaracasTodayJSDate(),
+          status: PaymentStatus.COMPLETED,
+          invoice: invoice,
+          person: surplus.payment ? surplus.payment.person : null,
+          referenceNumber: surplus.payment
+            ? `SURPLUS-${surplus.payment.referenceNumber}`
+            : `SURPLUS-SYSTEM-${surplus.id ? surplus.id.slice(0, 8) : 'NEW'}`,
+          amount: calc.amountToApplyUsd,
+          amountBs: calc.amountToApplyBs > 0 ? calc.amountToApplyBs : 0,
+          paymentMethod: surplus.payment ? surplus.payment.paymentMethod : 'SURPLUS_AJUSTE',
+          url: surplus.payment ? surplus.payment.url : null,
+        }) as Payment;
+
+        await queryRunner.manager.save(surplusPayment);
+
+        // Update current surplus to consumed amount and mark APPLIED
+        surplus.amountUsd = surplus.amountUsd !== null ? calc.amountToApplyUsd : null;
+        surplus.amountBs = surplus.amountBs !== null ? calc.amountToApplyBs : null;
+        surplus.status = SurplusStatus.APPLIED;
+        surplus.invoice = invoice;
+        await queryRunner.manager.save(surplus);
+
+        remainingBalanceUsd -= calc.amountToApplyUsd;
+
+        this.logger.log(
+          `Applied surplus ${surplus.id} to invoice ${invoiceId} (applied USD: $${calc.amountToApplyUsd.toFixed(2)})`,
+        );
+      }
+    }
+
+    await this.invoiceCalculationService.recalculateInvoicePaidAmount(
+      invoiceId,
+      queryRunner.manager,
+    );
   }
 
   /**
-   * Escucha el evento `invoice.created` emitido por `InvoiceGenerationService`
-   * para aplicar excedentes pendientes en su propia transacción separada.
-   * Reemplaza el `setImmediate` que existía en el InvoiceService original.
+   * Manejador de eventos activado cuando se crea una nueva factura (`INVOICE_CREATED`).
+   * Intenta aplicar inmediatamente los excedentes pendientes que pueda tener el contrato titular.
+   *
+   * @param event - Objeto del evento con `contractId` e `invoiceId`.
    */
   @OnEvent(INVOICE_CREATED)
   async handleInvoiceCreated(event: InvoiceCreatedEvent): Promise<void> {
@@ -215,8 +183,8 @@ export class SurplusService {
   }
 
   /**
-   * Finds all active contracts, locates their oldest pending or partial invoices,
-   * and attempts to apply any pending surpluses to them in bulk.
+   * Proceso masivo que recorre todos los contratos activos e intenta aplicar saldos a favor pendientes
+   * a sus facturas más antiguas impagas (`PENDING` o `PARTIAL`).
    */
   async applyPendingSurplusesToAllActiveInvoices(): Promise<void> {
     this.logger.log('Starting bulk pending surplus application...');
@@ -228,7 +196,6 @@ export class SurplusService {
     this.logger.log(`Found ${contracts.length} active contracts to process.`);
 
     for (const contract of contracts) {
-      // Find the oldest PENDING or PARTIAL invoice for this contract
       const pendingInvoice = await this.dataSource.getRepository(Invoice).findOne({
         where: {
           contract: { id: contract.id },
@@ -255,12 +222,17 @@ export class SurplusService {
 
     this.logger.log('Bulk pending surplus application completed.');
   }
+
   /**
-   * Persists a Surplus record when the payment exceeds the invoice balance.
-   * Returns the saved surplus ID, or null when no surplus exists.
+   * Persiste un nuevo registro de excedente/saldo a favor en estado `PENDING`.
    *
-   * Si se provee un QueryRunner explícito, lo usa (llamadas desde PaymentService);
-   * de lo contrario usa el QueryRunner del contexto ALS.
+   * @param queryRunnerOrNull - Instancia opcional de QueryRunner para ejecuciones en transacción.
+   * @param invoice - Factura de origen.
+   * @param savedPayment - Pago que generó el sobrepago.
+   * @param paymentDate - Fecha asignada al excedente.
+   * @param surplusAmountUsd - Monto sobrante en USD (o null si no hay sobrante en USD).
+   * @param surplusAmountBs - Monto sobrante en Bs (o null si no hay sobrante en Bs).
+   * @returns ID del excedente creado o `null` si no se especificaron montos sobrantes.
    */
   async persistSurplus(
     queryRunnerOrNull: QueryRunner | null,

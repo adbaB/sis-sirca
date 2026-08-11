@@ -17,6 +17,7 @@ import { AffiliationAction } from '../enums/affiliation-action.enum';
 @Index('IDX_ah_action', ['action'])
 @Index('IDX_ah_person', ['person'])
 @Index('IDX_ah_contract', ['contract'])
+@Index('IDX_ah_plan', ['plan'])
 @Index('IDX_ah_action_date', ['actionDate'])
 @Check('CHK_ah_action', "\"action\" IN ('AFILIACION', 'DESAFILIACION', 'CAMBIO_CONTRATO')")
 export class AffiliationHistory {
@@ -47,9 +48,9 @@ export class AffiliationHistory {
   @Column({ type: 'uuid', name: 'performed_by', nullable: true })
   performedBy: string;
 
-  @Column({ type: 'timestamp', name: 'action_date', default: () => 'now()' })
+  @Column({ type: 'timestamptz', name: 'action_date', default: () => 'now()' })
   actionDate: Date;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 }
