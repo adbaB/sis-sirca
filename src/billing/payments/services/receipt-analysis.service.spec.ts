@@ -74,6 +74,13 @@ describe('ReceiptAnalysisService', () => {
       expect(result.amount).toBe(100);
       expect(result.amountBs).toBeNull();
       expect(result.paymentMethod).toBe('ZELLE');
+      expect('rawOcr' in result).toBe(false);
+    });
+
+    it('should throw BadRequestException if file is undefined', async () => {
+      await expect(
+        service.analyzeReceipt(undefined as unknown as Express.Multer.File),
+      ).rejects.toThrow('Se requiere un archivo de comprobante.');
     });
   });
 });

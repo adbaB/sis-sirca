@@ -64,6 +64,9 @@ export class PaymentUpdateService {
         throw new BadRequestException('No se encontró tasa de cambio para la fecha especificada.');
       }
       rateUsd = Number(exchangeRate.rateUsd);
+      if (!Number.isFinite(rateUsd) || rateUsd <= 0) {
+        throw new BadRequestException('Tasa de cambio inválida para la fecha especificada.');
+      }
     }
 
     // Obtener excedentes asociados y activos
@@ -92,7 +95,7 @@ export class PaymentUpdateService {
     );
 
     let amountUsdInput = totalUsd;
-    if (payment.paymentMethod.toLowerCase() !== 'zelle') {
+    if (!isZelle) {
       amountUsdInput = totalBs / rateUsd;
     }
 
@@ -150,6 +153,12 @@ export class PaymentUpdateService {
 
     if (!reloadedPayment) {
       throw new NotFoundException(`Pago con ID ${id} no encontrado tras guardar`);
+    }
+
+    if (reloadedPayment.surpluses) {
+      reloadedPayment.surpluses = reloadedPayment.surpluses.filter(
+        (s) => s.status !== SurplusStatus.CANCELLED,
+      );
     }
 
     return reloadedPayment;

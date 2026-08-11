@@ -173,12 +173,7 @@ export class PaymentStateService {
     for (const payment of payments) {
       payment.sendAt = now;
     }
-    try {
-      await repo.save(payments);
-      return true;
-    } catch (err) {
-      this.logger.error(err);
-      return false;
-    }
+    await repo.save(payments);
+    return true;
   }
 }

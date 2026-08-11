@@ -39,14 +39,6 @@ import { InvoiceModule } from '../invoices/invoice.module';
     PaymentQueryService,
     ReceiptAnalysisService,
   ],
-  exports: [
-    SurplusService,
-    PaymentService,
-    PaymentCreationService,
-    PaymentStateService,
-    PaymentUpdateService,
-    PaymentQueryService,
-    ReceiptAnalysisService,
-  ],
+  exports: [SurplusService, PaymentService, ReceiptAnalysisService],
 })
 export class PaymentModule {}

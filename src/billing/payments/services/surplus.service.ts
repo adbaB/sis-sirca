@@ -81,7 +81,12 @@ export class SurplusService {
 
     const fechaVe = getCaracasTodayJSDate();
     let exchangeRate: ExchangeRate | null = null;
-    let remainingBalanceUsd = Number(invoice.totalAmount) - Number(invoice.paidAmount);
+    let remainingBalanceUsd = Math.max(
+      0,
+      Number(invoice.totalAmount) -
+        Number(invoice.retentionAmount || 0) -
+        Number(invoice.paidAmount),
+    );
 
     for (const surplus of surplusesWithRelations) {
       if (remainingBalanceUsd <= 0.01) {
@@ -181,7 +186,6 @@ export class SurplusService {
    * Proceso masivo que recorre todos los contratos activos e intenta aplicar saldos a favor pendientes
    * a sus facturas más antiguas impagas (`PENDING` o `PARTIAL`).
    */
-  @Transactional()
   async applyPendingSurplusesToAllActiveInvoices(): Promise<void> {
     this.logger.log('Starting bulk pending surplus application...');
 

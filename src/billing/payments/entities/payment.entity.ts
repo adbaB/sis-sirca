@@ -13,7 +13,10 @@ import {
 import type { Person } from '../../../persons/entities/person.entity';
 import type { Invoice } from '../../invoices/entities/invoice.entity';
 import { Surplus } from './surplus.entity';
-import { decimalTransformer } from '../../../common/transformers/decimal.transformer';
+import {
+  decimalTransformer,
+  nullableDecimalTransformer,
+} from '../../../common/transformers/decimal.transformer';
 
 /**
  * Estado actual del procesamiento del pago.
@@ -21,7 +24,7 @@ import { decimalTransformer } from '../../../common/transformers/decimal.transfo
 export enum PaymentStatus {
   /** Pago registrado en revisión/procesamiento por parte de administración. */
   PROCESSING = 'PROCESSING',
-  /** Pago verificado y aprobado exitosamente. */
+  /** Pago verificado y approved exitosamente. */
   COMPLETED = 'COMPLETED',
   /** Pago rechazado debido a inconsistencias o referencias inválidas. */
   REJECTED = 'REJECTED',
@@ -62,7 +65,7 @@ export class Payment {
   @JoinColumn({ name: 'person_id' })
   person?: Person | null;
 
-  /** Fecha de emisión del recibo de pago reported por el usuario/banco. */
+  /** Fecha de emisión del recibo de pago reportado por el usuario/banco. */
   @Column({ type: 'timestamptz', name: 'payment_date' })
   paymentDate: Date;
 
@@ -89,11 +92,11 @@ export class Payment {
     type: 'decimal',
     precision: 10,
     scale: 2,
-    transformer: decimalTransformer,
+    transformer: nullableDecimalTransformer,
     name: 'amount_bs',
     nullable: true,
   })
-  amountBs: number;
+  amountBs: number | null;
 
   /** URL del comprobante de pago almacenado en la nube (AWS S3). */
   @Column({ type: 'varchar', length: 255, name: 'url', nullable: true })

@@ -114,7 +114,8 @@ export class PaymentCreationService {
       .setLock('pessimistic_write')
       .getMany();
 
-    if (invoices.length !== invoiceIds.length) {
+    const uniqueIds = Array.from(new Set(invoiceIds));
+    if (invoices.length !== uniqueIds.length) {
       throw new NotFoundException(
         'Algunas de las facturas especificadas no existen o no pudieron ser encontradas.',
       );
@@ -208,7 +209,7 @@ export class PaymentCreationService {
           surplusAmountUsd = round2(remainingUsd - invoiceUnpaidAmount);
           if (!isZelle) {
             surplusAmountBs = round2(surplusAmountUsd * exchangeRate.rateUsd);
-            appliedBs = round2(remainingBs - surplusAmountBs);
+            appliedBs = Math.max(0, round2(remainingBs - surplusAmountBs));
           } else {
             appliedBs = 0;
           }

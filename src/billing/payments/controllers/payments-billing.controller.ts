@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -29,44 +30,43 @@ export class PaymentBillingController {
   /**
    * Crea y procesa un nuevo pago asociado a una o varias facturas.
    *
-   * Requiere el permiso `create:payments`.
+   * Requiere el permiso `create:advisor-payments`.
    *
-   * @param createPaymentDto - Datos de creación del pago (referencia, monto, método, facturas).
-   * @returns Promesa con el resultado de la transacción (pago guardado, factura, saldo pendiente, etc.).
+   * @param dto - DTO con la información del pago.
+   * @returns Pago procesado o resultado del registro.
    */
-  @Post('payment')
-  @RequirePermissions('create:payments')
-  createPayment(@Body() createPaymentDto: CreatePaymentDto) {
-    return this.paymentService.createPayment(createPaymentDto);
+  @Post('payments')
+  @RequirePermissions('create:advisor-payments')
+  createPayment(@Body() dto: CreatePaymentDto) {
+    return this.paymentService.createPayment(dto);
   }
 
   /**
-   * Obtiene la lista paginada y filtrada de pagos registrados.
-   * Permite filtrar por estado (status), término de búsqueda (search) y período (mes/año).
+   * Consulta paginada de pagos con filtros opcionales.
    *
-   * Requiere el permiso `read:payments`.
+   * Requiere el permiso `read:advisor-payments`.
    *
-   * @param page - Número de página actual (por defecto: 1).
-   * @param limit - Cantidad de registros por página (por defecto: 10).
-   * @param status - Estado del pago ('PROCESSING', 'COMPLETED', 'REJECTED').
-   * @param search - Término de búsqueda (referencia, cédula, nombre, código de contrato).
-   * @param month - Mes de facturación (1-12).
-   * @param year - Año de facturación (e.g. 2026).
-   * @returns Lista paginada de pagos junto con sus metadatos de paginación.
+   * @param status - Estado del pago (`PROCESSING`, `COMPLETED`, `REJECTED`).
+   * @param search - Término de búsqueda (nombre, cédula, código contrato, referencia).
+   * @param page - Número de página (1-based, default 1).
+   * @param limit - Elementos por página (default 10).
+   * @param month - Filtro de mes (1-12).
+   * @param year - Filtro de año (e.g. 2026).
+   * @returns Lista paginada de pagos y metadatos.
    */
   @Get('payments')
-  @RequirePermissions('read:payments')
-  getPayments(
-    @Query('page') page = 1,
-    @Query('limit') limit = 10,
+  @RequirePermissions('read:advisor-payments')
+  findPayments(
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
     @Query('month') month?: number,
     @Query('year') year?: number,
   ) {
     return this.paymentService.findPayments(
-      Number(page),
-      Number(limit),
+      page ? Number(page) : undefined,
+      limit ? Number(limit) : undefined,
       status,
       search,
       month ? Number(month) : undefined,
@@ -75,30 +75,29 @@ export class PaymentBillingController {
   }
 
   /**
-   * Obtiene la cantidad total de pagos que se encuentran en estado pendiente (`PROCESSING`).
+   * Cuenta la cantidad total de pagos en estado `PROCESSING`.
    *
-   * Requiere el permiso `read:payments`.
+   * Requiere el permiso `read:advisor-payments`.
    *
-   * @returns Objeto con la propiedad `count` indicando el número de pagos pendientes.
+   * @returns Objeto con `{ count: number }`.
    */
-  @Get('payments/pending-count')
-  @RequirePermissions('read:payments')
-  async getPendingCount() {
+  @Get('payments/pending/count')
+  @RequirePermissions('read:advisor-payments')
+  async countPendingPayments() {
     const count = await this.paymentService.countPendingPayments();
     return { count };
   }
 
   /**
-   * Aprueba administrativamente un pago previamente registrado en estado `PROCESSING`.
-   * Actualiza su estado a `COMPLETED` y recalculó el saldo abonado en la factura.
+   * Aprueba un pago registrado en estado `PROCESSING`.
    *
-   * Requiere el permiso `update:payments`.
+   * Requiere el permiso `create:advisor-payments`.
    *
-   * @param id - Identificador único UUID del pago a aprobar.
-   * @returns El registro de pago actualizado.
+   * @param id - Identificador UUID del pago.
+   * @returns Pago actualizado en estado `COMPLETED`.
    */
   @Patch('payments/:id/approve')
-  @RequirePermissions('update:payments')
+  @RequirePermissions('create:advisor-payments')
   approvePayment(@Param('id') id: string) {
     return this.paymentService.approvePayment(id);
   }
@@ -146,7 +145,23 @@ export class PaymentBillingController {
    */
   @Post('payments/analyze-receipt')
   @RequirePermissions('create:advisor-payments')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!allowedMimeTypes.includes(file.mimetype)) {
+          return cb(
+            new BadRequestException(
+              `Tipo de archivo no soportado: ${file.mimetype}. Formatos permitidos: JPG, PNG, WEBP, PDF`,
+            ),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
   analyzeReceipt(@UploadedFile() file: Express.Multer.File) {
     return this.receiptAnalysisService.analyzeReceipt(file);
   }

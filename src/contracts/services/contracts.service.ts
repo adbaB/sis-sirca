@@ -1594,16 +1594,28 @@ export class ContractsService {
     await this.contractPersonsRepository.manager.transaction(async (entityManager) => {
       const isAlreadyTitular = target.role === PersonRole.TITULAR;
 
-      // Revertir a todos los demás titulares actuales a afiliados (AFILIADO)
-      await entityManager.update(
-        ContractPerson,
-        { contract: { id: contractId }, deletedAt: IsNull() },
-        { role: PersonRole.AFILIADO },
-      );
+      // Revertir a todos los titulares actuales a afiliados (AFILIADO)
+      const currentTitulars = await entityManager.find(ContractPerson, {
+        where: { contract: { id: contractId }, role: PersonRole.TITULAR, deletedAt: IsNull() },
+        relations: ['person', 'person.plan'],
+      });
+
+      for (const titular of currentTitulars) {
+        titular.role = PersonRole.AFILIADO;
+        if (!titular.plan) {
+          titular.plan = titular.person?.plan ?? null;
+        }
+        await entityManager.save(ContractPerson, titular);
+      }
 
       // Si antes era titular, al hacer click de nuevo se desmarca (se vuelve AFILIADO).
       // Si no lo era, pasa a ser el nuevo titular (TITULAR).
       target.role = isAlreadyTitular ? PersonRole.AFILIADO : PersonRole.TITULAR;
+      if (target.role === PersonRole.TITULAR) {
+        target.plan = null;
+      } else if (!target.plan) {
+        target.plan = target.person?.plan ?? null;
+      }
       await entityManager.save(ContractPerson, target);
     });
 

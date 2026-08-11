@@ -173,19 +173,14 @@ export class InvoiceLineService {
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
     const activeManager = manager ?? qr?.manager;
-    const invoiceRepo = activeManager
-      ? activeManager.getRepository(Invoice)
-      : this.invoiceRepository;
-    const invoiceLineRepo = activeManager
-      ? activeManager.getRepository(InvoiceLine)
-      : this.invoiceLineRepository;
-    const paymentRepo = activeManager
-      ? activeManager.getRepository(Payment)
-      : this.dataSource.getRepository(Payment);
-    const surplusRepo = activeManager
-      ? activeManager.getRepository(Surplus)
-      : this.dataSource.getRepository(Surplus);
-    const entityManager = activeManager ?? this.dataSource.manager;
+    if (!activeManager) {
+      throw new Error('Transaction required for removeAffiliateLineFromActiveInvoice');
+    }
+    const invoiceRepo = activeManager.getRepository(Invoice);
+    const invoiceLineRepo = activeManager.getRepository(InvoiceLine);
+    const paymentRepo = activeManager.getRepository(Payment);
+    const surplusRepo = activeManager.getRepository(Surplus);
+    const entityManager = activeManager;
 
     const billingMonth = getBillingMonth();
 
@@ -297,13 +292,12 @@ export class InvoiceLineService {
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
     const activeManager = qr?.manager;
-    const invoiceRepo = activeManager
-      ? activeManager.getRepository(Invoice)
-      : this.invoiceRepository;
-    const invoiceLineRepo = activeManager
-      ? activeManager.getRepository(InvoiceLine)
-      : this.invoiceLineRepository;
-    const entityManager = activeManager ?? this.dataSource.manager;
+    if (!activeManager) {
+      throw new Error('Transaction required for updatePlanLineOnActiveInvoice');
+    }
+    const invoiceRepo = activeManager.getRepository(Invoice);
+    const invoiceLineRepo = activeManager.getRepository(InvoiceLine);
+    const entityManager = activeManager;
 
     const billingMonth = getBillingMonth();
 

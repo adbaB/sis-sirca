@@ -3,6 +3,17 @@ import { AwsService } from '../../../aws/aws.service';
 import { OcrService } from '../../../ocr/ocr.service';
 import { parseOcrDateToISO } from '../../../common/utils/date.util';
 
+export interface ReceiptAnalysisResult {
+  referenceNumber: string;
+  amount: number | null;
+  amountBs: number | null;
+  paymentDate: string | null;
+  operationDate: string | null;
+  paymentMethod: string;
+  bank: string;
+  url: string;
+}
+
 /**
  * Servicio encargado de procesar y analizar comprobantes de pago subidos por usuarios o asesores.
  * Integra `AwsService` para el almacenamiento de archivos en S3 y `OcrService` para el reconocimiento
@@ -20,10 +31,10 @@ export class ReceiptAnalysisService {
    * normaliza la fecha, moneda, montos y método de pago (ZELLE, PAGO_MOVIL, TRANSFERENCIA).
    *
    * @param file - Archivo de imagen o PDF subido mediante Multer.
-   * @returns Objeto estructurado con número de referencia, montos, fechas, banco, URL en S3 y resultado OCR crudo.
+   * @returns Objeto estructurado con número de referencia, montos, fechas, banco y URL en S3.
    * @throws BadRequestException Si no se adjunta ningún archivo.
    */
-  async analyzeReceipt(file: Express.Multer.File) {
+  async analyzeReceipt(file: Express.Multer.File): Promise<ReceiptAnalysisResult> {
     if (!file) {
       throw new BadRequestException('Se requiere un archivo de comprobante.');
     }
@@ -34,25 +45,32 @@ export class ReceiptAnalysisService {
 
     const currency = ocrResult.moneda ? ocrResult.moneda.trim().toUpperCase() : '';
     let mappedMethod = 'PAGO_MOVIL';
-    if (currency === 'USD') {
-      mappedMethod = 'ZELLE';
-    } else if (ocrResult.origen) {
-      const originUpper = ocrResult.origen.toUpperCase();
-      if (originUpper.includes('ZELLE')) {
-        mappedMethod = 'ZELLE';
-      } else if (originUpper.includes('TRANS') || originUpper.includes('DEP')) {
-        mappedMethod = 'TRANSFERENCIA';
-      }
-    }
-
     let amountUsd: number | null = null;
     let amountBsVal: number | null = null;
     const ocrAmount = ocrResult.monto || 0;
 
-    if (currency === 'BS' || currency === 'VES') {
-      amountBsVal = ocrAmount;
-    } else {
-      amountUsd = ocrAmount;
+    if (currency === 'USD') {
+      mappedMethod = 'ZELLE';
+      amountUsd = ocrAmount > 0 ? ocrAmount : null;
+    } else if (currency === 'BS' || currency === 'VES') {
+      amountBsVal = ocrAmount > 0 ? ocrAmount : null;
+      if (ocrResult.origen) {
+        const originUpper = ocrResult.origen.toUpperCase();
+        if (originUpper.includes('ZELLE')) {
+          mappedMethod = 'ZELLE';
+        } else if (originUpper.includes('TRANS') || originUpper.includes('DEP')) {
+          mappedMethod = 'TRANSFERENCIA';
+        }
+      }
+    } else if (ocrResult.origen) {
+      const originUpper = ocrResult.origen.toUpperCase();
+      if (originUpper.includes('ZELLE')) {
+        mappedMethod = 'ZELLE';
+        amountUsd = ocrAmount > 0 ? ocrAmount : null;
+      } else if (originUpper.includes('TRANS') || originUpper.includes('DEP')) {
+        mappedMethod = 'TRANSFERENCIA';
+        amountBsVal = ocrAmount > 0 ? ocrAmount : null;
+      }
     }
 
     return {
@@ -64,7 +82,6 @@ export class ReceiptAnalysisService {
       paymentMethod: mappedMethod,
       bank: ocrResult.nombreBanco || ocrResult.origen || '',
       url: s3Url,
-      rawOcr: ocrResult,
     };
   }
 }

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { round2 } from './payment-calculator.util';
 
 /**
  * Resultado de la aplicación del saldo a favor / excedente contra la deuda de una factura.
@@ -44,11 +45,15 @@ export function calculateSurplusApplication(
   const rawUsd = surplusAmountUsd ? Number(surplusAmountUsd) : 0;
 
   if (rawBs > 0) {
-    if (!rateUsd || !Number.isFinite(rateUsd) || rateUsd <= 0) {
-      throw new BadRequestException('Exchange rate required for Bs surplus calculation');
-    }
     paymentAmountBs = rawBs;
-    paymentAmountUsd = paymentAmountBs / rateUsd;
+    if (rawUsd > 0) {
+      paymentAmountUsd = rawUsd;
+    } else {
+      if (!rateUsd || !Number.isFinite(rateUsd) || rateUsd <= 0) {
+        throw new BadRequestException('Exchange rate required for Bs surplus calculation');
+      }
+      paymentAmountUsd = paymentAmountBs / rateUsd;
+    }
   } else if (rawUsd > 0) {
     paymentAmountUsd = rawUsd;
   }
@@ -77,16 +82,16 @@ export function calculateSurplusApplication(
     const proportion = amountToApplyUsd / paymentAmountUsd;
     amountToApplyBs = paymentAmountBs * proportion;
 
-    leftoverUsd = surplusAmountUsd !== null ? paymentAmountUsd - amountToApplyUsd : null;
-    leftoverBs = surplusAmountBs !== null ? paymentAmountBs - amountToApplyBs : null;
+    leftoverUsd = surplusAmountUsd !== null ? round2(paymentAmountUsd - amountToApplyUsd) : null;
+    leftoverBs = surplusAmountBs !== null ? round2(paymentAmountBs - amountToApplyBs) : null;
     hasLeftover = true;
   }
 
   return {
-    paymentAmountUsd,
-    paymentAmountBs,
-    amountToApplyUsd,
-    amountToApplyBs,
+    paymentAmountUsd: round2(paymentAmountUsd),
+    paymentAmountBs: round2(paymentAmountBs),
+    amountToApplyUsd: round2(amountToApplyUsd),
+    amountToApplyBs: round2(amountToApplyBs),
     leftoverUsd,
     leftoverBs,
     hasLeftover,

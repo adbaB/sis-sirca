@@ -54,6 +54,7 @@ describe('PaymentService & PaymentCreationService', () => {
   const mockPaymentStateService = {
     approvePayment: jest.fn(),
     rejectPayment: jest.fn(),
+    markPaymentsAsSent: jest.fn(),
   };
 
   const mockPaymentUpdateService = {
@@ -64,7 +65,6 @@ describe('PaymentService & PaymentCreationService', () => {
     findPayments: jest.fn(),
     countPendingPayments: jest.fn(),
     findUnsetPayment: jest.fn(),
-    markPaymentsAsSent: jest.fn(),
   };
 
   beforeEach(async () => {

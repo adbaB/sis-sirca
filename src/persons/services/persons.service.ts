@@ -165,6 +165,11 @@ export class PersonsService {
     const savedPerson = await this.personsRepository.save(newPerson);
 
     if (contract) {
+      if (resolvedRole === PersonRole.AFILIADO && !plan) {
+        throw new BadRequestException(
+          'Se requiere un plan para afiliar a una persona a este contrato.',
+        );
+      }
       // Create junction table entry
       const contractPerson = this.contractPersonRepository.create({
         contract,
@@ -345,8 +350,10 @@ export class PersonsService {
         }
         if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
         if (relationship !== undefined) existingJunction.relationship = relationship;
-        if (planId !== undefined) {
-          existingJunction.plan = resolvedRole === PersonRole.AFILIADO ? (plan ?? null) : null;
+        if (resolvedRole === PersonRole.TITULAR) {
+          existingJunction.plan = null;
+        } else if (planId !== undefined || !existingJunction.plan) {
+          existingJunction.plan = plan ?? existingJunction.plan ?? savedPerson.plan ?? null;
         }
         await this.contractPersonRepository.save(existingJunction);
       }

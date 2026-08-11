@@ -71,6 +71,7 @@ Funciones puras sin dependencias de TypeORM ni NestJS DI:
 2. **`PaymentStateService`** (`src/billing/payments/services/payment-state.service.ts`):
    - `approvePayment`: Transición a `COMPLETED`, reactivación de excedentes cancelados y recalculo de saldo pagado en factura. Decorado con `@Transactional()`.
    - `rejectPayment`: Transición a `REJECTED` con razón en metadatos, cancelación de excedentes pendientes y recalculo de factura. Decorado con `@Transactional()`.
+   - `markPaymentsAsSent`: Actualización masiva de la marca de tiempo `sendAt`. Decorado con `@Transactional()`.
 
 3. **`PaymentUpdateService`** (`src/billing/payments/services/payment-update.service.ts`):
    - `updatePaymentDate`: Actualiza la fecha de un pago, recalcula tasa de cambio, split de montos y ajusta excedentes existentes o crea nuevos. Decorado con `@Transactional()`.
@@ -79,7 +80,6 @@ Funciones puras sin dependencias de TypeORM ni NestJS DI:
    - `findPayments`: Búsqueda paginada con filtros por estado, término de búsqueda (cédula, nombre, contrato, referencia) y período (mes/año).
    - `countPendingPayments`: Conteo de pagos pendientes (`PROCESSING`).
    - `findUnsetPayment`: Búsqueda de pagos completados pendientes de notificación.
-   - `markPaymentsAsSent`: Actualización masiva de la marca de tiempo `sendAt`.
 
 5. **`ReceiptAnalysisService`** (`src/billing/payments/services/receipt-analysis.service.ts`):
    - `analyzeReceipt`: Carga de archivo a S3, invocación de OCR, parseo de fecha en zona horaria Caracas y mapeo de moneda (USD/BS/VES) a método de pago (ZELLE, PAGO_MOVIL, TRANSFERENCIA).
@@ -92,12 +92,8 @@ Reducido a ~60 líneas. Inyecta los 4 sub-servicios de pagos y delega las invoca
 - `analyzeReceipt` se delega a `ReceiptAnalysisService.analyzeReceipt(file)`.
 
 ### 3.5. Módulo de Pagos (`src/billing/payments/payment.module.ts`)
-Registra e incluye en `providers` y `exports`:
+Registra en `providers` todos los servicios y restringe `exports` a la interfaz pública:
 - `PaymentService`
-- `PaymentCreationService`
-- `PaymentStateService`
-- `PaymentUpdateService`
-- `PaymentQueryService`
 - `ReceiptAnalysisService`
 - `SurplusService`
 
