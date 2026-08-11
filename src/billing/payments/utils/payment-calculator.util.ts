@@ -52,10 +52,12 @@ export function validateAmounts(
 export function resolveAmountUsd(dto: CreatePaymentDto, amount: number, rateUsd: number): number {
   const isZelle = dto.paymentMethod?.toLowerCase() === 'zelle';
   if (!isZelle && dto.amountExtracted) {
-    if (!Number.isFinite(rateUsd) || rateUsd <= 0) {
+    // Coerce to number defensively (TypeORM returns PostgreSQL decimals as strings)
+    const numericRate = Number(rateUsd);
+    if (!Number.isFinite(numericRate) || numericRate <= 0) {
       throw new BadRequestException('Tasa de cambio inválida para convertir el monto en Bs');
     }
-    return round2(dto.amountExtracted / rateUsd);
+    return round2(dto.amountExtracted / numericRate);
   }
   return round2(amount);
 }

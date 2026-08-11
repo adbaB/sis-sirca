@@ -153,6 +153,8 @@ export class PaymentCreationService {
     const paymentDate = this.resolvePaymentDate(dto);
     const operationDate = getCaracasTodayJSDate();
     const exchangeRate = await this.getExchangeRateOrThrow(paymentDate, operationDate);
+    // PostgreSQL decimal columns are returned as strings by TypeORM; coerce to number
+    const rateUsd = Number(exchangeRate.rateUsd);
 
     // Normalize invoiceIds
     const rawInvoiceIds =
@@ -166,7 +168,7 @@ export class PaymentCreationService {
     const invoices = await this.fetchAndValidateInvoices(queryRunner, rawInvoiceIds);
 
     // Resolve total payment amount in USD and Bs
-    const totalAmountUsd = resolveAmountUsd(dto, amount, exchangeRate.rateUsd);
+    const totalAmountUsd = resolveAmountUsd(dto, amount, rateUsd);
     const isZelle = dto.paymentMethod.toLowerCase() === 'zelle';
     const totalAmountBs = !isZelle ? round2(amountExtracted) : 0;
 
@@ -208,7 +210,7 @@ export class PaymentCreationService {
           appliedUsd = invoiceUnpaidAmount;
           surplusAmountUsd = round2(remainingUsd - invoiceUnpaidAmount);
           if (!isZelle) {
-            surplusAmountBs = round2(surplusAmountUsd * exchangeRate.rateUsd);
+            surplusAmountBs = round2(surplusAmountUsd * rateUsd);
             appliedBs = Math.max(0, round2(remainingBs - surplusAmountBs));
           } else {
             appliedBs = 0;
@@ -220,7 +222,7 @@ export class PaymentCreationService {
       } else {
         appliedUsd = round2(Math.min(remainingUsd, invoiceUnpaidAmount));
         if (!isZelle) {
-          appliedBs = round2(Math.min(remainingBs, appliedUsd * exchangeRate.rateUsd));
+          appliedBs = round2(Math.min(remainingBs, appliedUsd * rateUsd));
         } else {
           appliedBs = 0;
         }
@@ -268,7 +270,7 @@ export class PaymentCreationService {
     );
 
     const remainingUnpaidUsd = round2(Math.max(0, totalInvoiceDebtUsd - totalAmountUsd));
-    const remainingUnpaidBs = round2(remainingUnpaidUsd * exchangeRate.rateUsd);
+    const remainingUnpaidBs = round2(remainingUnpaidUsd * rateUsd);
 
     return {
       savedPayment: savedPayments[0] || ({} as Payment),
