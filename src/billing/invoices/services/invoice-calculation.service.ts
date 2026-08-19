@@ -1,13 +1,17 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { getCaracasTodayJSDate } from '../../../common/utils/date.util';
-import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
+import { getQueryRunnerSafe } from '../../../common/context/request-context';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
 import { InvoiceQueryRepository } from '../repositories/invoice-query.repository';
 import { resolveInvoiceStatus } from '../helpers/invoice-status.helper';
+import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
+import { ContractPerson, PersonRole } from '../../../contracts/entities/contract-person.entity';
+import { PersonStatus } from '../../../persons/entities/person.entity';
 
 /**
  * Servicio responsable de todos los cálculos de montos y estado de facturas.
@@ -69,13 +73,25 @@ export class InvoiceCalculationService {
   }
 
   /**
-   * Recalcula `baseAmount`, `totalAmount`, `retentionAmount` y `status`
-   * de una factura a partir de sus líneas actuales.
+   * Recalcula `baseAmount`, `totalAmount`, `retentionAmount`, líneas y `status`
+   * de una factura a partir del contrato y sus afiliados si está en estado PENDING o PARTIAL.
    */
   @Transactional()
-  async recalculateInvoiceAmountFromContract(invoiceId: string): Promise<Invoice> {
-    const qr = getQueryRunner();
-    const invoiceRepo = qr.manager.getRepository(Invoice);
+  async recalculateInvoiceAmountFromContract(
+    invoiceId: string,
+    manager?: EntityManager,
+  ): Promise<Invoice> {
+    const qr = getQueryRunnerSafe();
+    const entityManager = manager ?? qr?.manager ?? this.dataSource?.manager;
+    const invoiceRepo = entityManager
+      ? entityManager.getRepository(Invoice)
+      : this.invoiceRepository;
+    const invoiceLineRepo = entityManager
+      ? entityManager.getRepository(InvoiceLine)
+      : this.dataSource.getRepository(InvoiceLine);
+    const contractPersonRepo = entityManager
+      ? entityManager.getRepository(ContractPerson)
+      : this.dataSource.getRepository(ContractPerson);
 
     const invoice = await invoiceRepo.findOne({
       where: { id: invoiceId },
@@ -97,8 +113,50 @@ export class InvoiceCalculationService {
       throw new BadRequestException('La factura no tiene un contrato asociado');
     }
 
-    const newBaseAmount = await this.queryRepo.sumBaseLines(qr.manager, invoiceId);
-    const additionalAmount = await this.queryRepo.sumAdditionalLines(qr.manager, invoiceId);
+    // Obtener los afiliados activos del contrato con sus planes actuales
+    const contractPersons = await contractPersonRepo.find({
+      where: {
+        contract: { id: contract.id },
+        role: PersonRole.AFILIADO,
+      },
+      relations: ['person', 'plan', 'person.plan'],
+    });
+
+    const activeAfiliados = (contractPersons || []).filter(
+      (cp) => cp.person && cp.person.status === PersonStatus.ACTIVE && !cp.deletedAt,
+    );
+
+    // Obtener las líneas MENSUALIDAD activas de la factura
+    const invoiceLines = await invoiceLineRepo.find({
+      where: {
+        invoice: { id: invoiceId },
+        category: InvoiceLineCategory.MENSUALIDAD,
+        deletedAt: IsNull(),
+      },
+      relations: ['person', 'plan'],
+    });
+
+    // Sincronizar las líneas con los planes actuales de los afiliados si cambiaron
+    for (const cp of activeAfiliados) {
+      const line = invoiceLines.find((l) => l.person?.id === cp.person?.id);
+      const currentPlan = cp.plan || cp.person?.plan;
+
+      if (line && currentPlan) {
+        const planAmount = Number(currentPlan.amount);
+        const planChanged = line.plan?.id !== currentPlan.id || Number(line.amount) !== planAmount;
+
+        if (planChanged) {
+          line.plan = currentPlan;
+          line.amount = planAmount;
+          const personName = cp.person.name || line.person?.name || 'Afiliado';
+          line.description = `${personName} - ${currentPlan.name}`;
+          await invoiceLineRepo.save(line);
+        }
+      }
+    }
+
+    const newBaseAmount = await this.queryRepo.sumBaseLines(entityManager, invoiceId);
+    const additionalAmount = await this.queryRepo.sumAdditionalLines(entityManager, invoiceId);
     const calculatedTotal = newBaseAmount + additionalAmount;
 
     invoice.baseAmount = newBaseAmount;
@@ -112,7 +170,7 @@ export class InvoiceCalculationService {
     await invoiceRepo.save(invoice);
 
     // Recalcular desde pagos reales dentro de la misma transacción
-    await this.recalculateInvoicePaidAmount(invoice.id, qr.manager);
+    await this.recalculateInvoicePaidAmount(invoice.id, entityManager);
 
     return await invoiceRepo.findOne({
       where: { id: invoice.id },
