@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, QueryRunner, Repository } from 'typeorm';
@@ -7,13 +7,14 @@ import { Contract, ContractStatus } from '../../../contracts/entities/contract.e
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { Payment, PaymentStatus } from '../entities/payment.entity';
-import { Surplus, SurplusStatus } from '../entities/surplus.entity';
+import { Surplus, SurplusStatus, isValidSurplusTransition } from '../entities/surplus.entity';
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { InvoiceCalculationService } from '../../invoices/services/invoice-calculation.service';
 import { INVOICE_CREATED, InvoiceCreatedEvent } from '../../invoices/events/invoice.events';
 import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
 import { calculateSurplusApplication } from '../utils/surplus-calculator.util';
+import { UpdateSurplusStatusDto } from '../dto/update-surplus-status.dto';
 
 /**
  * Servicio encargado de gestionar los saldos a favor / excedentes de pago de los contratos.
@@ -260,5 +261,78 @@ export class SurplusService {
       }),
     );
     return saved.id;
+  }
+
+  /**
+   * Modifica manualmente el estado de un excedente aplicando validación de máquina de estados.
+   * Ejecutado transaccionalmente con bloqueo pesimista.
+   *
+   * @param id - Identificador UUID del excedente a modificar.
+   * @param dto - DTO con el nuevo estado (`status`) y el motivo opcional (`reason`).
+   * @returns Promesa con la entidad {@link Surplus} actualizada y relaciones cargadas.
+   * @throws NotFoundException Si el excedente no existe.
+   * @throws BadRequestException Si el excedente ya está aplicado o la transición no es válida.
+   */
+  @Transactional()
+  async updateSurplusStatus(id: string, dto: UpdateSurplusStatusDto): Promise<Surplus> {
+    const qr = getQueryRunnerSafe();
+    const surplusRepo = qr ? qr.manager.getRepository(Surplus) : this.surplusRepository;
+
+    const surplus = await surplusRepo.findOne({
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!surplus) {
+      throw new NotFoundException(`Excedente con ID ${id} no encontrado`);
+    }
+
+    if (surplus.status === SurplusStatus.APPLIED) {
+      throw new BadRequestException(
+        'No se puede modificar el estado de un excedente que ya ha sido aplicado a una factura.',
+      );
+    }
+
+    if (dto.status === SurplusStatus.APPLIED) {
+      throw new BadRequestException(
+        'No se puede asignar manualmente el estado "applied". Los excedentes se aplican al imputarse a facturas.',
+      );
+    }
+
+    if (!isValidSurplusTransition(surplus.status, dto.status)) {
+      throw new BadRequestException(
+        `Transición de estado no permitida: no se puede cambiar de "${surplus.status}" a "${dto.status}".`,
+      );
+    }
+
+    const previousStatus = surplus.status;
+    surplus.status = dto.status;
+
+    const currentMetadata = (surplus.metadata as Record<string, unknown>) || {};
+    surplus.metadata = {
+      ...currentMetadata,
+      statusChangeReason: dto.reason?.trim() || null,
+      previousStatus,
+      lastStatusChangeAt: getCaracasTodayJSDate().toISOString(),
+    };
+
+    await surplusRepo.save(surplus);
+
+    const reloaded = await surplusRepo.findOne({
+      where: { id },
+      relations: ['payment', 'payment.person', 'contract', 'invoice'],
+    });
+
+    if (!reloaded) {
+      throw new NotFoundException(`Excedente con ID ${id} no encontrado tras actualizar`);
+    }
+
+    this.logger.log(
+      `Surplus ${id} status updated from ${previousStatus} to ${dto.status}${
+        dto.reason ? ` (Reason: ${dto.reason})` : ''
+      }`,
+    );
+
+    return reloaded;
   }
 }

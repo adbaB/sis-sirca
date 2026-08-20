@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PaymentBillingController } from './payments-billing.controller';
 import { PaymentService } from '../services/payment.service';
+import { SurplusService } from '../services/surplus.service';
 import { ReceiptAnalysisService } from '../services/receipt-analysis.service';
+import { SurplusStatus } from '../entities/surplus.entity';
 
 describe('PaymentBillingController', () => {
   let controller: PaymentBillingController;
@@ -15,6 +17,10 @@ describe('PaymentBillingController', () => {
     updatePaymentDate: jest.fn(),
   };
 
+  const mockSurplusService = {
+    updateSurplusStatus: jest.fn(),
+  };
+
   const mockReceiptAnalysisService = {
     analyzeReceipt: jest.fn(),
   };
@@ -24,6 +30,7 @@ describe('PaymentBillingController', () => {
       controllers: [PaymentBillingController],
       providers: [
         { provide: PaymentService, useValue: mockPaymentService },
+        { provide: SurplusService, useValue: mockSurplusService },
         { provide: ReceiptAnalysisService, useValue: mockReceiptAnalysisService },
       ],
     }).compile();
@@ -34,6 +41,19 @@ describe('PaymentBillingController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('updateSurplusStatus', () => {
+    it('should delegate updateSurplusStatus to SurplusService', async () => {
+      const mockResult = { id: 's-1', status: SurplusStatus.REFUNDED };
+      mockSurplusService.updateSurplusStatus.mockResolvedValue(mockResult);
+
+      const dto = { status: SurplusStatus.REFUNDED, reason: 'Test reason' };
+      const result = await controller.updateSurplusStatus('s-1', dto);
+
+      expect(mockSurplusService.updateSurplusStatus).toHaveBeenCalledWith('s-1', dto);
+      expect(result).toEqual(mockResult);
+    });
   });
 
   describe('analyzeReceipt', () => {

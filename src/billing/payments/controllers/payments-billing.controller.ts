@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -12,7 +13,9 @@ import {
 } from '@nestjs/common';
 import { RequirePermissions } from '../../../auth/decorators';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
+import { UpdateSurplusStatusDto } from '../dto/update-surplus-status.dto';
 import { PaymentService } from '../services/payment.service';
+import { SurplusService } from '../services/surplus.service';
 import { ReceiptAnalysisService } from '../services/receipt-analysis.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
@@ -24,6 +27,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 export class PaymentBillingController {
   constructor(
     private readonly paymentService: PaymentService,
+    private readonly surplusService: SurplusService,
     private readonly receiptAnalysisService: ReceiptAnalysisService,
   ) {}
 
@@ -169,5 +173,20 @@ export class PaymentBillingController {
   )
   analyzeReceipt(@UploadedFile() file: Express.Multer.File) {
     return this.receiptAnalysisService.analyzeReceipt(file);
+  }
+
+  /**
+   * Modifica manualmente el estado de un excedente / saldo a favor ('pending', 'refunded', 'cancelled').
+   *
+   * Requiere el permiso `update:payments`, `create:advisor-payments` o `update:billing`.
+   *
+   * @param id - Identificador UUID del excedente.
+   * @param dto - DTO con el estado destino y justificación opcional.
+   * @returns El registro de excedente actualizado.
+   */
+  @Patch(['surpluses/:id/status', 'surplus/:id/status'])
+  @RequirePermissions('update:payments', 'create:advisor-payments', 'update:billing')
+  updateSurplusStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSurplusStatusDto) {
+    return this.surplusService.updateSurplusStatus(id, dto);
   }
 }

@@ -28,6 +28,35 @@ export enum SurplusStatus {
 }
 
 /**
+ * Estados a los que un operador administrativo puede cambiar un excedente manualmente.
+ * El estado `APPLIED` es inmutable manualmente y sólo se alcanza mediante imputación a factura.
+ */
+export type MutableSurplusStatus = Exclude<SurplusStatus, SurplusStatus.APPLIED>;
+
+/**
+ * Matriz estricta de transiciones de estado permitidas para excedentes.
+ */
+export const ALLOWED_SURPLUS_TRANSITIONS: Readonly<
+  Record<SurplusStatus, readonly MutableSurplusStatus[]>
+> = {
+  [SurplusStatus.PENDING]: [SurplusStatus.REFUNDED, SurplusStatus.CANCELLED],
+  [SurplusStatus.REFUNDED]: [SurplusStatus.PENDING, SurplusStatus.CANCELLED],
+  [SurplusStatus.CANCELLED]: [SurplusStatus.PENDING, SurplusStatus.REFUNDED],
+  [SurplusStatus.APPLIED]: [],
+} as const;
+
+/**
+ * Type guard que valida en runtime y acota en tiempo de compilación si una transición de estado es válida.
+ */
+export function isValidSurplusTransition(
+  currentStatus: SurplusStatus,
+  targetStatus: SurplusStatus,
+): targetStatus is MutableSurplusStatus {
+  const allowed = ALLOWED_SURPLUS_TRANSITIONS[currentStatus];
+  return (allowed as readonly SurplusStatus[]).includes(targetStatus);
+}
+
+/**
  * Entidad TypeORM que representa la tabla `surpluses` en la base de datos.
  * Almacena los excedentes o saldos a favor generados por sobrepagos en facturas.
  */
@@ -85,6 +114,10 @@ export class Surplus {
   /** Estado actual del excedente (pending, applied, refunded, cancelled). */
   @Column({ type: 'enum', enum: SurplusStatus, default: SurplusStatus.PENDING })
   status: SurplusStatus;
+
+  /** Metadatos arbitrarios en formato JSON (motivos de cambio de estado, trazabilidad, etc.). */
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
 
   /** Fecha de creación en base de datos. */
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
