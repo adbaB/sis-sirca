@@ -24,7 +24,6 @@ import { ContractsService } from '../../contracts/services/contracts.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
-import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 
 @Injectable()
 export class PersonsService {
@@ -44,8 +43,6 @@ export class PersonsService {
     private plansService: PlansService,
     @Inject(forwardRef(() => ContractsService))
     private contractsService: ContractsService,
-    @Inject(forwardRef(() => InvoiceService))
-    private invoiceService: InvoiceService,
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
@@ -312,20 +309,8 @@ export class PersonsService {
     }
 
     // ── 5. Guardar persona ───────────────────────────────────────────────────
-    const oldPlanId = person.plan?.id;
     const updatedPerson = Object.assign(person, { ...updateData, plan });
     const savedPerson = await this.personsRepository.save(updatedPerson);
-
-    // ── 5.1. Si el plan cambió, actualizar la línea en la factura activa ────
-    if (planId && plan && plan.id !== oldPlanId) {
-      await this.invoiceService.updatePlanLineOnActiveInvoice(
-        contractId,
-        savedPerson.id,
-        plan.id,
-        Number(plan.amount),
-        plan.name,
-      );
-    }
 
     // ── 6. Gestionar junction (crear / actualizar) ───────────────────────────
     const contractsToRecalculate = new Set<string>();

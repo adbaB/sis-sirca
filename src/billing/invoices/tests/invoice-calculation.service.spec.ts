@@ -7,6 +7,7 @@ import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { InvoiceQueryRepository } from '../repositories/invoice-query.repository';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
+import { Contract } from 'src/contracts/entities/contract.entity';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -227,6 +228,131 @@ describe('InvoiceCalculationService', () => {
       await expect(service.calculateAmountByInvoicesIds(['inv-1'], 'pago_movil')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  // ─── recalculateInvoiceAmountFromContract ──────────────────────────────────
+
+  describe('recalculateInvoiceAmountFromContract', () => {
+    it('lanza NotFoundException si la factura no existe', async () => {
+      const mockManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+      } as unknown as EntityManager;
+
+      await expect(
+        service.recalculateInvoiceAmountFromContract('inv-999', mockManager),
+      ).rejects.toThrow();
+    });
+
+    it('lanza BadRequestException si la factura está en estado PAID', async () => {
+      const invoice = makeInvoice({ status: InvoiceStatus.PAID });
+      const mockManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn().mockResolvedValue(invoice),
+        }),
+      } as unknown as EntityManager;
+
+      await expect(
+        service.recalculateInvoiceAmountFromContract('inv-1', mockManager),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('lanza BadRequestException si la factura está en estado CANCELLED', async () => {
+      const invoice = makeInvoice({ status: InvoiceStatus.CANCELLED });
+      const mockManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn().mockResolvedValue(invoice),
+        }),
+      } as unknown as EntityManager;
+
+      await expect(
+        service.recalculateInvoiceAmountFromContract('inv-1', mockManager),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('sincroniza las líneas con el nuevo plan y recalcula montos en factura PENDING', async () => {
+      const oldPlan = { id: 'plan-1', name: 'Plan Bronce', amount: 30 };
+      const newPlan = { id: 'plan-2', name: 'Plan Oro', amount: 50 };
+      const person = { id: 'person-1', name: 'Juan Perez', status: 'ACTIVE' };
+
+      const contractPerson = {
+        id: 'cp-1',
+        role: 'AFILIADO',
+        person,
+        plan: newPlan,
+        deletedAt: null,
+      };
+
+      const line = {
+        id: 'line-1',
+        category: 'MENSUALIDAD',
+        description: 'Juan Perez - Plan Bronce',
+        amount: 30,
+        person,
+        plan: oldPlan,
+        deletedAt: null,
+      };
+
+      const invoice = makeInvoice({
+        status: InvoiceStatus.PENDING,
+        baseAmount: 30,
+        totalAmount: 30,
+        contract: { id: 'contract-1', retentionPercentage: 0 } as unknown as Contract,
+      });
+
+      const mockInvoiceRepo = {
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce(invoice)
+          .mockResolvedValueOnce(invoice)
+          .mockResolvedValueOnce({
+            ...invoice,
+            baseAmount: 50,
+            totalAmount: 50,
+            lines: [line],
+          }),
+        save: jest.fn().mockResolvedValue(invoice),
+      };
+
+      const mockLineRepo = {
+        find: jest.fn().mockResolvedValue([line]),
+        save: jest.fn().mockImplementation(async (l) => l),
+      };
+
+      const mockCpRepo = {
+        find: jest.fn().mockResolvedValue([contractPerson]),
+      };
+
+      const mockManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity.name === 'Invoice' || entity === Invoice) return mockInvoiceRepo;
+          if (entity.name === 'InvoiceLine') return mockLineRepo;
+          return mockCpRepo;
+        }),
+      } as unknown as EntityManager;
+
+      queryRepo.sumBaseLines.mockResolvedValue(50);
+      queryRepo.sumAdditionalLines.mockResolvedValue(0);
+      queryRepo.sumCompletedPayments.mockResolvedValue(0);
+
+      const result = await service.recalculateInvoiceAmountFromContract('inv-1', mockManager);
+
+      expect(mockLineRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 50,
+          description: 'Juan Perez - Plan Oro',
+          plan: newPlan,
+        }),
+      );
+      expect(mockInvoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 50,
+          totalAmount: 50,
+        }),
+      );
+      expect(result).toBeDefined();
     });
   });
 });
