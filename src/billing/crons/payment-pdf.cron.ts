@@ -169,6 +169,10 @@ export class PaymentPdfCron {
 
     const { bancoDestino, montoExtraido } = extractOcrDisplayFields(payment.metadata);
 
+    const paymentDateStr = payment.paymentDate
+      ? formatDateES(payment.paymentDate, 'dd/MM/yyyy')
+      : today;
+
     return {
       contractCode: contract.code,
       legacyCode: contract.legacyCode ?? null,
@@ -179,10 +183,11 @@ export class PaymentPdfCron {
       additionalCharges,
       hasAdditionalCharges: additionalCharges.length > 0,
       today,
+      paymentDate: paymentDateStr,
       paymentMethod: payment.paymentMethod,
       referenceNumber: payment.referenceNumber,
       ...financialInfo,
-      date: today,
+      date: paymentDateStr,
       advisor,
       receiptUrl: receiptDataUri,
       bancoDestino,

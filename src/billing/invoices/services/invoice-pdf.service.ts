@@ -141,6 +141,10 @@ export class InvoicePdfService {
 
         const { bancoDestino, montoExtraido } = extractOcrDisplayFields(payment?.metadata);
 
+        const paymentDateStr = payment?.paymentDate
+          ? formatDateES(payment.paymentDate, 'dd/MM/yyyy')
+          : today;
+
         return {
           contractCode: contract.code,
           legacyCode: contract.legacyCode ?? null,
@@ -152,6 +156,7 @@ export class InvoicePdfService {
           additionalCharges,
           hasAdditionalCharges: additionalCharges.length > 0,
           today,
+          paymentDate: paymentDateStr,
           paymentMethod: payment?.paymentMethod ?? '—',
           referenceNumber: payment?.referenceNumber ?? '',
           amountUsd: formatted.format(amountUsd),
@@ -164,7 +169,7 @@ export class InvoicePdfService {
           retentionAmount: retentionAmount > 0 ? formatted.format(retentionAmount) : null,
           amountDue: formatted.format(amountDue),
           amountUnpaid: formatted.format(amountUnpaid),
-          date: today,
+          date: paymentDateStr,
           advisor: contract.advisor?.name ?? 'Sin asesor',
           receiptUrl,
           bancoDestino,
