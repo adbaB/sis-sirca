@@ -469,7 +469,6 @@ export class ContractsService {
                 action: AffiliationAction.CAMBIO_CONTRATO,
                 amount: Number(oldCp.person?.plan?.amount ?? 0),
                 reason: `Migrado al contrato ${savedContract.code}`,
-                actionDate: savedContract.affiliationDate ?? new Date(),
               }),
             );
 

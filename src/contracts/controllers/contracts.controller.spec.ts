@@ -1,10 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { PersonRole } from '../entities/contract-person.entity';
-import { TypeIdentityCard } from '../../persons/entities/person.entity';
+import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
 
@@ -43,6 +44,7 @@ describe('ContractsController', () => {
             remove: jest.fn(),
             inactivate: jest.fn(),
             activate: jest.fn(),
+            addBeneficiary: jest.fn(),
           },
         },
       ],
@@ -159,6 +161,30 @@ describe('ContractsController', () => {
       await controller.remove('1');
 
       expect(service.remove).toHaveBeenCalledWith('1');
+    });
+  });
+
+  describe('addBeneficiary', () => {
+    it('should delegate adding beneficiary to service.addBeneficiary', async () => {
+      const dto: CreateBeneficiaryDto = {
+        name: 'Maria Perez',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '99999999',
+        planId: 'plan-1',
+        role: PersonRole.AFILIADO,
+        isBillingOwner: false,
+        contractId: '1',
+      };
+      const mockCreatedPerson = {
+        id: 'person-1',
+        name: 'Maria Perez',
+      } as unknown as Person;
+      jest.spyOn(service, 'addBeneficiary').mockResolvedValue(mockCreatedPerson);
+
+      const result = await controller.addBeneficiary('1', dto);
+
+      expect(service.addBeneficiary).toHaveBeenCalledWith('1', dto);
+      expect(result).toEqual(mockCreatedPerson);
     });
   });
 });

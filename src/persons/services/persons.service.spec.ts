@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
+import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
 import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
 import { Contract } from '../../contracts/entities/contract.entity';
 import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
@@ -21,6 +22,7 @@ describe('PersonsService', () => {
   let service: PersonsService;
   let repository: Repository<Person>;
   let cpRepository: Repository<ContractPerson>;
+  let afhRepository: Repository<AffiliationHistory>;
   let plansService: PlansService;
   let contractsService: ContractsService;
 
@@ -154,6 +156,7 @@ describe('PersonsService', () => {
     service = module.get<PersonsService>(PersonsService);
     repository = module.get<Repository<Person>>(PERSONS_REPOSITORY_TOKEN);
     cpRepository = module.get<Repository<ContractPerson>>(CP_REPOSITORY_TOKEN);
+    afhRepository = module.get<Repository<AffiliationHistory>>(AFH_REPOSITORY_TOKEN);
     plansService = module.get<PlansService>(PlansService);
     contractsService = module.get<ContractsService>(ContractsService);
   });
@@ -163,7 +166,7 @@ describe('PersonsService', () => {
   });
 
   describe('create', () => {
-    it('should successfully create a person', async () => {
+    it('should successfully create a person and record in affiliation history when role is AFILIADO', async () => {
       const createPersonDto: CreatePersonDto = {
         typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
@@ -203,7 +206,112 @@ describe('PersonsService', () => {
       });
       expect(cpRepository.save).toHaveBeenCalledWith(mockContractPerson);
       expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
+      expect(afhRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contract: { id: 'contract-1' },
+          person: mockPerson,
+          plan: mockPlan,
+          action: AffiliationAction.AFILIACION,
+          amount: 10,
+        }),
+      );
+      expect(afhRepository.save).toHaveBeenCalled();
       expect(result).toEqual(mockPerson);
+    });
+
+    it('should successfully associate an existing person to a contract and record in affiliation history', async () => {
+      const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '123456',
+        name: 'John Doe',
+        birthDate: '1990-01-01',
+        gender: true,
+        planId: 'plan-1',
+        contractId: 'contract-1',
+        role: PersonRole.AFILIADO,
+      };
+
+      jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
+      jest.spyOn(service, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
+      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null);
+      jest.spyOn(cpRepository, 'find').mockResolvedValue([]);
+      jest.spyOn(cpRepository, 'create').mockReturnValue(mockContractPerson);
+      jest.spyOn(cpRepository, 'save').mockResolvedValue(mockContractPerson);
+
+      const result = await service.create(createPersonDto);
+
+      expect(cpRepository.save).toHaveBeenCalled();
+      expect(afhRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contract: { id: 'contract-1' },
+          person: mockPerson,
+          plan: mockPlan,
+          action: AffiliationAction.AFILIACION,
+          amount: 10,
+        }),
+      );
+      expect(afhRepository.save).toHaveBeenCalled();
+      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
+      expect(result).toEqual(mockPerson);
+    });
+
+    it('should not record affiliation history when creating a person with TITULAR role', async () => {
+      const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '123456',
+        name: 'John Doe',
+        birthDate: '1990-01-01',
+        gender: true,
+        contractId: 'contract-1',
+        role: PersonRole.TITULAR,
+        planId: 'plan-1',
+      };
+
+      const mockTitularCp: ContractPerson = {
+        ...mockContractPerson,
+        role: PersonRole.TITULAR,
+        plan: null,
+      };
+
+      jest.spyOn(service, 'findByIdentityCard').mockResolvedValue(null);
+      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
+      jest.spyOn(repository, 'create').mockReturnValue(mockPerson);
+      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson);
+      jest.spyOn(cpRepository, 'create').mockReturnValue(mockTitularCp);
+      jest.spyOn(cpRepository, 'save').mockResolvedValue(mockTitularCp);
+
+      await service.create(createPersonDto);
+
+      expect(afhRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if existing AFILIADO is already affiliated to another contract', async () => {
+      const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '123456',
+        name: 'John Doe',
+        planId: 'plan-1',
+        contractId: 'contract-2',
+        role: PersonRole.AFILIADO,
+      };
+
+      const otherContractPerson: ContractPerson = {
+        id: 'cp-other',
+        contract: { id: 'contract-1', code: 'SIR-001' } as Contract,
+        person: mockPerson,
+        role: PersonRole.AFILIADO,
+      } as ContractPerson;
+
+      jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
+      jest.spyOn(service, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest
+        .spyOn(contractsService, 'findOne')
+        .mockResolvedValue({ id: 'contract-2', code: 'SIR-002' } as Contract);
+      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null);
+      jest.spyOn(cpRepository, 'find').mockResolvedValue([otherContractPerson]);
+
+      await expect(service.create(createPersonDto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFoundException if plan does not exist', async () => {

@@ -14,6 +14,7 @@ import { Advisor } from '../../advisors/entities/advisor.entity';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
+import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractDto } from '../dto/create-contract.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
@@ -32,6 +33,7 @@ describe('ContractsService', () => {
   let service: ContractsService;
   let repository: Repository<Contract>;
   let contractPersonsRepository: Repository<ContractPerson>;
+  let personsService: PersonsService;
   let pdfService: PdfService;
 
   const mockContract: Contract = {
@@ -134,6 +136,7 @@ describe('ContractsService', () => {
     contractPersonsRepository = module.get<Repository<ContractPerson>>(
       CONTRACT_PERSONS_REPOSITORY_TOKEN,
     );
+    personsService = module.get<PersonsService>(PersonsService);
     pdfService = module.get<PdfService>(PdfService);
   });
 
@@ -1056,6 +1059,30 @@ describe('ContractsService', () => {
           ]),
         }),
       );
+    });
+  });
+
+  describe('addBeneficiary', () => {
+    it('should delegate adding beneficiary to personsService.create with contractId', async () => {
+      const dto: CreateBeneficiaryDto = {
+        name: 'Maria Perez',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '99999999',
+        planId: 'plan-1',
+        role: PersonRole.AFILIADO,
+        isBillingOwner: false,
+        contractId: '1',
+      };
+      const mockCreatedPerson = { id: 'person-1', name: 'Maria Perez' } as Person;
+      jest.spyOn(personsService, 'create').mockResolvedValue(mockCreatedPerson);
+
+      const result = await service.addBeneficiary('1', dto);
+
+      expect(personsService.create).toHaveBeenCalledWith({
+        ...dto,
+        contractId: '1',
+      });
+      expect(result).toEqual(mockCreatedPerson);
     });
   });
 });
