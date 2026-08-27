@@ -289,8 +289,49 @@ describe('ContractsService', () => {
       await service.findAll({ search: 'test' });
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('ILIKE :search'),
+        expect.stringContaining(
+          'contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR person.name ILIKE :search OR person.identityCard ILIKE :search',
+        ),
         { search: '%test%' },
+      );
+    });
+
+    it('should apply specific filters when code, legacyCode, identityCard, and beneficiaryName are provided', async () => {
+      const mockQueryBuilder = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+
+      jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
+
+      await service.findAll({
+        code: 'CTR-001',
+        legacyCode: 'LEG-123',
+        identityCard: '12345678',
+        beneficiaryName: 'Maria',
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('contract.code ILIKE :codeFilter', {
+        codeFilter: '%CTR-001%',
+      });
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'contract.legacy_code ILIKE :legacyCodeFilter',
+        { legacyCodeFilter: '%LEG-123%' },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('person.identityCard ILIKE :idCardFilter'),
+        { idCardFilter: '%12345678%' },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'person.name ILIKE :beneficiaryNameFilter',
+        { beneficiaryNameFilter: '%Maria%' },
       );
     });
 

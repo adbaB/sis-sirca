@@ -1049,6 +1049,7 @@ export class ContractsService {
 
     this.applyRelations(queryBuilder);
     this.applySearchFilter(queryBuilder, query.search);
+    this.applySpecificFilters(queryBuilder, query);
     this.applyAdvisorFilter(queryBuilder, query.advisorId);
     if (query.stage || targetBillingMonth) {
       this.applyInvoiceJoins(queryBuilder, targetBillingMonth);
@@ -1092,14 +1093,39 @@ export class ContractsService {
   }
 
   /**
-   * Adds the ILIKE search clause for code, billing-owner name, or identity card.
+   * Adds the ILIKE search clause for code, legacy code, or any associated person (beneficiary/titular) by name or identity card.
    */
   private applySearchFilter(qb: SelectQueryBuilder<Contract>, search?: string): void {
     if (!search) return;
     qb.andWhere(
-      '(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR (contractPersons.isBillingOwner = true AND (person.name ILIKE :search OR person.identityCard ILIKE :search)))',
+      "(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR person.name ILIKE :search OR person.identityCard ILIKE :search OR CONCAT(person.typeIdentityCard, '-', person.identityCard) ILIKE :search OR CONCAT(person.typeIdentityCard, person.identityCard) ILIKE :search)",
       { search: `%${search}%` },
     );
+  }
+
+  /**
+   * Applies specific field filters when provided in query (code, legacyCode, identityCard, beneficiaryName).
+   */
+  private applySpecificFilters(qb: SelectQueryBuilder<Contract>, query: FindContractDto): void {
+    if (query.code) {
+      qb.andWhere('contract.code ILIKE :codeFilter', { codeFilter: `%${query.code}%` });
+    }
+    if (query.legacyCode) {
+      qb.andWhere('contract.legacy_code ILIKE :legacyCodeFilter', {
+        legacyCodeFilter: `%${query.legacyCode}%`,
+      });
+    }
+    if (query.identityCard) {
+      qb.andWhere(
+        "(person.identityCard ILIKE :idCardFilter OR CONCAT(person.typeIdentityCard, '-', person.identityCard) ILIKE :idCardFilter OR CONCAT(person.typeIdentityCard, person.identityCard) ILIKE :idCardFilter)",
+        { idCardFilter: `%${query.identityCard}%` },
+      );
+    }
+    if (query.beneficiaryName) {
+      qb.andWhere('person.name ILIKE :beneficiaryNameFilter', {
+        beneficiaryNameFilter: `%${query.beneficiaryName}%`,
+      });
+    }
   }
 
   /**

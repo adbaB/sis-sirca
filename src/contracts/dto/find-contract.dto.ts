@@ -8,6 +8,22 @@ export class FindContractDto extends PaginationQueryDto {
 
   @IsString()
   @IsOptional()
+  code?: string;
+
+  @IsString()
+  @IsOptional()
+  legacyCode?: string;
+
+  @IsString()
+  @IsOptional()
+  identityCard?: string;
+
+  @IsString()
+  @IsOptional()
+  beneficiaryName?: string;
+
+  @IsString()
+  @IsOptional()
   status?: string;
 
   @IsUUID('4', { message: 'El advisorId debe ser un UUID válido.' })
