@@ -8,6 +8,8 @@ import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
 import { INVOICE_CREATED } from '../events/invoice.events';
 import { PersonStatus } from '../../../persons/entities/person.entity';
+import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { requestContextStorage } from '../../../common/context/request-context';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -218,6 +220,70 @@ describe('InvoiceGenerationService', () => {
         expect.objectContaining({
           invoiceId: savedInvoice.id,
           contractId: contract.id,
+        }),
+      );
+    });
+  });
+
+  describe('generación de líneas según isAffiliation', () => {
+    it('genera factura mensual regular con MENSUALIDAD, isProjectable=true y baseAmount=totalAmount', async () => {
+      const contract = makeContract();
+      const savedInvoice = { id: 'inv-1', status: InvoiceStatus.PENDING } as Invoice;
+
+      contractRepo.findOne.mockResolvedValue(contract);
+      invoiceRepo.findOne.mockResolvedValueOnce(null);
+      invoiceRepo.create.mockReturnValue(savedInvoice);
+      invoiceRepo.save.mockResolvedValue(savedInvoice);
+      invoiceRepo.findOne.mockResolvedValueOnce({ ...savedInvoice, lines: [], payments: [] });
+
+      await withContext(mockQr, () =>
+        service.generateInvoiceForContract('contract-1', '2025-02', false),
+      );
+
+      expect(invoiceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 50,
+          totalAmount: 50,
+        }),
+      );
+
+      expect(mockQr.manager.create).toHaveBeenCalledWith(
+        InvoiceLine,
+        expect.objectContaining({
+          category: InvoiceLineCategory.MENSUALIDAD,
+          isProjectable: true,
+          amount: 50,
+        }),
+      );
+    });
+
+    it('genera factura de afiliación con INCLUSION, isProjectable=false y baseAmount=0', async () => {
+      const contract = makeContract();
+      const savedInvoice = { id: 'inv-1', status: InvoiceStatus.PENDING } as Invoice;
+
+      contractRepo.findOne.mockResolvedValue(contract);
+      invoiceRepo.findOne.mockResolvedValueOnce(null);
+      invoiceRepo.create.mockReturnValue(savedInvoice);
+      invoiceRepo.save.mockResolvedValue(savedInvoice);
+      invoiceRepo.findOne.mockResolvedValueOnce({ ...savedInvoice, lines: [], payments: [] });
+
+      await withContext(mockQr, () =>
+        service.generateInvoiceForContract('contract-1', '2025-02', true),
+      );
+
+      expect(invoiceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 0,
+          totalAmount: 50,
+        }),
+      );
+
+      expect(mockQr.manager.create).toHaveBeenCalledWith(
+        InvoiceLine,
+        expect.objectContaining({
+          category: InvoiceLineCategory.INCLUSION,
+          isProjectable: false,
+          amount: 50,
         }),
       );
     });

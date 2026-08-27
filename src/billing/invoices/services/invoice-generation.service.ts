@@ -140,7 +140,7 @@ export class InvoiceGenerationService {
       billingMonth,
       issueDate: getCaracasTodayJSDate(),
       dueDate,
-      baseAmount: totalAmount,
+      baseAmount: isAffiliation ? 0 : totalAmount,
       totalAmount,
       paidAmount: 0,
       status: InvoiceStatus.PENDING,
@@ -160,7 +160,7 @@ export class InvoiceGenerationService {
         quantity: 1,
         person: data.person,
         plan: data.plan,
-        isProjectable: true,
+        isProjectable: !isAffiliation,
       }),
     );
 
