@@ -212,23 +212,43 @@ export class ChatbotPaymentService {
       await this.analyticsService.trackCompletion(fromNumber);
       await this.stateService.clearState(fromNumber);
 
-      let rateUsd: number | undefined;
+      let receiptRateUsd: number | undefined;
+      let todayRateUsd: number | undefined;
+
       try {
-        let exchangeRate = datePaymentReceipt
+        let receiptExchangeRate = datePaymentReceipt
           ? await this.exchangeRateService.getExchangeRateByDate(datePaymentReceipt)
           : null;
 
-        if (!exchangeRate) {
-          exchangeRate =
+        if (!receiptExchangeRate) {
+          receiptExchangeRate =
             await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
         }
 
-        if (exchangeRate?.rateUsd) {
-          rateUsd = Number(exchangeRate.rateUsd);
+        if (receiptExchangeRate?.rateUsd) {
+          receiptRateUsd = Number(receiptExchangeRate.rateUsd);
         }
       } catch (rateError) {
         this.logger.warn(
-          `Could not fetch exchange rate for post-payment notification: ${rateError?.message}`,
+          `Could not fetch receipt exchange rate for post-payment notification: ${rateError?.message}`,
+        );
+      }
+
+      try {
+        let todayExchangeRate =
+          await this.exchangeRateService.getExchangeRateByDate(getCaracasTodayJSDate());
+
+        if (!todayExchangeRate && datePaymentReceipt) {
+          todayExchangeRate =
+            await this.exchangeRateService.getExchangeRateByDate(datePaymentReceipt);
+        }
+
+        if (todayExchangeRate?.rateUsd) {
+          todayRateUsd = Number(todayExchangeRate.rateUsd);
+        }
+      } catch (rateError) {
+        this.logger.warn(
+          `Could not fetch today exchange rate for post-payment notification: ${rateError?.message}`,
         );
       }
 
@@ -248,8 +268,8 @@ export class ChatbotPaymentService {
       if (hasAmount) {
         if (isZelle) {
           totalPaidUsd = extractedAmount;
-        } else if (rateUsd) {
-          totalPaidUsd = extractedAmount / rateUsd;
+        } else if (receiptRateUsd) {
+          totalPaidUsd = extractedAmount / receiptRateUsd;
         }
       } else {
         if (state.selected_invoices_details) {
@@ -266,7 +286,9 @@ export class ChatbotPaymentService {
 
         if (updatedInvoices.length > 1) {
           if (pendingUsd > 0) {
-            const pendingBsText = rateUsd ? ` (Bs. ${(pendingUsd * rateUsd).toFixed(2)})` : '';
+            const pendingBsText = todayRateUsd
+              ? ` (Bs. ${(pendingUsd * todayRateUsd).toFixed(2)})`
+              : '';
             breakdownText += `\n- Mes ${invoice.billingMonth}: Queda pendiente $${pendingUsd.toFixed(2)}${pendingBsText}`;
           } else {
             breakdownText += `\n- Mes ${invoice.billingMonth}: Pagada en su totalidad ✅`;
@@ -282,8 +304,8 @@ export class ChatbotPaymentService {
       }
 
       if (totalPendingUsd > 0) {
-        const totalPendingBsText = rateUsd
-          ? ` (Bs. ${(totalPendingUsd * rateUsd).toFixed(2)})`
+        const totalPendingBsText = todayRateUsd
+          ? ` (Bs. ${(totalPendingUsd * todayRateUsd).toFixed(2)})`
           : '';
         finalMessage += `\nAún queda un saldo pendiente total de $${totalPendingUsd.toFixed(2)}${totalPendingBsText}.`;
         if (updatedInvoices.length > 1) {
