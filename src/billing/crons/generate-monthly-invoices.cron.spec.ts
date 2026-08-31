@@ -1,17 +1,15 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
-import { Person, PersonStatus } from '../../persons/entities/person.entity';
-import { Plan } from '../../plans/entities/plan.entity';
-import { InvoiceLineCategory } from '../invoices/enums/invoice-line-category.enum';
-import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
-import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
-import { SurplusService } from '../payments/services/surplus.service';
+import { Invoice } from '../invoices/entities/invoice.entity';
+import { InvoiceGenerationService } from '../invoices/services/invoice-generation.service';
 import { GenerateMonthlyInvoices } from './generate-monthly-invoices.cron';
 
 describe('GenerateMonthlyInvoices', () => {
   let service: GenerateMonthlyInvoices;
+  let mockInvoiceGenerationService: { generateInvoiceForContract: jest.Mock };
 
   const mockQueryRunner = {
     connect: jest.fn(),
@@ -38,6 +36,10 @@ describe('GenerateMonthlyInvoices', () => {
   };
 
   beforeEach(async () => {
+    mockInvoiceGenerationService = {
+      generateInvoiceForContract: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GenerateMonthlyInvoices,
@@ -50,8 +52,8 @@ describe('GenerateMonthlyInvoices', () => {
           useValue: mockDataSource,
         },
         {
-          provide: SurplusService,
-          useValue: { applyPendingSurplusesToInvoice: jest.fn() },
+          provide: InvoiceGenerationService,
+          useValue: mockInvoiceGenerationService,
         },
       ],
     }).compile();
@@ -63,51 +65,18 @@ describe('GenerateMonthlyInvoices', () => {
   });
 
   // --- Helper Factories ---
-  const createMockPlan = (amount: number): Plan => {
-    return {
-      id: 'plan-id',
-      name: 'Test Plan',
-      maxAge: 100,
-      amount,
-      persons: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: new Date(),
-    } as Plan;
-  };
-
-  const createMockPerson = (
-    id: string,
-    planAmount: number,
-    status: PersonStatus = PersonStatus.ACTIVE,
-  ): Person => {
-    return {
-      id,
-      identityCard: '12345678',
-      name: `Person ${id}`,
-      birthDate: new Date(),
-      gender: true,
-      plan: createMockPlan(planAmount),
-      status,
-      contractPersons: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      deletedAt: new Date(),
-    } as unknown as Person;
-  };
-
-  const createMockContract = (id: string, persons: Person[]): Contract => {
-    const contractPersons = persons.map((person) => ({ role: 'AFILIADO', person }));
+  const createMockContract = (id: string, overrides: Partial<Contract> = {}): Contract => {
     return {
       id,
       affiliationDate: new Date(),
       monthlyAmount: 0,
       status: ContractStatus.ACTIVE,
-      contractPersons,
+      contractPersons: [],
       invoices: [],
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: new Date(),
+      ...overrides,
     } as unknown as Contract;
   };
 
@@ -116,160 +85,123 @@ describe('GenerateMonthlyInvoices', () => {
   });
 
   describe('generateMonthlyInvoices', () => {
-    it('should successfully generate Invoice and InvoiceDetail records for an ACTIVE Contract with ACTIVE Persons', async () => {
+    it('should call InvoiceGenerationService.generateInvoiceForContract for each active contract', async () => {
       // Arrange
-      const mockPersons = [createMockPerson('person-1', 50), createMockPerson('person-2', 75)];
-      const mockContract = createMockContract('contract-1', mockPersons);
+      const mockContract = createMockContract('contract-1');
+      const mockInvoice = { id: 'invoice-1' } as Invoice;
 
-      mockContractRepository.find
-        .mockResolvedValueOnce([mockContract]) // First batch yields 1 contract
-        .mockResolvedValueOnce([]); // Second batch yields empty array (end loop)
+      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
 
-      mockQueryRunner.manager.findOne.mockResolvedValue(null); // Idempotency check: no existing invoice
-
-      mockQueryRunner.manager.create.mockImplementation((entity, dto) => dto); // Mock create
-      mockQueryRunner.manager.save.mockImplementation(async (entityOrArray) => entityOrArray); // Mock save
+      mockInvoiceGenerationService.generateInvoiceForContract.mockResolvedValue(mockInvoice);
 
       // Act
       await service.generateMonthlyInvoices();
 
       // Assert
       expect(mockContractRepository.find).toHaveBeenCalledTimes(2);
-      expect(mockQueryRunner.connect).toHaveBeenCalled();
-      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
-
-      // Verify idempotency check
-      expect(mockQueryRunner.manager.findOne).toHaveBeenCalledWith(
-        Invoice,
-        expect.objectContaining({
-          where: expect.objectContaining({ contract: { id: mockContract.id } }),
-        }),
+      expect(mockInvoiceGenerationService.generateInvoiceForContract).toHaveBeenCalledTimes(1);
+      expect(mockInvoiceGenerationService.generateInvoiceForContract).toHaveBeenCalledWith(
+        'contract-1',
+        expect.stringMatching(/^\d{4}-\d{2}$/), // billingMonth YYYY-MM
       );
-
-      // Verify Invoice creation (Total Amount calculation)
-      expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
-        Invoice,
-        expect.objectContaining({
-          totalAmount: 125, // 50 + 75
-          status: InvoiceStatus.PENDING,
-          contract: mockContract,
-        }),
-      );
-
-      // Verify InvoiceLine creation
-      expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
-        InvoiceLine,
-        expect.objectContaining({
-          person: mockPersons[0],
-          plan: mockPersons[0].plan,
-          amount: 50,
-          category: InvoiceLineCategory.MENSUALIDAD,
-        }),
-      );
-      expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
-        InvoiceLine,
-        expect.objectContaining({
-          person: mockPersons[1],
-          plan: mockPersons[1].plan,
-          amount: 75,
-          category: InvoiceLineCategory.MENSUALIDAD,
-        }),
-      );
-
-      expect(mockQueryRunner.manager.save).toHaveBeenCalledTimes(2); // Once for Invoice, once for array of InvoiceLines
-      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.rollbackTransaction).not.toHaveBeenCalled();
-      expect(mockQueryRunner.release).toHaveBeenCalled();
     });
 
-    it('should skip a Contract if an Invoice for the current month and year already exists (idempotency)', async () => {
+    it('should process multiple contracts in chunks', async () => {
       // Arrange
-      const mockPersons = [createMockPerson('person-1', 50)];
-      const mockContract = createMockContract('contract-1', mockPersons);
+      const contract1 = createMockContract('contract-1');
+      const contract2 = createMockContract('contract-2');
+      const contract3 = createMockContract('contract-3');
 
-      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
+      mockContractRepository.find
+        .mockResolvedValueOnce([contract1, contract2, contract3])
+        .mockResolvedValueOnce([]);
 
-      mockQueryRunner.manager.findOne.mockResolvedValue({ id: 'existing-invoice-id' }); // Simulate existing invoice
+      mockInvoiceGenerationService.generateInvoiceForContract.mockResolvedValue({
+        id: 'any-invoice',
+      });
 
       // Act
       await service.generateMonthlyInvoices();
 
       // Assert
-      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.manager.findOne).toHaveBeenCalled(); // Looked up existing
-
-      // Crucially, it should rollback and NOT save anything
-      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
-      expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
-      expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
-      expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(mockInvoiceGenerationService.generateInvoiceForContract).toHaveBeenCalledTimes(3);
     });
 
-    it('should correctly call rollbackTransaction if an error is thrown during saving', async () => {
+    it('should skip a contract if InvoiceGenerationService throws BadRequestException (idempotency)', async () => {
       // Arrange
-      const mockPersons = [createMockPerson('person-1', 50)];
-      const mockContract = createMockContract('contract-1', mockPersons);
+      const mockContract = createMockContract('contract-1');
 
       mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
 
-      mockQueryRunner.manager.findOne.mockResolvedValue(null);
-      mockQueryRunner.manager.create.mockImplementation((entity, dto) => dto);
+      mockInvoiceGenerationService.generateInvoiceForContract.mockRejectedValue(
+        new BadRequestException('Ya existe una factura para este contrato en el mes 2026-09'),
+      );
 
-      // Simulate error during save
-      const mockError = new Error('Database connection failed');
-      mockQueryRunner.manager.save.mockRejectedValue(mockError);
+      const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation(() => {});
+      const errorSpy = jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
 
-      // We spy on logger to avoid test output noise, but also to verify it caught the error
+      // Act
+      await service.generateMonthlyInvoices();
+
+      // Assert - should log skip, not error
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Skipping contract contract-1'));
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it('should skip a contract on Postgres unique violation (23505)', async () => {
+      // Arrange
+      const mockContract = createMockContract('contract-1');
+
+      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
+
+      const pgError = new Error('duplicate key value violates unique constraint');
+      Object.assign(pgError, { code: '23505' });
+      mockInvoiceGenerationService.generateInvoiceForContract.mockRejectedValue(pgError);
+
+      const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation(() => {});
+
+      // Act
+      await service.generateMonthlyInvoices();
+
+      // Assert
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Skipping contract contract-1'));
+
+      logSpy.mockRestore();
+    });
+
+    it('should log error when InvoiceGenerationService throws unexpected error', async () => {
+      // Arrange
+      const mockContract = createMockContract('contract-1');
+
+      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
+
+      mockInvoiceGenerationService.generateInvoiceForContract.mockRejectedValue(
+        new Error('Database connection failed'),
+      );
+
       const loggerErrorSpy = jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
 
       // Act
       await service.generateMonthlyInvoices();
 
       // Assert
-      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
-      expect(mockQueryRunner.release).toHaveBeenCalled();
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Error processing contract contract-1: Database connection failed'),
-        expect.any(String), // Stack trace
+        expect.any(String),
       );
 
       loggerErrorSpy.mockRestore();
     });
 
-    it('should skip an ACTIVE Contract if it has no ACTIVE Persons', async () => {
-      // Arrange
-      const mockPersons = [
-        createMockPerson('person-1', 50, PersonStatus.INACTIVE), // INACTIVE person
-      ];
-      const mockContract = createMockContract('contract-1', mockPersons);
-
-      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
-
-      mockQueryRunner.manager.findOne.mockResolvedValue(null);
-
-      // Act
-      await service.generateMonthlyInvoices();
-
-      // Assert
-      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
-      // Should rollback and NOT save anything since no active persons
-      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
-      expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
-      expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
-      expect(mockQueryRunner.release).toHaveBeenCalled();
-    });
-
     it('should skip a Contract and reset excludeFromNextBilling to false if excludeFromNextBilling is true', async () => {
       // Arrange
-      const mockPersons = [createMockPerson('person-1', 50)];
-      const mockContract = {
-        ...createMockContract('contract-1', mockPersons),
+      const mockContract = createMockContract('contract-1', {
         excludeFromNextBilling: true,
-      } as Contract;
+        code: 'C-001',
+      } as Partial<Contract>);
 
       mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
 
@@ -277,6 +209,7 @@ describe('GenerateMonthlyInvoices', () => {
       await service.generateMonthlyInvoices();
 
       // Assert
+      expect(mockQueryRunner.connect).toHaveBeenCalled();
       expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(
         Contract,
@@ -284,9 +217,55 @@ describe('GenerateMonthlyInvoices', () => {
         { excludeFromNextBilling: false },
       );
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
-      expect(mockQueryRunner.manager.create).not.toHaveBeenCalled();
-      expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
+      // Should NOT call InvoiceGenerationService
+      expect(mockInvoiceGenerationService.generateInvoiceForContract).not.toHaveBeenCalled();
+    });
+
+    it('should continue processing remaining contracts when one fails', async () => {
+      // Arrange
+      const contract1 = createMockContract('contract-1');
+      const contract2 = createMockContract('contract-2');
+
+      mockContractRepository.find
+        .mockResolvedValueOnce([contract1, contract2])
+        .mockResolvedValueOnce([]);
+
+      mockInvoiceGenerationService.generateInvoiceForContract
+        .mockRejectedValueOnce(new Error('Unexpected error'))
+        .mockResolvedValueOnce({ id: 'invoice-2' });
+
+      jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
+
+      // Act
+      await service.generateMonthlyInvoices();
+
+      // Assert - both contracts were attempted
+      expect(mockInvoiceGenerationService.generateInvoiceForContract).toHaveBeenCalledTimes(2);
+    });
+
+    it('should skip contracts with NotFoundException (contract not found)', async () => {
+      // Arrange
+      const mockContract = createMockContract('contract-1');
+
+      mockContractRepository.find.mockResolvedValueOnce([mockContract]).mockResolvedValueOnce([]);
+
+      mockInvoiceGenerationService.generateInvoiceForContract.mockRejectedValue(
+        new NotFoundException('Contrato con ID contract-1 no encontrado'),
+      );
+
+      const loggerErrorSpy = jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
+
+      // Act
+      await service.generateMonthlyInvoices();
+
+      // Assert - logs error but doesn't crash
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Error processing contract contract-1'),
+        expect.any(String),
+      );
+
+      loggerErrorSpy.mockRestore();
     });
   });
 });

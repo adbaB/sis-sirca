@@ -1,6 +1,9 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
+
+const logger = new Logger('RequestContext');
 
 /**
  * Estructura del contexto que viaja a lo largo del request HTTP.
@@ -93,7 +96,7 @@ export async function runPostCommitHooks(ctx?: RequestContext): Promise<void> {
       try {
         await hook();
       } catch (err) {
-        console.error('[RequestContext] Error in post-commit hook:', err);
+        logger.error('[RequestContext] Error in post-commit hook:', err);
       }
     }
   }

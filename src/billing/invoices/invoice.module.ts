@@ -33,6 +33,7 @@ import { PdfModule } from '../../pdf/pdf.module';
   ],
   exports: [
     InvoiceService,
+    InvoiceGenerationService, // Exportado para el cron de generación mensual
     InvoiceCalculationService, // Exportado para que SurplusService lo inyecte directamente
   ],
 })

@@ -11,7 +11,11 @@ import { Surplus, SurplusStatus, isValidSurplusTransition } from '../entities/su
 import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { InvoiceCalculationService } from '../../invoices/services/invoice-calculation.service';
 import { INVOICE_CREATED, InvoiceCreatedEvent } from '../../invoices/events/invoice.events';
-import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
+import {
+  getQueryRunner,
+  getQueryRunnerSafe,
+  requestContextStorage,
+} from '../../../common/context/request-context';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
 import { calculateSurplusApplication } from '../utils/surplus-calculator.util';
 import { UpdateSurplusStatusDto } from '../dto/update-surplus-status.dto';
@@ -170,17 +174,23 @@ export class SurplusService {
    * Manejador de eventos activado cuando se crea una nueva factura (`INVOICE_CREATED`).
    * Intenta aplicar inmediatamente los excedentes pendientes que pueda tener el contrato titular.
    *
+   * NOTA: Se usa `requestContextStorage.exit()` para salir del contexto ALS del request
+   * HTTP original. Esto es necesario porque `EventEmitter2.emit()` no espera (await) los
+   * handlers async — el handler se ejecuta en el event loop DESPUÉS de que ContextInterceptor
+   * libere el QueryRunner del request. Sin `exit()`, `@Transactional()` reutilizaría el QR
+   * ya liberado y lanzaría "Query runner already released".
+   *
    * @param event - Objeto del evento con `contractId` e `invoiceId`.
    */
   @OnEvent(INVOICE_CREATED)
   async handleInvoiceCreated(event: InvoiceCreatedEvent): Promise<void> {
-    try {
-      await this.applyPendingSurplusesToInvoice(event.contractId, event.invoiceId);
-    } catch (err) {
-      this.logger.error(
-        `[surplus] Error aplicando excedentes para factura ${event.invoiceId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    requestContextStorage.exit(() => {
+      this.applyPendingSurplusesToInvoice(event.contractId, event.invoiceId).catch((err) => {
+        this.logger.error(
+          `[surplus] Error aplicando excedentes para factura ${event.invoiceId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    });
   }
 
   /**

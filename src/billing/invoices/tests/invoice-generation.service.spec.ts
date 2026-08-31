@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { QueryRunner } from 'typeorm';
+import { DataSource, QueryRunner } from 'typeorm';
 import { InvoiceGenerationService } from '../services/invoice-generation.service';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
@@ -95,6 +95,23 @@ describe('InvoiceGenerationService', () => {
         {
           provide: getRepositoryToken(Contract),
           useValue: mockContractRepo,
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            createQueryRunner: jest.fn().mockReturnValue({
+              connect: jest.fn(),
+              startTransaction: jest.fn(),
+              commitTransaction: jest.fn(),
+              rollbackTransaction: jest.fn(),
+              release: jest.fn(),
+              manager: {
+                getRepository: jest.fn(),
+                create: jest.fn(),
+                save: jest.fn(),
+              },
+            }),
+          },
         },
         {
           provide: EventEmitter2,
