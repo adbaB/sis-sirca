@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
 import { PersonStatus } from '../../../persons/entities/person.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
@@ -37,6 +37,7 @@ export class InvoiceGenerationService {
     private readonly invoiceRepository: Repository<Invoice>,
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
+    private readonly dataSource: DataSource,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 

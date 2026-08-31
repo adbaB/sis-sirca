@@ -43,10 +43,22 @@ export class ContractCreationService {
     return this.contractsRepository.manager.transaction(async (manager) => {
       const { generatedCode, advisor } = await generateContractCode(manager, advisorId);
 
+      const sanitizedLegacyCode = createContractDto.legacyCode?.trim() || null;
+      if (sanitizedLegacyCode) {
+        const existingLegacy = await manager.getRepository(Contract).findOne({
+          where: { legacyCode: sanitizedLegacyCode },
+        });
+        if (existingLegacy) {
+          throw new BadRequestException(
+            `El código anterior "${sanitizedLegacyCode}" ya está registrado en el contrato ${existingLegacy.code}.`,
+          );
+        }
+      }
+
       const contract = manager.getRepository(Contract).create({
         ...rest,
         code: generatedCode,
-        legacyCode: createContractDto.legacyCode ?? undefined,
+        legacyCode: sanitizedLegacyCode,
         advisor,
         ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
       });
@@ -77,8 +89,21 @@ export class ContractCreationService {
       // 2. Generate code and create contract entity
       const { generatedCode, advisor } = await generateContractCode(manager, advisorId);
 
+      const sanitizedLegacyCode = contractData.legacyCode?.trim() || null;
+      if (sanitizedLegacyCode) {
+        const existingLegacy = await contractRepo.findOne({
+          where: { legacyCode: sanitizedLegacyCode },
+        });
+        if (existingLegacy) {
+          throw new BadRequestException(
+            `El código anterior "${sanitizedLegacyCode}" ya está registrado en el contrato ${existingLegacy.code}.`,
+          );
+        }
+      }
+
       const contract = contractRepo.create({
         ...contractData,
+        legacyCode: sanitizedLegacyCode,
         code: generatedCode,
         advisor,
         ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),

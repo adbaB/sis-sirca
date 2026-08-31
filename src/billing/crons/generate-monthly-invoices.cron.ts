@@ -1,19 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
-import { PersonStatus } from '../../persons/entities/person.entity';
-import { InvoiceLineCategory } from '../invoices/enums/invoice-line-category.enum';
-import { InvoiceLine } from '../invoices/entities/invoice-line.entity';
-import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
-import {
-  getCaracasNow,
-  getStartOfMonth,
-  getEndOfMonth,
-  getDueDate,
-  getCaracasTodayJSDate,
-} from '../../common/utils/date.util';
+import { InvoiceGenerationService } from '../invoices/services/invoice-generation.service';
+import { getCaracasNow } from '../../common/utils/date.util';
 
 @Injectable()
 export class GenerateMonthlyInvoices {
@@ -23,6 +14,7 @@ export class GenerateMonthlyInvoices {
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
     private readonly dataSource: DataSource,
+    private readonly invoiceGenerationService: InvoiceGenerationService,
   ) {}
 
   @Cron('1 0 25 * *')
@@ -36,25 +28,12 @@ export class GenerateMonthlyInvoices {
     // Calculate the target month (next month) since invoices are generated on the 25th of the current month
     const targetDate = now.plus({ months: 1 });
 
-    // 1st of the target month
-    const startOfMonth = getStartOfMonth(targetDate);
-    // Last millisecond of the target month
-    const endOfMonth = getEndOfMonth(targetDate);
-    // Let's set a due date for the 5th of the target month
-    const dueDate = getDueDate(targetDate, 5);
-
     // Create billingMonth string YYYY-MM
     const billingMonth = targetDate.toFormat('yyyy-MM');
 
     while (true) {
       const contracts = await this.contractRepository.find({
         where: { status: ContractStatus.ACTIVE },
-        relations: [
-          'contractPersons',
-          'contractPersons.plan',
-          'contractPersons.person',
-          'contractPersons.person.plan',
-        ],
         order: { id: 'ASC' },
         skip: offset,
         take: chunkSize,
@@ -65,7 +44,7 @@ export class GenerateMonthlyInvoices {
       }
 
       for (const contract of contracts) {
-        await this.processContract(contract, startOfMonth, endOfMonth, dueDate, billingMonth);
+        await this.processContract(contract, billingMonth);
       }
 
       offset += chunkSize;
@@ -74,126 +53,58 @@ export class GenerateMonthlyInvoices {
     this.logger.log('Monthly invoice generation completed.');
   }
 
-  private async processContract(
-    contract: Contract,
-    startOfMonth: Date,
-    endOfMonth: Date,
-    dueDate: Date,
-    billingMonth: string,
-  ) {
-    const queryRunner = this.dataSource.createQueryRunner();
+  private async processContract(contract: Contract, billingMonth: string) {
+    // Manejar exclusión de facturación antes de delegar al servicio.
+    // Esta validación permanece en el cron porque `excludeFromNextBilling`
+    // es un concepto del ciclo automático, no de la creación de facturas en general.
+    if (contract.excludeFromNextBilling) {
+      this.logger.log(
+        `Contract ${contract.id} (${contract.code}) is excluded from billing cycle ${billingMonth}. Resetting excludeFromNextBilling to false.`,
+      );
 
-    try {
-      await queryRunner.connect();
-      await queryRunner.startTransaction();
-
-      if (contract.excludeFromNextBilling) {
-        this.logger.log(
-          `Contract ${contract.id} (${contract.code}) is excluded from billing cycle ${billingMonth}. Resetting excludeFromNextBilling to false.`,
-        );
+      const queryRunner = this.dataSource.createQueryRunner();
+      try {
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
         await queryRunner.manager.update(
           Contract,
           { id: contract.id },
           { excludeFromNextBilling: false },
         );
         await queryRunner.commitTransaction();
-        return;
-      }
-
-      // The idempotency check below is now only an optimization.
-      // The true database truth check is enforced via the Unique constraint
-      // on (contract, billingMonth).
-      const existingInvoice = await queryRunner.manager.findOne(Invoice, {
-        where: {
-          contract: { id: contract.id },
-          billingMonth,
-        },
-      });
-
-      if (existingInvoice) {
-        await queryRunner.rollbackTransaction();
-        return; // Skip this contract as it already has an invoice for this month
-      }
-
-      const activeAfiliadoCps =
-        contract.contractPersons?.filter(
-          (cp) => cp.role === 'AFILIADO' && cp.person?.status === PersonStatus.ACTIVE,
-        ) || [];
-
-      if (activeAfiliadoCps.length === 0) {
-        // No active afiliado persons, skip invoice generation
-        await queryRunner.rollbackTransaction();
-        return;
-      }
-
-      const invalidCp = activeAfiliadoCps.find((cp) => {
-        const plan = cp.plan || cp.person?.plan;
-        return !plan || plan.amount === null || plan.amount === undefined;
-      });
-
-      if (invalidCp) {
-        throw new Error(
-          `Active afiliado ${invalidCp.person.id} in contract ${contract.id} has no valid plan amount`,
-        );
-      }
-
-      let totalAmount = 0;
-      const invoiceDetailsData = activeAfiliadoCps.map((cp) => {
-        const plan = (cp.plan || cp.person?.plan)!;
-        const amount = Number(plan.amount);
-        totalAmount += amount;
-
-        if (!Number.isFinite(amount) || amount < 0) {
-          throw new Error(
-            `Invalid plan amount for afiliado ${cp.person.id} in contract ${contract.id}`,
-          );
+      } catch (error: unknown) {
+        if (queryRunner.isTransactionActive) {
+          await queryRunner.rollbackTransaction();
         }
+        this.logger.error(
+          `Error resetting excludeFromNextBilling for contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      } finally {
+        await queryRunner.release();
+      }
+      return;
+    }
 
-        return {
-          person: cp.person,
-          plan: plan,
-          chargedAmount: amount,
-        };
-      });
-
-      // Create Invoice
-      const invoice = queryRunner.manager.create(Invoice, {
-        contract: contract,
-        billingMonth: billingMonth,
-        issueDate: getCaracasTodayJSDate(),
-        dueDate: dueDate,
-        baseAmount: totalAmount,
-        totalAmount: totalAmount,
-        paidAmount: 0,
-        status: InvoiceStatus.PENDING,
-      });
-
-      const savedInvoice = await queryRunner.manager.save(invoice);
-
-      // Create Invoice Lines
-      const invoiceLines = invoiceDetailsData.map((data) => {
-        return queryRunner.manager.create(InvoiceLine, {
-          invoice: savedInvoice,
-          category: InvoiceLineCategory.MENSUALIDAD,
-          description: `${data.person.name} - ${data.plan.name}`,
-          amount: data.chargedAmount,
-          quantity: 1,
-          person: data.person,
-          plan: data.plan,
-          isProjectable: true,
-        });
-      });
-
-      await queryRunner.manager.save(invoiceLines);
-
-      await queryRunner.commitTransaction();
-      this.logger.log(`Created invoice ${savedInvoice.id} for contract ${contract.id}`);
+    try {
+      // Delegar la creación de factura al servicio, que maneja:
+      // - Retenciones (retentionPercentage, retentionAmount)
+      // - Emisión del evento INVOICE_CREATED (post-commit)
+      // - Aplicación automática de surplus vía SurplusService
+      // - Validaciones de negocio y transaccionalidad
+      const invoice = await this.invoiceGenerationService.generateInvoiceForContract(
+        contract.id,
+        billingMonth,
+      );
+      this.logger.log(`Created invoice ${invoice.id} for contract ${contract.id}`);
     } catch (error: unknown) {
-      if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
+      // BadRequestException con "Ya existe una factura" = idempotencia, skip silencioso
+      if (error instanceof BadRequestException) {
+        this.logger.log(`Skipping contract ${contract.id}: ${error.message}`);
+        return;
       }
 
-      // Postgres Unique Violation Code
+      // Postgres Unique Violation Code (doble protección de idempotencia)
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
         this.logger.log(
           `Skipping contract ${contract.id}: Invoice for ${billingMonth} already exists (Duplicate Key)`,
@@ -205,8 +116,6 @@ export class GenerateMonthlyInvoices {
         `Error processing contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
-    } finally {
-      await queryRunner.release();
     }
   }
 }
