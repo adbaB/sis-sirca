@@ -25,7 +25,7 @@ import type { Invoice } from './invoice.entity';
 @Check('CHK_invoice_lines_quantity', '"quantity" > 0')
 @Check(
   'CHK_invoice_lines_category',
-  "\"category\" IN ('MENSUALIDAD', 'COMISION', 'INCLUSION', 'RECOBRO', 'IMPUESTO')",
+  "\"category\" IN ('MENSUALIDAD', 'COMISION', 'INCLUSION', 'RECOBRO', 'IMPUESTO', 'SUSCRIPCION')",
 )
 export class InvoiceLine {
   @PrimaryGeneratedColumn('uuid')
