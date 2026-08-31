@@ -49,7 +49,7 @@ export interface SipAffiliateDetailRow {
   planAmount: number;
   commissionAmount: number;
   affiliationDate: string;
-  paymentDate: string;
+  operationDate: string;
   billingMonth: string;
 }
 
@@ -389,7 +389,7 @@ export class SipCommissionsService {
         planAmount,
         commissionAmount,
         affiliationDate: formatDateES(row.affiliation_date),
-        paymentDate: formatDateES(row.payment_date),
+        operationDate: formatDateES(row.operation_date),
         billingMonth: row.billing_month,
       });
     }
@@ -507,7 +507,7 @@ export class SipCommissionsService {
       18, // J: COMISIÓN ASESOR ($)
       16, // K: MES FACTURADO
       16, // L: FECHA AFILIACIÓN
-      16, // M: FECHA PAGO
+      18, // M: FECHA OPERACIÓN
     ];
     wsDetails.columns = detailsColWidths.map((w) => ({ width: w }));
 
@@ -608,7 +608,7 @@ export class SipCommissionsService {
       'COMISIÓN ASESOR ($)',
       'MES FACTURADO',
       'FECHA AFILIACIÓN',
-      'FECHA PAGO',
+      'FECHA OPERACIÓN',
     ];
     const headerRow = ws.getRow(currentRow);
     headers.forEach((h, i) => {
@@ -653,7 +653,7 @@ export class SipCommissionsService {
 
       dataRow.getCell(11).value = aff.billingMonth;
       dataRow.getCell(12).value = aff.affiliationDate;
-      dataRow.getCell(13).value = aff.paymentDate;
+      dataRow.getCell(13).value = aff.operationDate;
 
       // Alignments
       dataRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };

@@ -218,6 +218,7 @@ describe('SipCommissionsService', () => {
       expect(nuevosOp.affiliateDetails).toHaveLength(1);
       expect(nuevosOp.affiliateDetails[0].fullAdvisorName).toBe('001 - Carlos Perez');
       expect(nuevosOp.affiliateDetails[0].affiliateName).toBe('Juan Perez');
+      expect(nuevosOp.affiliateDetails[0].operationDate).toBe('28-03-2026');
       expect(nuevosOp.affiliateDetails[0].advisorCommissionPercentage).toBe(10);
       expect(nuevosOp.affiliateDetails[0].advisorCommissionAmount).toBe(5); // 50.00 * 10%
 
