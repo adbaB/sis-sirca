@@ -4,4 +4,5 @@ export enum InvoiceLineCategory {
   INCLUSION = 'INCLUSION',
   RECOBRO = 'RECOBRO',
   IMPUESTO = 'IMPUESTO',
+  SUSCRIPCION = 'SUSCRIPCION',
 }
