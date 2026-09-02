@@ -222,31 +222,33 @@ export class ContractPdfService {
             ? [titularCp]
             : [];
 
-    return beneficiariesList.map((cp, idx) => {
-      const person = cp.person;
-      const isTitular = isSamePerson(cp, titularCp);
-      const plan = cp.plan || person?.plan || contractPlan;
-      const coverage = plan?.coverage
-        ? Number(plan.coverage).toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })
-        : '0.00';
-      return {
-        index: String(idx + 1).padStart(2, '0'),
-        name: person.name,
-        typeIdentityCard: person.typeIdentityCard,
-        identityCard: person.identityCard,
-        relationship: cp.relationship || (isTitular ? 'TITULAR' : '-'),
-        birthDateFormatted: formatContractDate(person.birthDate),
-        age: getContractPersonAge(person.birthDate),
-        genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
-        weight: person.weight || '-',
-        height: person.height || '-',
-        planName: plan?.name || '-',
-        coverage,
-      };
-    });
+    return beneficiariesList
+      .filter((cp) => Boolean(cp.person))
+      .map((cp, idx) => {
+        const person = cp.person;
+        const isTitular = isSamePerson(cp, titularCp);
+        const plan = cp.plan || person?.plan || contractPlan;
+        const coverage = plan?.coverage
+          ? Number(plan.coverage).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : '0.00';
+        return {
+          index: String(idx + 1).padStart(2, '0'),
+          name: person.name,
+          typeIdentityCard: person.typeIdentityCard,
+          identityCard: person.identityCard,
+          relationship: cp.relationship || (isTitular ? 'TITULAR' : '-'),
+          birthDateFormatted: formatContractDate(person.birthDate),
+          age: getContractPersonAge(person.birthDate),
+          genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
+          weight: person.weight || '-',
+          height: person.height || '-',
+          planName: plan?.name || '-',
+          coverage,
+        };
+      });
   }
 
   private buildEmptyRows(currentCount: number): string[] {
@@ -294,7 +296,7 @@ export class ContractPdfService {
     titularCp: ContractPerson | undefined,
     contractPlan?: Plan | null,
   ): TitularSummaryRow | null {
-    if (!titularCp) return null;
+    if (!titularCp || !titularCp.person) return null;
     const titularPlan = titularCp.plan || titularCp.person?.plan || contractPlan;
     return {
       name: titularCp.person.name,
@@ -318,7 +320,7 @@ export class ContractPdfService {
     contractPlan?: Plan | null,
   ): BeneficiarySummaryRow[] {
     return affiliateCps
-      .filter((cp) => !isSamePerson(cp, titularCp))
+      .filter((cp) => Boolean(cp.person) && !isSamePerson(cp, titularCp))
       .map((cp) => {
         const plan = cp.plan || cp.person?.plan || contractPlan;
         const coverage = plan?.coverage

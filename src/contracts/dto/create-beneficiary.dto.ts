@@ -40,8 +40,8 @@ export class CreateBeneficiaryDto {
   isBillingOwner: boolean;
 
   @IsUUID()
-  @IsNotEmpty()
-  contractId: string;
+  @IsOptional()
+  contractId?: string;
 
   @IsEnum(Parentesco)
   @IsOptional()

@@ -156,6 +156,32 @@ describe('ContractCreationService', () => {
       await expect(service.createFull(dto)).rejects.toThrow(BadRequestException);
     });
 
+    it('should reject if affiliates contain duplicate identity cards', async () => {
+      const dto: CreateContractFullDto = {
+        affiliationDate: '2026-08-01',
+        advisorId: 'adv-1',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Juan',
+            role: PersonRole.TITULAR,
+          },
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Juan Duplicado',
+            role: PersonRole.AFILIADO,
+            planId: 'plan-1',
+          },
+        ],
+      };
+
+      await expect(service.createFull(dto)).rejects.toThrow(
+        'La persona con cédula V-12345678 está duplicada en la lista de afiliados.',
+      );
+    });
+
     it('should create contract and affiliates full transactionally and trigger post-commit tasks', async () => {
       const dto: CreateContractFullDto = {
         affiliationDate: '2026-08-01',

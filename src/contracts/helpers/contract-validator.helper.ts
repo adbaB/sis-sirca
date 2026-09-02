@@ -26,6 +26,18 @@ export function validateContractAffiliates(affiliates: AffiliatePersonDto[]): vo
       );
     }
   }
+
+  // 4. Validate duplicate identity cards within the same contract request
+  const seenDocuments = new Set<string>();
+  for (const affiliate of affiliates) {
+    const docKey = `${affiliate.typeIdentityCard}-${affiliate.identityCard}`;
+    if (seenDocuments.has(docKey)) {
+      throw new BadRequestException(
+        `La persona con cédula ${docKey} está duplicada en la lista de afiliados.`,
+      );
+    }
+    seenDocuments.add(docKey);
+  }
 }
 
 /**

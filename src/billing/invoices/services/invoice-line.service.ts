@@ -379,16 +379,16 @@ export class InvoiceLineService {
 
     if (!invoice) return;
 
-    const existingMensualidad = await invoiceLineRepo.findOne({
+    const existingLine = await invoiceLineRepo.findOne({
       where: {
         invoice: { id: invoice.id },
         person: { id: person.id },
-        category: InvoiceLineCategory.MENSUALIDAD,
+        category: In([InvoiceLineCategory.MENSUALIDAD, InvoiceLineCategory.INCLUSION]),
         deletedAt: IsNull(),
       },
     });
 
-    if (existingMensualidad) return;
+    if (existingLine) return;
 
     const planAmount = Number(plan.amount ?? 0);
     if (planAmount <= 0) return;
@@ -408,16 +408,13 @@ export class InvoiceLineService {
 
     const baseAmount = await this.queryRepo.sumBaseLines(activeManager, invoice.id);
     const additionalAmount = await this.queryRepo.sumAdditionalLines(activeManager, invoice.id);
+    invoice.baseAmount = baseAmount;
     invoice.totalAmount = baseAmount + additionalAmount;
 
-    if (
-      Number(invoice.paidAmount) < Number(invoice.totalAmount) &&
-      invoice.status === InvoiceStatus.PAID
-    ) {
-      invoice.status = InvoiceStatus.PARTIAL;
-    }
-
     await invoiceRepo.save(invoice);
+
+    // Recalcular status y montos desde pagos reales
+    await this.calculationService.recalculateInvoicePaidAmount(invoice.id, activeManager);
 
     this.logger.log(
       `[billing] Línea INCLUSION agregada para afiliado ${person.name} ($${planAmount}) en factura ${invoice.id}`,

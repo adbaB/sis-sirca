@@ -1,4 +1,4 @@
-import { getCaracasDateTime, getCaracasTodayJSDate } from '../../common/utils/date.util';
+import { getCaracasDateTime, getCaracasNow } from '../../common/utils/date.util';
 
 export interface CalendarDateComponents {
   day: number;
@@ -13,8 +13,8 @@ export function getCalendarDateComponents(
   dateInput?: Date | string | null,
 ): CalendarDateComponents {
   if (!dateInput) {
-    const today = getCaracasTodayJSDate();
-    return { day: today.getDate(), monthIndex: today.getMonth(), year: today.getFullYear() };
+    const now = getCaracasNow();
+    return { day: now.day, monthIndex: now.month - 1, year: now.year };
   }
 
   if (typeof dateInput === 'string') {
@@ -26,15 +26,15 @@ export function getCalendarDateComponents(
         year: Number(match[1]),
       };
     }
-    const d = getCaracasDateTime(dateInput).toJSDate();
-    if (isNaN(d.getTime())) {
-      const today = getCaracasTodayJSDate();
-      return { day: today.getDate(), monthIndex: today.getMonth(), year: today.getFullYear() };
+    const dt = getCaracasDateTime(dateInput);
+    if (!dt.isValid) {
+      const now = getCaracasNow();
+      return { day: now.day, monthIndex: now.month - 1, year: now.year };
     }
     return {
-      day: d.getUTCDate(),
-      monthIndex: d.getUTCMonth(),
-      year: d.getUTCFullYear(),
+      day: dt.day,
+      monthIndex: dt.month - 1,
+      year: dt.year,
     };
   }
 
@@ -46,18 +46,19 @@ export function getCalendarDateComponents(
         year: dateInput.getUTCFullYear(),
       };
     }
+    const dt = getCaracasDateTime(dateInput);
     return {
-      day: dateInput.getDate(),
-      monthIndex: dateInput.getMonth(),
-      year: dateInput.getFullYear(),
+      day: dt.day,
+      monthIndex: dt.month - 1,
+      year: dt.year,
     };
   }
 
-  const today = getCaracasTodayJSDate();
+  const now = getCaracasNow();
   return {
-    day: today.getDate(),
-    monthIndex: today.getMonth(),
-    year: today.getFullYear(),
+    day: now.day,
+    monthIndex: now.month - 1,
+    year: now.year,
   };
 }
 
@@ -67,10 +68,10 @@ export function getCalendarDateComponents(
 export function getContractPersonAge(birthDate?: Date | string | null): number {
   if (!birthDate) return 0;
   const { day, monthIndex, year } = getCalendarDateComponents(birthDate);
-  const today = getCaracasTodayJSDate();
-  let age = today.getFullYear() - year;
-  const m = today.getMonth() - monthIndex;
-  if (m < 0 || (m === 0 && today.getDate() < day)) {
+  const today = getCaracasNow();
+  let age = today.year - year;
+  const m = today.month - 1 - monthIndex;
+  if (m < 0 || (m === 0 && today.day < day)) {
     age--;
   }
   return age;

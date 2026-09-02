@@ -100,6 +100,7 @@ export class ContractQueryRepository {
   private applyRelations(qb: SelectQueryBuilder<Contract>): void {
     qb.leftJoinAndSelect('contract.contractPersons', 'contractPersons')
       .leftJoinAndSelect('contractPersons.person', 'person')
+      .leftJoinAndSelect('contractPersons.plan', 'contractPersonPlan')
       .leftJoinAndSelect('person.plan', 'plan')
       .leftJoinAndSelect('contract.advisor', 'advisor')
       .leftJoinAndSelect('contract.portfolio', 'portfolio');
@@ -111,7 +112,7 @@ export class ContractQueryRepository {
   private applySearchFilter(qb: SelectQueryBuilder<Contract>, search?: string): void {
     if (!search) return;
     qb.andWhere(
-      "(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR person.name ILIKE :search OR person.identityCard ILIKE :search OR CONCAT(person.typeIdentityCard, '-', person.identityCard) ILIKE :search OR CONCAT(person.typeIdentityCard, person.identityCard) ILIKE :search)",
+      "(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR person.name ILIKE :search OR person.identity_card ILIKE :search OR CONCAT(person.type_identity_card, '-', person.identity_card) ILIKE :search OR CONCAT(person.type_identity_card, person.identity_card) ILIKE :search)",
       { search: `%${search}%` },
     );
   }
@@ -130,7 +131,7 @@ export class ContractQueryRepository {
     }
     if (query.identityCard) {
       qb.andWhere(
-        "(person.identityCard ILIKE :idCardFilter OR CONCAT(person.typeIdentityCard, '-', person.identityCard) ILIKE :idCardFilter OR CONCAT(person.typeIdentityCard, person.identityCard) ILIKE :idCardFilter)",
+        "(person.identity_card ILIKE :idCardFilter OR CONCAT(person.type_identity_card, '-', person.identity_card) ILIKE :idCardFilter OR CONCAT(person.type_identity_card, person.identity_card) ILIKE :idCardFilter)",
         { idCardFilter: `%${query.identityCard}%` },
       );
     }

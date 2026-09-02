@@ -190,15 +190,22 @@ export class ContractAffiliationService {
     const qr = resolveQueryRunner(undefined, this.dataSource);
     const manager = qr.manager;
 
-    const contractPerson = await manager.getRepository(ContractPerson).findOne({
+    // 1. Bloquear la fila en la tabla junction sin relaciones para evitar:
+    // "ERROR: FOR UPDATE cannot be applied to the nullable side of an outer join" en PostgreSQL
+    const lockedCp = await manager.getRepository(ContractPerson).findOne({
       where: { id: contractPersonId },
-      relations: ['contract', 'person', 'person.plan', 'plan'],
       lock: { mode: 'pessimistic_write' },
     });
 
-    if (!contractPerson) {
+    if (!lockedCp) {
       throw new NotFoundException(`Contract person with ID "${contractPersonId}" not found`);
     }
+
+    // 2. Cargar con relaciones completas con la fila ya bloqueada
+    const contractPerson = (await manager.getRepository(ContractPerson).findOne({
+      where: { id: contractPersonId },
+      relations: ['contract', 'person', 'person.plan', 'plan'],
+    })) as ContractPerson;
 
     if (contractId && contractPerson.contract.id !== contractId) {
       throw new BadRequestException('El afiliado no pertenece al contrato especificado.');

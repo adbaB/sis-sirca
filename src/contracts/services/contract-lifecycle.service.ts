@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { DateTime } from 'luxon';
 import { DataSource, Repository } from 'typeorm';
 import { Advisor } from '../../advisors/entities/advisor.entity';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
+import { CARACAS_ZONE, getCaracasNow } from '../../common/utils/date.util';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
@@ -32,6 +34,7 @@ export class ContractLifecycleService {
       where: { id },
       relations: [
         'contractPersons',
+        'contractPersons.plan',
         'contractPersons.person',
         'contractPersons.person.plan',
         'contractPersons.healthDeclarations',
@@ -58,6 +61,7 @@ export class ContractLifecycleService {
       where: [{ code: trimmed }, { legacyCode: trimmed }],
       relations: [
         'contractPersons',
+        'contractPersons.plan',
         'contractPersons.person',
         'contractPersons.person.plan',
         'contractPersons.healthDeclarations',
@@ -142,19 +146,20 @@ export class ContractLifecycleService {
         contract: { id: contractId },
         role: PersonRole.AFILIADO,
       },
-      relations: ['person', 'person.plan'],
+      relations: ['person', 'person.plan', 'plan'],
     });
 
     const truncatedReason = dto.reason ? dto.reason.substring(0, 255) : null;
 
     for (const cp of activePersons) {
+      const effectivePlan = cp.plan ?? cp.person?.plan ?? null;
       await historyRepo.save(
         historyRepo.create({
           contract: lockedContract,
           person: cp.person,
-          plan: cp.person?.plan ?? null,
+          plan: effectivePlan,
           action: AffiliationAction.DESAFILIACION,
-          amount: Number(cp.person?.plan?.amount ?? 0),
+          amount: Number(effectivePlan?.amount ?? 0),
           reason: truncatedReason,
         }),
       );
@@ -205,13 +210,14 @@ export class ContractLifecycleService {
       },
     });
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
+    const caracasNow = getCaracasNow();
+    const currentYear = caracasNow.year;
+    const currentMonth = caracasNow.month;
 
     const sameMonthRecords = disaffiliations.filter((h) => {
-      const date = new Date(h.actionDate ?? h.createdAt);
-      return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
+      const dateVal = h.actionDate ?? h.createdAt;
+      const dt = DateTime.fromJSDate(new Date(dateVal)).setZone(CARACAS_ZONE);
+      return dt.year === currentYear && dt.month === currentMonth;
     });
 
     // Mark as reverted instead of hard-deleting to preserve audit trail
