@@ -1,14 +1,17 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
+import { PlansService } from '../../plans/services/plans.service';
+import { Plan } from '../../plans/entities/plan.entity';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
-import { Contract } from '../entities/contract.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
+import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
 
 describe('ContractAffiliationService', () => {
@@ -17,8 +20,34 @@ describe('ContractAffiliationService', () => {
   let contractPersonsRepository: jest.Mocked<Repository<ContractPerson>>;
   let personsService: jest.Mocked<PersonsService>;
   let invoiceService: jest.Mocked<InvoiceService>;
+  let plansService: jest.Mocked<PlansService>;
+  let mockManager: Record<string, unknown>;
+  let mockQr: Record<string, unknown>;
 
   beforeEach(async () => {
+    mockManager = {
+      getRepository: jest.fn(),
+      find: jest.fn(),
+      save: jest.fn(),
+      update: jest.fn(),
+    };
+
+    mockQr = {
+      isTransactionActive: false,
+      connect: jest.fn().mockResolvedValue(undefined),
+      startTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = true;
+      }),
+      commitTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = false;
+      }),
+      rollbackTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = false;
+      }),
+      release: jest.fn().mockResolvedValue(undefined),
+      manager: mockManager,
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractAffiliationService,
@@ -26,9 +55,6 @@ describe('ContractAffiliationService', () => {
           provide: getRepositoryToken(Contract),
           useValue: {
             update: jest.fn(),
-            manager: {
-              transaction: jest.fn(),
-            },
           },
         },
         {
@@ -37,21 +63,32 @@ describe('ContractAffiliationService', () => {
             findOne: jest.fn(),
             find: jest.fn(),
             save: jest.fn(),
-            manager: {
-              transaction: jest.fn(),
-            },
+          },
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            createQueryRunner: jest.fn().mockReturnValue(mockQr),
           },
         },
         {
           provide: PersonsService,
           useValue: {
             create: jest.fn(),
+            findByIdentityCard: jest.fn(),
           },
         },
         {
           provide: InvoiceService,
           useValue: {
             removeAffiliateLineFromActiveInvoice: jest.fn(),
+            addAffiliateInclusionLineToActiveInvoice: jest.fn(),
+          },
+        },
+        {
+          provide: PlansService,
+          useValue: {
+            findOne: jest.fn(),
           },
         },
       ],
@@ -62,6 +99,7 @@ describe('ContractAffiliationService', () => {
     contractPersonsRepository = module.get(getRepositoryToken(ContractPerson));
     personsService = module.get(PersonsService);
     invoiceService = module.get(InvoiceService);
+    plansService = module.get(PlansService);
   });
 
   it('should be defined', () => {
@@ -69,22 +107,86 @@ describe('ContractAffiliationService', () => {
   });
 
   describe('addBeneficiary', () => {
-    it('should delegate to personsService.create with contractId', async () => {
-      const dto: CreateBeneficiaryDto = {
-        name: 'Maria',
-        typeIdentityCard: TypeIdentityCard.V,
-        identityCard: '12345678',
-        role: PersonRole.AFILIADO,
-        planId: 'plan-1',
-        isBillingOwner: false,
-        contractId: 'contract-1',
+    const mockContract = { id: 'contract-1', code: 'SIR-001', status: ContractStatus.ACTIVE };
+    const mockPlan = { id: 'plan-1', name: 'Plan Básico', amount: 30 };
+    const dto: CreateBeneficiaryDto = {
+      name: 'Maria',
+      typeIdentityCard: TypeIdentityCard.V,
+      identityCard: '12345678',
+      role: PersonRole.AFILIADO,
+      planId: 'plan-1',
+      isBillingOwner: false,
+      contractId: 'contract-1',
+    };
+    const mockCreated = {
+      id: 'p-1',
+      name: 'Maria',
+      identityCard: '12345678',
+      typeIdentityCard: TypeIdentityCard.V,
+    } as Person;
+
+    it('should throw NotFoundException if contract not found', async () => {
+      const mockContractRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockContractRepo);
+
+      await expect(service.addBeneficiary('invalid-contract', dto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw BadRequestException if AFILIADO has no planId', async () => {
+      const mockContractRepo = { findOne: jest.fn().mockResolvedValue(mockContract) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockContractRepo);
+
+      await expect(
+        service.addBeneficiary('contract-1', { ...dto, planId: '' as unknown as string }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should successfully affiliate a new person and record history and inclusion line', async () => {
+      const mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue(mockContract),
+        update: jest.fn().mockResolvedValue(true),
       };
-      const mockCreated = { id: 'p-1', name: 'Maria' } as Person;
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(null), // not already affiliated to this contract
+        find: jest.fn().mockResolvedValue([]), // not active in any other contract
+        create: jest.fn().mockImplementation((val) => ({ id: 'cp-new', ...val })),
+        save: jest.fn().mockImplementation(async (val) => val),
+      };
+      const mockHistoryRepo = {
+        create: jest.fn().mockImplementation((val) => val),
+        save: jest.fn().mockResolvedValue(true),
+      };
+      const mockHdRepo = {
+        create: jest.fn().mockImplementation((val) => val),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        if (entity === AffiliationHistory) return mockHistoryRepo;
+        if (entity === HealthDeclaration) return mockHdRepo;
+        return {};
+      });
+
+      plansService.findOne.mockResolvedValue(mockPlan as unknown as Plan);
+      personsService.findByIdentityCard.mockResolvedValue(null);
       personsService.create.mockResolvedValue(mockCreated);
 
       const res = await service.addBeneficiary('contract-1', dto);
-      expect(personsService.create).toHaveBeenCalledWith({ ...dto, contractId: 'contract-1' });
+
       expect(res).toEqual(mockCreated);
+      expect(personsService.create).toHaveBeenCalled();
+      expect(mockCpRepo.save).toHaveBeenCalled();
+      expect(mockHistoryRepo.save).toHaveBeenCalled();
+      expect(invoiceService.addAffiliateInclusionLineToActiveInvoice).toHaveBeenCalledWith(
+        'contract-1',
+        mockCreated,
+        mockPlan,
+        mockManager,
+      );
     });
   });
 
@@ -137,18 +239,12 @@ describe('ContractAffiliationService', () => {
       };
       const mockContractRepo = { update: jest.fn().mockResolvedValue(true) };
 
-      const mockManager = {
-        getRepository: jest.fn().mockImplementation((target) => {
-          if (target === AffiliationHistory) return mockHistoryRepo;
-          if (target === ContractPerson) return mockCpRepo;
-          if (target === Contract) return mockContractRepo;
-          return {};
-        }),
-      };
-
-      contractsRepository.manager.transaction = jest
-        .fn()
-        .mockImplementation(async (cb) => cb(mockManager as unknown as EntityManager));
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === AffiliationHistory) return mockHistoryRepo;
+        if (target === ContractPerson) return mockCpRepo;
+        if (target === Contract) return mockContractRepo;
+        return {};
+      });
 
       await service.removeAffiliate('cp-1');
 
@@ -157,7 +253,7 @@ describe('ContractAffiliationService', () => {
       expect(invoiceService.removeAffiliateLineFromActiveInvoice).toHaveBeenCalledWith(
         'contract-1',
         'p-1',
-        mockManager as unknown as EntityManager,
+        mockManager,
       );
     });
   });
@@ -179,21 +275,26 @@ describe('ContractAffiliationService', () => {
       } as unknown as ContractPerson;
 
       contractPersonsRepository.findOne.mockResolvedValue(mockTarget);
-      contractPersonsRepository.find.mockResolvedValue([]);
 
-      const mockEntityManager = {
+      const mockCpRepo = {
         find: jest.fn().mockResolvedValue([]),
-        save: jest.fn().mockResolvedValue(true),
+      };
+      const mockContractRepo = {
+        update: jest.fn().mockResolvedValue(true),
       };
 
-      contractPersonsRepository.manager.transaction = jest
-        .fn()
-        .mockImplementation(async (cb) => cb(mockEntityManager as unknown as EntityManager));
+      mockManager.find = jest.fn().mockResolvedValue([]);
+      mockManager.save = jest.fn().mockResolvedValue(true);
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === ContractPerson) return mockCpRepo;
+        if (target === Contract) return mockContractRepo;
+        return {};
+      });
 
       await service.setContractTitular('contract-1', { contractPersonId: 'cp-1' });
 
-      expect(mockEntityManager.save).toHaveBeenCalled();
-      expect(contractsRepository.update).toHaveBeenCalled();
+      expect(mockManager.save).toHaveBeenCalled();
+      expect(mockContractRepo.update).toHaveBeenCalled();
     });
   });
 
@@ -209,20 +310,14 @@ describe('ContractAffiliationService', () => {
       const mockTarget = { id: 'cp-1', isBillingOwner: false } as unknown as ContractPerson;
       contractPersonsRepository.findOne.mockResolvedValue(mockTarget);
 
-      const mockEntityManager = {
-        update: jest.fn().mockResolvedValue(true),
-        save: jest.fn().mockResolvedValue(true),
-      };
-
-      contractPersonsRepository.manager.transaction = jest
-        .fn()
-        .mockImplementation(async (cb) => cb(mockEntityManager as unknown as EntityManager));
+      mockManager.update = jest.fn().mockResolvedValue(true);
+      mockManager.save = jest.fn().mockResolvedValue(true);
 
       await service.setBillingOwner('contract-1', { contractPersonId: 'cp-1' });
 
-      expect(mockEntityManager.update).toHaveBeenCalled();
+      expect(mockManager.update).toHaveBeenCalled();
       expect(mockTarget.isBillingOwner).toBe(true);
-      expect(mockEntityManager.save).toHaveBeenCalledWith(ContractPerson, mockTarget);
+      expect(mockManager.save).toHaveBeenCalledWith(ContractPerson, mockTarget);
     });
   });
 

@@ -1,10 +1,9 @@
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { Person } from '../../persons/entities/person.entity';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
-import { CreateContractDto } from '../dto/create-contract.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
@@ -44,24 +43,15 @@ export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationSt
 @Injectable()
 export class ContractsService {
   constructor(
-    @Inject(forwardRef(() => ContractCreationService))
     private readonly creationService: ContractCreationService,
-    @Inject(forwardRef(() => ContractLifecycleService))
     private readonly lifecycleService: ContractLifecycleService,
-    @Inject(forwardRef(() => ContractAffiliationService))
     private readonly affiliationService: ContractAffiliationService,
-    @Inject(forwardRef(() => ContractPdfService))
     private readonly pdfService: ContractPdfService,
-    @Inject(forwardRef(() => ContractStatisticsService))
     private readonly statisticsService: ContractStatisticsService,
     private readonly queryRepository: ContractQueryRepository,
   ) {}
 
   // ── 1. Creation ────────────────────────────────────────────────────────────
-  async create(createContractDto: CreateContractDto): Promise<Contract> {
-    return this.creationService.create(createContractDto);
-  }
-
   async createFull(dto: CreateContractFullDto): Promise<Contract> {
     return this.creationService.createFull(dto);
   }

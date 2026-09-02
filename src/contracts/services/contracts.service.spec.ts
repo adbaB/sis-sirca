@@ -7,7 +7,6 @@ import { ContractStatisticsService } from './contract-statistics.service';
 import { ContractsService } from './contracts.service';
 import { ContractQueryRepository } from '../repositories/contract-query.repository';
 import { Contract, ContractStatus } from '../entities/contract.entity';
-import { CreateContractDto } from '../dto/create-contract.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
@@ -41,7 +40,6 @@ describe('ContractsService (Facade)', () => {
         {
           provide: ContractCreationService,
           useValue: {
-            create: jest.fn().mockResolvedValue(mockContract),
             createFull: jest.fn().mockResolvedValue(mockContract),
           },
         },
@@ -125,13 +123,6 @@ describe('ContractsService (Facade)', () => {
   });
 
   describe('Creation delegates', () => {
-    it('create should delegate to creationService.create', async () => {
-      const dto: CreateContractDto = { affiliationDate: '2026-08-01', advisorId: 'adv-1' };
-      const res = await service.create(dto);
-      expect(creationService.create).toHaveBeenCalledWith(dto);
-      expect(res).toEqual(mockContract);
-    });
-
     it('createFull should delegate to creationService.createFull', async () => {
       const dto: CreateContractFullDto = {
         affiliationDate: '2026-08-01',

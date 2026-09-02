@@ -3,16 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
-import { Invoice } from '../../billing/invoices/entities/invoice.entity';
-import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
-import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
-import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
-import { Contract } from '../../contracts/entities/contract.entity';
-import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
-import { ContractsService } from '../../contracts/services/contracts.service';
-import { Plan } from '../../plans/entities/plan.entity';
-import { PlansService } from '../../plans/services/plans.service';
+import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';
@@ -20,26 +11,7 @@ import { PersonsService } from './persons.service';
 
 describe('PersonsService', () => {
   let service: PersonsService;
-  let repository: Repository<Person>;
-  let cpRepository: Repository<ContractPerson>;
-  let afhRepository: Repository<AffiliationHistory>;
-  let plansService: PlansService;
-  let contractsService: ContractsService;
-
-  const mockPlan: Plan = { id: 'plan-1', name: 'Basic', amount: 10 } as Plan;
-  const mockContract: Contract = {
-    id: 'contract-1',
-    affiliationDate: new Date('2023-01-01'),
-    monthlyAmount: 0,
-    inactivationReason: null,
-  } as Contract;
-
-  const mockContractPerson: ContractPerson = {
-    id: 'cp-1',
-    contract: mockContract,
-    person: {} as Person,
-    role: PersonRole.AFILIADO,
-  } as ContractPerson;
+  let repository: jest.Mocked<Repository<Person>>;
 
   const mockPerson: Person = {
     id: '1',
@@ -48,8 +20,8 @@ describe('PersonsService', () => {
     name: 'John Doe',
     birthDate: new Date('1990-01-01'),
     gender: true,
-    plan: mockPlan,
-    contractPersons: [mockContractPerson],
+    plan: null,
+    contractPersons: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -57,11 +29,6 @@ describe('PersonsService', () => {
   };
 
   const PERSONS_REPOSITORY_TOKEN = getRepositoryToken(Person);
-  const CP_REPOSITORY_TOKEN = getRepositoryToken(ContractPerson);
-  const AFH_REPOSITORY_TOKEN = getRepositoryToken(AffiliationHistory);
-  const INVOICE_REPOSITORY_TOKEN = getRepositoryToken(Invoice);
-  const INVOICE_LINE_REPOSITORY_TOKEN = getRepositoryToken(InvoiceLine);
-  const HD_REPOSITORY_TOKEN = getRepositoryToken(HealthDeclaration);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -75,90 +42,14 @@ describe('PersonsService', () => {
             find: jest.fn(),
             findOne: jest.fn(),
             softRemove: jest.fn(),
-          },
-        },
-        {
-          provide: CP_REPOSITORY_TOKEN,
-          useFactory: () => {
-            const mockRepo = {
-              create: jest.fn(),
-              save: jest.fn(),
-              findOne: jest.fn(),
-              find: jest.fn(),
-              remove: jest.fn(),
-              softRemove: jest.fn(),
-              update: jest.fn(),
-              manager: {
-                transaction: null as unknown,
-              },
-            };
-            // The transaction mock calls the callback with a mock EM that reuses
-            // the same jest.fn() references, so existing spies and assertions work.
-            mockRepo.manager.transaction = jest.fn(async (cb: (em: unknown) => Promise<void>) => {
-              await cb({
-                find: mockRepo.find,
-                remove: mockRepo.remove,
-                create: mockRepo.create,
-                save: mockRepo.save,
-              });
-            });
-            return mockRepo;
-          },
-        },
-        {
-          provide: AFH_REPOSITORY_TOKEN,
-          useValue: {
-            find: jest.fn(),
-            create: jest.fn().mockImplementation((dto) => dto),
-            save: jest.fn().mockImplementation(async (entity) => entity),
-          },
-        },
-        {
-          provide: INVOICE_REPOSITORY_TOKEN,
-          useValue: {
-            find: jest.fn(),
-            findOne: jest.fn().mockResolvedValue(null),
-            save: jest.fn(),
-          },
-        },
-        {
-          provide: INVOICE_LINE_REPOSITORY_TOKEN,
-          useValue: {
-            find: jest.fn(),
-            findOne: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockImplementation((dto) => dto),
-            save: jest.fn().mockImplementation(async (entity) => entity),
-          },
-        },
-        {
-          provide: HD_REPOSITORY_TOKEN,
-          useValue: {
-            create: jest.fn().mockImplementation((dto) => dto),
-            save: jest.fn().mockImplementation(async (entity) => entity),
-          },
-        },
-        {
-          provide: PlansService,
-          useValue: {
-            findOne: jest.fn(),
-          },
-        },
-        {
-          provide: ContractsService,
-          useValue: {
-            findOne: jest.fn(),
-            recalculateMonthlyAmount: jest.fn(),
+            merge: jest.fn().mockImplementation((entity, data) => Object.assign(entity, data)),
           },
         },
       ],
     }).compile();
 
     service = module.get<PersonsService>(PersonsService);
-    repository = module.get<Repository<Person>>(PERSONS_REPOSITORY_TOKEN);
-    cpRepository = module.get<Repository<ContractPerson>>(CP_REPOSITORY_TOKEN);
-    afhRepository = module.get<Repository<AffiliationHistory>>(AFH_REPOSITORY_TOKEN);
-    plansService = module.get<PlansService>(PlansService);
-    contractsService = module.get<ContractsService>(ContractsService);
+    repository = module.get(PERSONS_REPOSITORY_TOKEN);
   });
 
   it('should be defined', () => {
@@ -166,330 +57,128 @@ describe('PersonsService', () => {
   });
 
   describe('create', () => {
-    it('should successfully create a person and record in affiliation history when role is AFILIADO', async () => {
+    it('should successfully create a new person if not existing', async () => {
       const createPersonDto: CreatePersonDto = {
         typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
-        birthDate: '1990-01-01',
-        gender: true,
         planId: 'plan-1',
-        contractId: 'contract-1',
-        role: PersonRole.AFILIADO,
       };
 
-      jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'create').mockReturnValue(mockPerson);
-      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson);
-      jest.spyOn(cpRepository, 'create').mockReturnValue(mockContractPerson);
+      repository.findOne.mockResolvedValue(null);
+      repository.create.mockReturnValue(mockPerson);
+      repository.save.mockResolvedValue(mockPerson);
 
       const result = await service.create(createPersonDto);
 
-      expect(plansService.findOne).toHaveBeenCalledWith('plan-1');
-      expect(contractsService.findOne).toHaveBeenCalledWith('contract-1');
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { identityCard: '123456', typeIdentityCard: TypeIdentityCard.V },
+      });
       expect(repository.create).toHaveBeenCalledWith({
         typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
-        birthDate: '1990-01-01',
-        gender: true,
-        plan: mockPlan,
       });
       expect(repository.save).toHaveBeenCalledWith(mockPerson);
-      expect(cpRepository.create).toHaveBeenCalledWith({
-        contract: mockContract,
-        person: mockPerson,
-        role: PersonRole.AFILIADO,
-        isBillingOwner: false,
-        plan: mockPlan,
-      });
-      expect(cpRepository.save).toHaveBeenCalledWith(mockContractPerson);
-      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
-      expect(afhRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          contract: { id: 'contract-1' },
-          person: mockPerson,
-          plan: mockPlan,
-          action: AffiliationAction.AFILIACION,
-          amount: 10,
-        }),
-      );
-      expect(afhRepository.save).toHaveBeenCalled();
       expect(result).toEqual(mockPerson);
     });
 
-    it('should successfully associate an existing person to a contract and record in affiliation history', async () => {
+    it('should return existing person if already found by identityCard', async () => {
       const createPersonDto: CreatePersonDto = {
         typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
-        birthDate: '1990-01-01',
-        gender: true,
         planId: 'plan-1',
-        contractId: 'contract-1',
-        role: PersonRole.AFILIADO,
       };
 
-      jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
-      jest.spyOn(service, 'findByIdentityCard').mockResolvedValue(mockPerson);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null);
-      jest.spyOn(cpRepository, 'find').mockResolvedValue([]);
-      jest.spyOn(cpRepository, 'create').mockReturnValue(mockContractPerson);
-      jest.spyOn(cpRepository, 'save').mockResolvedValue(mockContractPerson);
+      repository.findOne.mockResolvedValue(mockPerson);
 
       const result = await service.create(createPersonDto);
 
-      expect(cpRepository.save).toHaveBeenCalled();
-      expect(afhRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          contract: { id: 'contract-1' },
-          person: mockPerson,
-          plan: mockPlan,
-          action: AffiliationAction.AFILIACION,
-          amount: 10,
-        }),
-      );
-      expect(afhRepository.save).toHaveBeenCalled();
-      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { identityCard: '123456', typeIdentityCard: TypeIdentityCard.V },
+      });
+      expect(repository.save).not.toHaveBeenCalled();
       expect(result).toEqual(mockPerson);
-    });
-
-    it('should not record affiliation history when creating a person with TITULAR role', async () => {
-      const createPersonDto: CreatePersonDto = {
-        typeIdentityCard: TypeIdentityCard.V,
-        identityCard: '123456',
-        name: 'John Doe',
-        birthDate: '1990-01-01',
-        gender: true,
-        contractId: 'contract-1',
-        role: PersonRole.TITULAR,
-        planId: 'plan-1',
-      };
-
-      const mockTitularCp: ContractPerson = {
-        ...mockContractPerson,
-        role: PersonRole.TITULAR,
-        plan: null,
-      };
-
-      jest.spyOn(service, 'findByIdentityCard').mockResolvedValue(null);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'create').mockReturnValue(mockPerson);
-      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson);
-      jest.spyOn(cpRepository, 'create').mockReturnValue(mockTitularCp);
-      jest.spyOn(cpRepository, 'save').mockResolvedValue(mockTitularCp);
-
-      await service.create(createPersonDto);
-
-      expect(afhRepository.save).not.toHaveBeenCalled();
-    });
-
-    it('should throw BadRequestException if existing AFILIADO is already affiliated to another contract', async () => {
-      const createPersonDto: CreatePersonDto = {
-        typeIdentityCard: TypeIdentityCard.V,
-        identityCard: '123456',
-        name: 'John Doe',
-        planId: 'plan-1',
-        contractId: 'contract-2',
-        role: PersonRole.AFILIADO,
-      };
-
-      const otherContractPerson: ContractPerson = {
-        id: 'cp-other',
-        contract: { id: 'contract-1', code: 'SIR-001' } as Contract,
-        person: mockPerson,
-        role: PersonRole.AFILIADO,
-      } as ContractPerson;
-
-      jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
-      jest.spyOn(service, 'findByIdentityCard').mockResolvedValue(mockPerson);
-      jest
-        .spyOn(contractsService, 'findOne')
-        .mockResolvedValue({ id: 'contract-2', code: 'SIR-002' } as Contract);
-      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null);
-      jest.spyOn(cpRepository, 'find').mockResolvedValue([otherContractPerson]);
-
-      await expect(service.create(createPersonDto)).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw NotFoundException if plan does not exist', async () => {
-      const createPersonDto: CreatePersonDto = {
-        typeIdentityCard: TypeIdentityCard.V,
-        identityCard: 'invalid-id',
-        name: 'John Doe',
-        birthDate: '1990-01-01',
-        gender: true,
-        planId: 'invalid-plan',
-        contractId: 'contract-1',
-      };
-
-      jest.spyOn(plansService, 'findOne').mockResolvedValue(null);
-
-      await expect(service.create(createPersonDto)).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('findAll', () => {
     it('should return an array of persons', async () => {
-      jest.spyOn(repository, 'find').mockResolvedValue([mockPerson]);
-
+      repository.find.mockResolvedValue([mockPerson]);
       const result = await service.findAll();
-
-      expect(repository.find).toHaveBeenCalledWith({
-        relations: ['plan', 'contractPersons', 'contractPersons.contract'],
-      });
       expect(result).toEqual([mockPerson]);
+      expect(repository.find).toHaveBeenCalled();
+    });
+  });
+
+  describe('findByIdentityCard', () => {
+    it('should find person by type and number', async () => {
+      repository.findOne.mockResolvedValue(mockPerson);
+      const result = await service.findByIdentityCard('123456', TypeIdentityCard.V);
+      expect(result).toEqual(mockPerson);
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { identityCard: '123456', typeIdentityCard: TypeIdentityCard.V },
+      });
     });
   });
 
   describe('findOne', () => {
-    it('should return a person if it exists', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(mockPerson);
-
+    it('should return person if found', async () => {
+      repository.findOne.mockResolvedValue(mockPerson);
       const result = await service.findOne('1');
-
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1' },
-        relations: ['plan', 'contractPersons', 'contractPersons.contract'],
-      });
       expect(result).toEqual(mockPerson);
     });
 
-    it('should throw NotFoundException if person does not exist', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
-
-      await expect(service.findOne('2')).rejects.toThrow(NotFoundException);
+    it('should throw NotFoundException if not found', async () => {
+      repository.findOne.mockResolvedValue(null);
+      await expect(service.findOne('invalid-id')).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('update', () => {
-    it('should update and return a person and recalculate contract amounts', async () => {
-      const updatePersonDto: UpdatePersonDto = {
-        name: 'Jane Doe',
-        planId: 'plan-1',
-        contractId: 'contract-1',
-        role: PersonRole.AFILIADO,
-      };
-      const updatedPerson = { ...mockPerson, name: 'Jane Doe' };
+    it('should update person fields and save', async () => {
+      repository.findOne.mockResolvedValue(mockPerson);
+      repository.save.mockImplementation(async (entity) => entity as Person);
 
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(plansService, 'findOne').mockResolvedValue(mockPlan);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'save').mockResolvedValue(updatedPerson as Person);
-      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(mockContractPerson);
-      jest.spyOn(cpRepository, 'find').mockResolvedValue([mockContractPerson]);
+      const updateDto: UpdatePersonDto = { name: 'Jane Doe' };
+      const result = await service.update('1', updateDto);
 
-      const result = await service.update('1', updatePersonDto);
-
-      expect(service.findOne).toHaveBeenCalledWith('1');
-      expect(plansService.findOne).toHaveBeenCalledWith('plan-1');
+      expect(result.name).toBe('Jane Doe');
       expect(repository.save).toHaveBeenCalled();
-
-      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
-      expect(result.name).toEqual('Jane Doe');
     });
 
-    it('should throw BadRequestException if an AFILIADO is updated to a new contract without being disaffiliated first', async () => {
-      const updatePersonDto: UpdatePersonDto = {
-        contractId: 'contract-2',
-        role: PersonRole.AFILIADO,
-      };
+    it('should throw BadRequestException if new identityCard is already taken by someone else', async () => {
+      repository.findOne
+        .mockResolvedValueOnce(mockPerson) // findOne('1')
+        .mockResolvedValueOnce({ id: '2', identityCard: '999999' } as Person); // check uniqueness
 
-      const newContract: Contract = { id: 'contract-2', code: 'SIR-002' } as Contract;
-      const oldJunction: ContractPerson = {
-        ...mockContractPerson,
-        contract: { id: 'contract-1', code: 'SIR-001' } as Contract,
-      };
-
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(newContract);
-      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson as Person);
-      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(null); // Not in the new contract yet
-      jest.spyOn(cpRepository, 'find').mockResolvedValue([oldJunction]); // In the old contract
-
-      await expect(service.update('1', updatePersonDto)).rejects.toThrow(BadRequestException);
-
-      // Verify that no write mutations occurred
-      expect(repository.save).not.toHaveBeenCalled();
-      expect(cpRepository.save).not.toHaveBeenCalled();
+      const updateDto: UpdatePersonDto = { identityCard: '999999' };
+      await expect(service.update('1', updateDto)).rejects.toThrow(BadRequestException);
     });
+  });
 
-    it('should not wipe global plan when adding a TITULAR to a new contract', async () => {
-      const updatePersonDto: UpdatePersonDto = {
-        contractId: 'contract-2',
-        role: PersonRole.TITULAR,
+  describe('bulkUpdate', () => {
+    it('should update each person in array', async () => {
+      repository.findOne.mockResolvedValue(mockPerson);
+      repository.save.mockImplementation(async (entity) => entity as Person);
+
+      const bulkDto: BulkUpdatePersonsDto = {
+        persons: [{ id: '1', name: 'Updated Name' }],
       };
-      const newContract: Contract = { id: 'contract-2' } as Contract;
 
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson); // Mock person has a plan
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(newContract);
-
-      // Let's assert what is saved to the Person repository
-      let savedPerson: Partial<Person> = {};
-      jest.spyOn(repository, 'save').mockImplementation(async (personToSave) => {
-        savedPerson = personToSave as unknown as Person;
-        return personToSave as Person;
-      });
-
-      await service.update('1', updatePersonDto);
-
-      // Ensure the plan was NOT nullified.
-      expect(savedPerson.plan).toEqual(mockPlan);
-    });
-
-    it('should throw NotFoundException if new plan does not exist', async () => {
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(plansService, 'findOne').mockResolvedValue(null);
-
-      const updatePersonDto: UpdatePersonDto = { planId: 'invalid-plan', contractId: 'contract-1' };
-      await expect(service.update('1', updatePersonDto)).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw BadRequestException if identityCard is updated to an already existing one', async () => {
-      const updatePersonDto: UpdatePersonDto = {
-        identityCard: '999999',
-        typeIdentityCard: TypeIdentityCard.V,
-        contractId: 'contract-1',
-      };
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
-
-      const conflictingPerson = { id: 'other-id', name: 'Other Guy' } as Person;
-      jest.spyOn(repository, 'findOne').mockResolvedValue(conflictingPerson);
-
-      await expect(service.update('1', updatePersonDto)).rejects.toThrow(BadRequestException);
-    });
-
-    it('should allow identityCard update if the conflicting record matches the current person ID', async () => {
-      const updatePersonDto: UpdatePersonDto = {
-        identityCard: '123456',
-        typeIdentityCard: TypeIdentityCard.V,
-        contractId: 'contract-1',
-      };
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(contractsService, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(repository, 'save').mockResolvedValue(mockPerson);
-      jest.spyOn(cpRepository, 'findOne').mockResolvedValue(mockContractPerson);
-      jest.spyOn(cpRepository, 'find').mockResolvedValue([mockContractPerson]);
-
-      const result = await service.update('1', updatePersonDto);
-      expect(result).toEqual(mockPerson);
+      await service.bulkUpdate(bulkDto);
+      expect(repository.save).toHaveBeenCalled();
     });
   });
 
   describe('remove', () => {
-    it('should soft remove a person and recalculate contract amount', async () => {
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockPerson);
-      jest.spyOn(repository, 'softRemove').mockResolvedValue(mockPerson);
+    it('should soft remove person', async () => {
+      repository.findOne.mockResolvedValue(mockPerson);
+      repository.softRemove.mockResolvedValue(mockPerson);
 
       await service.remove('1');
-
-      expect(service.findOne).toHaveBeenCalledWith('1');
       expect(repository.softRemove).toHaveBeenCalledWith(mockPerson);
-      expect(contractsService.recalculateMonthlyAmount).toHaveBeenCalledWith('contract-1');
     });
   });
 });

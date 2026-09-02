@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
@@ -12,6 +12,8 @@ import { UpdateContractDto } from '../dto/update-contract.dto';
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
   let contractsRepository: jest.Mocked<Repository<Contract>>;
+  let mockManager: Record<string, unknown>;
+  let mockQr: Record<string, unknown>;
 
   const mockContract: Contract = {
     id: 'contract-1',
@@ -30,6 +32,26 @@ describe('ContractLifecycleService', () => {
   };
 
   beforeEach(async () => {
+    mockManager = {
+      getRepository: jest.fn(),
+    };
+
+    mockQr = {
+      isTransactionActive: false,
+      connect: jest.fn().mockResolvedValue(undefined),
+      startTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = true;
+      }),
+      commitTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = false;
+      }),
+      rollbackTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = false;
+      }),
+      release: jest.fn().mockResolvedValue(undefined),
+      manager: mockManager,
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractLifecycleService,
@@ -39,9 +61,6 @@ describe('ContractLifecycleService', () => {
             findOne: jest.fn(),
             save: jest.fn(),
             softRemove: jest.fn(),
-            manager: {
-              transaction: jest.fn(),
-            },
           },
         },
         {
@@ -57,6 +76,12 @@ describe('ContractLifecycleService', () => {
             save: jest.fn(),
             create: jest.fn().mockImplementation((val) => val),
             remove: jest.fn(),
+          },
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            createQueryRunner: jest.fn().mockReturnValue(mockQr),
           },
         },
       ],
@@ -139,32 +164,26 @@ describe('ContractLifecycleService', () => {
         },
       ];
 
-      const mockManager = {
-        getRepository: jest.fn().mockImplementation((target) => {
-          if (target === Contract) {
-            return {
-              findOne: jest.fn().mockResolvedValue(mockLockedContract),
-              save: jest.fn().mockImplementation(async (c) => c),
-            };
-          }
-          if (target === ContractPerson) {
-            return {
-              find: jest.fn().mockResolvedValue(mockActivePersons),
-            };
-          }
-          if (target === AffiliationHistory) {
-            return {
-              create: jest.fn().mockImplementation((val) => val),
-              save: jest.fn().mockResolvedValue(true),
-            };
-          }
-          return {};
-        }),
-      };
-
-      contractsRepository.manager.transaction = jest
-        .fn()
-        .mockImplementation(async (cb) => cb(mockManager as unknown as EntityManager));
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === ContractPerson) {
+          return {
+            find: jest.fn().mockResolvedValue(mockActivePersons),
+          };
+        }
+        if (target === AffiliationHistory) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue(true),
+          };
+        }
+        return {};
+      });
 
       const dto: InactivateContractDto = { reason: 'Falta de pago' };
       const res = await service.inactivate('contract-1', dto);
@@ -193,27 +212,21 @@ describe('ContractLifecycleService', () => {
       const mockLockedContract = { ...mockContract, status: ContractStatus.INACTIVE };
       const mockHistoryList = [{ id: 'h-1', actionDate: new Date(), createdAt: new Date() }];
 
-      const mockManager = {
-        getRepository: jest.fn().mockImplementation((target) => {
-          if (target === Contract) {
-            return {
-              findOne: jest.fn().mockResolvedValue(mockLockedContract),
-              save: jest.fn().mockImplementation(async (c) => c),
-            };
-          }
-          if (target === AffiliationHistory) {
-            return {
-              find: jest.fn().mockResolvedValue(mockHistoryList),
-              remove: jest.fn().mockResolvedValue(true),
-            };
-          }
-          return {};
-        }),
-      };
-
-      contractsRepository.manager.transaction = jest
-        .fn()
-        .mockImplementation(async (cb) => cb(mockManager as unknown as EntityManager));
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === AffiliationHistory) {
+          return {
+            find: jest.fn().mockResolvedValue(mockHistoryList),
+            remove: jest.fn().mockResolvedValue(true),
+          };
+        }
+        return {};
+      });
 
       const res = await service.activate('contract-1');
       expect(res.status).toBe(ContractStatus.ACTIVE);

@@ -39,8 +39,8 @@ export class CreatePersonDto {
   gender?: boolean;
 
   @IsUUID()
-  @IsNotEmpty()
-  planId: string;
+  @IsOptional()
+  planId?: string;
 
   @IsUUID()
   @IsOptional()

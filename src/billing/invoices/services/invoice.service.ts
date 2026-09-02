@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Equal, In, Not, QueryRunner, Repository } from 'typeorm';
+import { DataSource, EntityManager, Equal, In, Not, QueryRunner, Repository } from 'typeorm';
 import { ContractPerson } from '../../../contracts/entities/contract-person.entity';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
 import { Person, TypeIdentityCard } from '../../../persons/entities/person.entity';
@@ -11,6 +11,7 @@ import { InvoiceGenerationService } from './invoice-generation.service';
 import { InvoiceLineService } from './invoice-line.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { resolveQueryRunner } from '../../../common/context/request-context';
+import { Plan } from '../../../plans/entities/plan.entity';
 
 /**
  * Facade público del módulo de facturas.
@@ -203,15 +204,15 @@ export class InvoiceService {
 
   recalculateInvoicePaidAmount(
     invoiceId: string,
-    queryRunnerOrManager?: QueryRunner | import('typeorm').EntityManager,
+    queryRunnerOrManager?: QueryRunner | EntityManager,
   ): Promise<void> {
     // Normalizar a EntityManager para el sub-servicio
-    let manager: import('typeorm').EntityManager | undefined;
+    let manager: EntityManager | undefined;
     if (queryRunnerOrManager) {
       manager =
         'manager' in queryRunnerOrManager
           ? queryRunnerOrManager.manager
-          : (queryRunnerOrManager as import('typeorm').EntityManager);
+          : (queryRunnerOrManager as EntityManager);
     }
     return this.calculationService.recalculateInvoicePaidAmount(invoiceId, manager);
   }
@@ -231,7 +232,7 @@ export class InvoiceService {
   removeAffiliateLineFromActiveInvoice(
     contractId: string,
     personId: string,
-    manager?: import('typeorm').EntityManager,
+    manager?: EntityManager,
   ): Promise<void> {
     return this.lineService.removeAffiliateLineFromActiveInvoice(contractId, personId, manager);
   }
@@ -249,6 +250,20 @@ export class InvoiceService {
       newPlanId,
       newPlanAmount,
       newPlanName,
+    );
+  }
+
+  addAffiliateInclusionLineToActiveInvoice(
+    contractId: string,
+    person: Person,
+    plan: Plan,
+    manager?: EntityManager,
+  ): Promise<void> {
+    return this.lineService.addAffiliateInclusionLineToActiveInvoice(
+      contractId,
+      person,
+      plan,
+      manager,
     );
   }
 

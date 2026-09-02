@@ -350,4 +350,77 @@ export class InvoiceLineService {
       `[billing] Línea MENSUALIDAD actualizada (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,
     );
   }
+
+  /**
+   * Si ya existe una factura activa (PENDING, PARTIAL o PAID) para el mes en curso,
+   * agrega una línea INCLUSION para el afiliado incorporado recientemente,
+   * siempre que no cuente ya con una línea MENSUALIDAD.
+   */
+  async addAffiliateInclusionLineToActiveInvoice(
+    contractId: string,
+    person: Person,
+    plan: Plan,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const qr = getQueryRunnerSafe();
+    const activeManager = manager ?? qr?.manager ?? this.dataSource.manager;
+    const invoiceRepo = activeManager.getRepository(Invoice);
+    const invoiceLineRepo = activeManager.getRepository(InvoiceLine);
+
+    const billingMonth = getBillingMonth();
+
+    const invoice = await invoiceRepo.findOne({
+      where: {
+        contract: { id: contractId },
+        billingMonth,
+        status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.PAID]),
+      },
+    });
+
+    if (!invoice) return;
+
+    const existingMensualidad = await invoiceLineRepo.findOne({
+      where: {
+        invoice: { id: invoice.id },
+        person: { id: person.id },
+        category: InvoiceLineCategory.MENSUALIDAD,
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (existingMensualidad) return;
+
+    const planAmount = Number(plan.amount ?? 0);
+    if (planAmount <= 0) return;
+
+    const line = invoiceLineRepo.create({
+      invoice,
+      category: InvoiceLineCategory.INCLUSION,
+      description: `Inclusión: ${person.name} - ${plan.name ?? 'Plan'}`,
+      amount: planAmount,
+      quantity: 1,
+      person,
+      plan,
+      isProjectable: false,
+    });
+
+    await invoiceLineRepo.save(line);
+
+    const baseAmount = await this.queryRepo.sumBaseLines(activeManager, invoice.id);
+    const additionalAmount = await this.queryRepo.sumAdditionalLines(activeManager, invoice.id);
+    invoice.totalAmount = baseAmount + additionalAmount;
+
+    if (
+      Number(invoice.paidAmount) < Number(invoice.totalAmount) &&
+      invoice.status === InvoiceStatus.PAID
+    ) {
+      invoice.status = InvoiceStatus.PARTIAL;
+    }
+
+    await invoiceRepo.save(invoice);
+
+    this.logger.log(
+      `[billing] Línea INCLUSION agregada para afiliado ${person.name} ($${planAmount}) en factura ${invoice.id}`,
+    );
+  }
 }

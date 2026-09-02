@@ -1,211 +1,65 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  forwardRef,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
-import { AffiliationHistory } from '../../contracts/entities/affiliation-history.entity';
+import { Repository } from 'typeorm';
 
+import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
-import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
 
-import { InvoiceLineCategory } from '../../billing/invoices/enums/invoice-line-category.enum';
-import { InvoiceLine } from '../../billing/invoices/entities/invoice-line.entity';
-import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
-import { getBillingMonth } from '../../common/utils/date.util';
-import { ContractPerson, PersonRole } from '../../contracts/entities/contract-person.entity';
-import { AffiliationAction } from '../../contracts/enums/affiliation-action.enum';
-import { ContractsService } from '../../contracts/services/contracts.service';
-import { PlansService } from '../../plans/services/plans.service';
-import { Plan } from '../../plans/entities/plan.entity';
-import { HealthDeclaration } from '../../contracts/entities/health-declaration.entity';
+const PERSON_FIELDS: (keyof Person)[] = [
+  'name',
+  'typeIdentityCard',
+  'identityCard',
+  'birthDate',
+  'gender',
+  'status',
+  'phone',
+  'alternatePhone',
+  'email',
+  'address',
+  'city',
+  'state',
+  'postalCode',
+  'weight',
+  'height',
+  'occupation',
+  'legalRepresentative',
+];
+
+function extractPersonData(dto: Partial<CreatePersonDto>): Partial<Person> {
+  const data: Partial<Person> = {};
+  for (const key of PERSON_FIELDS) {
+    if (dto[key] !== undefined) {
+      (data as Record<string, unknown>)[key] = dto[key];
+    }
+  }
+  return data;
+}
 
 @Injectable()
 export class PersonsService {
   constructor(
     @InjectRepository(Person)
-    private personsRepository: Repository<Person>,
-    @InjectRepository(ContractPerson)
-    private contractPersonRepository: Repository<ContractPerson>,
-    @InjectRepository(AffiliationHistory)
-    private affiliationHistoryRepository: Repository<AffiliationHistory>,
-    @InjectRepository(Invoice)
-    private invoiceRepository: Repository<Invoice>,
-    @InjectRepository(InvoiceLine)
-    private invoiceLineRepository: Repository<InvoiceLine>,
-    @InjectRepository(HealthDeclaration)
-    private healthDeclarationRepository: Repository<HealthDeclaration>,
-    private plansService: PlansService,
-    @Inject(forwardRef(() => ContractsService))
-    private contractsService: ContractsService,
+    private readonly personsRepository: Repository<Person>,
   ) {}
 
   async create(createPersonDto: CreatePersonDto): Promise<Person> {
-    const {
-      planId,
-      contractId,
-      role,
-      isBillingOwner,
-      relationship,
-      healthDeclarations,
-      ...personData
-    } = createPersonDto;
-    const resolvedRole = role || PersonRole.AFILIADO;
-
-    let plan = null;
-    if (resolvedRole === PersonRole.AFILIADO && planId) {
-      plan = await this.plansService.findOne(planId);
-      if (!plan) {
-        throw new NotFoundException(`Plan with ID "${planId}" not found`);
-      }
-    }
-
-    // Check if a person with this identityCard already exists
-    const person = await this.findByIdentityCard(
-      personData.identityCard,
-      personData.typeIdentityCard,
+    const existingPerson = await this.findByIdentityCard(
+      createPersonDto.identityCard,
+      createPersonDto.typeIdentityCard,
     );
 
-    if (person) {
-      // If contractId is provided, associate the existing person to this contract
-      if (contractId) {
-        const contract = await this.contractsService.findOne(contractId);
-        if (!contract) {
-          throw new NotFoundException(`Contract with ID "${contractId}" not found`);
-        }
-
-        // Check if the person is already associated with this contract
-        const existingJunction = await this.contractPersonRepository.findOne({
-          where: { contract: { id: contractId }, person: { id: person.id } },
-        });
-
-        if (!existingJunction) {
-          // BLOQUEAR si el afiliado ya está en otro contrato
-          if (resolvedRole === PersonRole.AFILIADO) {
-            const existingAffiliations = await this.contractPersonRepository.find({
-              where: { person: { id: person.id }, role: PersonRole.AFILIADO },
-              relations: ['contract'],
-            });
-
-            const otherContractAffiliations = existingAffiliations.filter(
-              (cp) => cp.contract.id !== contractId,
-            );
-
-            if (otherContractAffiliations.length > 0) {
-              const contractCodes = otherContractAffiliations
-                .map((cp) => cp.contract.code)
-                .join(', ');
-              throw new BadRequestException(
-                `El afiliado ${person.name} (${person.typeIdentityCard}-${person.identityCard}) ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero antes de asignarlo a otro contrato.`,
-              );
-            }
-          }
-
-          // Create junction table entry
-          const contractPerson = this.contractPersonRepository.create({
-            contract,
-            person,
-            role: resolvedRole,
-            isBillingOwner: isBillingOwner ?? false,
-            relationship,
-            plan: resolvedRole === PersonRole.AFILIADO ? plan || person.plan : null,
-          });
-          const savedCp = await this.contractPersonRepository.save(contractPerson);
-
-          await this.saveHealthDeclarations(healthDeclarations, savedCp);
-
-          if (resolvedRole === PersonRole.AFILIADO) {
-            const effectivePlan = savedCp.plan || person.plan || null;
-            // Registrar en historial
-            await this.affiliationHistoryRepository.save(
-              this.affiliationHistoryRepository.create({
-                contract: { id: contractId },
-                person,
-                plan: effectivePlan,
-                action: AffiliationAction.AFILIACION,
-                amount: Number(effectivePlan?.amount ?? 0),
-              }),
-            );
-
-            // Auto-generar cargo INCLUSION en la factura activa del mes
-            await this.autoAddInclusionCharge(contractId, person, effectivePlan);
-          }
-
-          await this.contractsService.recalculateMonthlyAmount(contractId);
-        } else {
-          throw new BadRequestException('La persona ya está afiliada a este contrato.');
-        }
-      }
-      return person;
+    if (existingPerson) {
+      return existingPerson;
     }
 
-    // Normal flow when person does NOT exist:
-    let contract = null;
-    if (contractId) {
-      contract = await this.contractsService.findOne(contractId);
-      if (!contract) {
-        throw new NotFoundException(`Contract with ID "${contractId}" not found`);
-      }
-    }
-
-    const newPerson = this.personsRepository.create({
-      ...personData,
-      plan,
-    });
-
-    const savedPerson = await this.personsRepository.save(newPerson);
-
-    if (contract) {
-      if (resolvedRole === PersonRole.AFILIADO && !plan) {
-        throw new BadRequestException(
-          'Se requiere un plan para afiliar a una persona a este contrato.',
-        );
-      }
-      // Create junction table entry
-      const contractPerson = this.contractPersonRepository.create({
-        contract,
-        person: savedPerson,
-        role: resolvedRole,
-        isBillingOwner: isBillingOwner ?? false,
-        relationship,
-        plan: resolvedRole === PersonRole.AFILIADO ? plan : null,
-      });
-      const savedCp = await this.contractPersonRepository.save(contractPerson);
-
-      await this.saveHealthDeclarations(healthDeclarations, savedCp);
-
-      await this.contractsService.recalculateMonthlyAmount(contractId);
-
-      // Registrar en historial
-      if (resolvedRole === PersonRole.AFILIADO) {
-        const effectivePlan = savedCp?.plan || plan || null;
-        await this.affiliationHistoryRepository.save(
-          this.affiliationHistoryRepository.create({
-            contract: { id: contractId },
-            person: savedPerson,
-            plan: effectivePlan,
-            action: AffiliationAction.AFILIACION,
-            amount: Number(effectivePlan?.amount ?? 0),
-          }),
-        );
-
-        // Auto-generar cargo INCLUSION en la factura activa del mes
-        await this.autoAddInclusionCharge(contractId, savedPerson, effectivePlan);
-      }
-    }
-
-    return savedPerson;
+    const newPerson = this.personsRepository.create(extractPersonData(createPersonDto));
+    return this.personsRepository.save(newPerson);
   }
 
   async findAll(): Promise<Person[]> {
-    return this.personsRepository.find({
-      relations: ['plan', 'contractPersons', 'contractPersons.contract'],
-    });
+    return this.personsRepository.find();
   }
 
   async findByIdentityCard(
@@ -214,14 +68,12 @@ export class PersonsService {
   ): Promise<Person | null> {
     return this.personsRepository.findOne({
       where: { identityCard, typeIdentityCard },
-      relations: ['plan', 'contractPersons', 'contractPersons.contract'],
     });
   }
 
   async findOne(id: string): Promise<Person> {
     const person = await this.personsRepository.findOne({
       where: { id },
-      relations: ['plan', 'contractPersons', 'contractPersons.contract'],
     });
     if (!person) {
       throw new NotFoundException(`Person with ID "${id}" not found`);
@@ -230,25 +82,10 @@ export class PersonsService {
   }
 
   async update(id: string, updatePersonDto: UpdatePersonDto): Promise<Person> {
-    // ── 1. Destructuring & fast-fail ─────────────────────────────────────────
-    const { planId, contractId, role, isBillingOwner, relationship, ...updateData } =
-      updatePersonDto;
-
-    if (!contractId) {
-      throw new BadRequestException('Contract ID is required.');
-    }
-
-    // ── 2. Cargar persona y contrato ─────────────────────────────────────────
     const person = await this.findOne(id);
 
-    const contract = await this.contractsService.findOne(contractId);
-    if (!contract) {
-      throw new NotFoundException(`Contract with ID "${contractId}" not found`);
-    }
-
-    // ── 2.1. Validar unicidad de la cédula/RIF ──────────────────────────────
-    const targetIdentityCard = updateData.identityCard ?? person.identityCard;
-    const targetTypeIdentityCard = updateData.typeIdentityCard ?? person.typeIdentityCard;
+    const targetIdentityCard = updatePersonDto.identityCard ?? person.identityCard;
+    const targetTypeIdentityCard = updatePersonDto.typeIdentityCard ?? person.typeIdentityCard;
 
     if (
       targetIdentityCard !== person.identityCard ||
@@ -266,244 +103,19 @@ export class PersonsService {
       }
     }
 
-    // ── 3. Resolver junction existente y rol ─────────────────────────────────
-
-    let existingJunction = await this.contractPersonRepository.findOne({
-      where: { contract: { id: contractId }, person: { id: person.id } },
-    });
-
-    // Si no viene role en el DTO, heredar el rol actual de la junction,
-    // o usar AFILIADO como valor por defecto si es una unión nueva.
-    const resolvedRole = role ?? existingJunction?.role ?? PersonRole.AFILIADO;
-
-    // ── 4. Resolver plan ─────────────────────────────────────────────────────
-    // Los TITULARs no tienen plan propio; nunca forzamos plan = null porque
-    // la persona puede ser AFILIADO en otro contrato que sí depende de ese plan.
-    let plan = person.plan;
-    if (planId && resolvedRole === PersonRole.AFILIADO) {
-      const newPlan = await this.plansService.findOne(planId);
-      if (!newPlan) {
-        throw new NotFoundException(`Plan with ID "${planId}" not found`);
-      }
-      plan = newPlan;
-    }
-
-    // ── 4.5. Validar restricción de afiliado en otro contrato ───────────────
-    if (resolvedRole === PersonRole.AFILIADO) {
-      // BLOQUEAR si el afiliado ya está en otro contrato
-      const afiliadoJunctions = await this.contractPersonRepository.find({
-        where: { person: { id: person.id }, role: PersonRole.AFILIADO },
-        relations: ['contract'],
-      });
-
-      const otherContracts = afiliadoJunctions.filter((cp) => cp.contract.id !== contractId);
-      if (otherContracts.length > 0) {
-        const contractCodes = otherContracts.map((cp) => cp.contract.code).join(', ');
-        const nameToUse = updateData.name ?? person.name;
-        throw new BadRequestException(
-          `El afiliado ${nameToUse} ya pertenece al contrato: ${contractCodes}. Debe ser desafiliado primero.`,
-        );
-      }
-    }
-
-    // ── 5. Guardar persona ───────────────────────────────────────────────────
-    const updatedPerson = Object.assign(person, { ...updateData, plan });
-    const savedPerson = await this.personsRepository.save(updatedPerson);
-
-    // ── 6. Gestionar junction (crear / actualizar) ───────────────────────────
-    const contractsToRecalculate = new Set<string>();
-
-    if (existingJunction) {
-      // Actualizar role, isBillingOwner, relationship y plan solo si alguno cambió.
-      const junctionNeedsUpdate =
-        (role !== undefined && existingJunction.role !== role) ||
-        (isBillingOwner !== undefined && existingJunction.isBillingOwner !== isBillingOwner) ||
-        (relationship !== undefined && existingJunction.relationship !== relationship) ||
-        (planId !== undefined && existingJunction.plan?.id !== planId);
-
-      if (junctionNeedsUpdate) {
-        if (role !== undefined) {
-          if (role === PersonRole.TITULAR && existingJunction.role !== PersonRole.TITULAR) {
-            await this.contractPersonRepository.update(
-              { contract: { id: contractId }, deletedAt: IsNull() },
-              { role: PersonRole.AFILIADO },
-            );
-          }
-          existingJunction.role = role;
-        }
-        if (isBillingOwner !== undefined) existingJunction.isBillingOwner = isBillingOwner;
-        if (relationship !== undefined) existingJunction.relationship = relationship;
-        if (resolvedRole === PersonRole.TITULAR) {
-          existingJunction.plan = null;
-        } else if (planId !== undefined || !existingJunction.plan) {
-          existingJunction.plan = plan ?? existingJunction.plan ?? savedPerson.plan ?? null;
-        }
-        await this.contractPersonRepository.save(existingJunction);
-      }
-    } else {
-      // Crear nueva junction con role, isBillingOwner y plan.
-      const contractPerson = this.contractPersonRepository.create({
-        contract,
-        person: savedPerson,
-        role: resolvedRole,
-        isBillingOwner: isBillingOwner ?? false,
-        plan: resolvedRole === PersonRole.AFILIADO ? plan || savedPerson.plan : null,
-      });
-      existingJunction = await this.contractPersonRepository.save(contractPerson);
-    }
-
-    if (updateData.healthDeclarations && existingJunction) {
-      await this.healthDeclarationRepository.delete({
-        contractPerson: { id: existingJunction.id },
-      });
-      await this.saveHealthDeclarations(updateData.healthDeclarations, existingJunction);
-    }
-
-    contractsToRecalculate.add(contractId);
-
-    // ── 7. Recalcular contratos afectados ────────────────────────────────────
-    // Incluir los contratos previos de la persona (por si cambió el plan global).
-    for (const cp of person.contractPersons ?? []) {
-      contractsToRecalculate.add(cp.contract.id);
-    }
-
-    for (const idToRecalculate of contractsToRecalculate) {
-      await this.contractsService.recalculateMonthlyAmount(idToRecalculate);
-    }
-
-    return savedPerson;
+    this.personsRepository.merge(person, extractPersonData(updatePersonDto));
+    return this.personsRepository.save(person);
   }
 
   async bulkUpdate(bulkUpdatePersonsDto: BulkUpdatePersonsDto): Promise<void> {
-    // Para simplificar y reutilizar lógica, procesaremos las actualizaciones una por una.
-    // Esto asegura que la lógica de validación de cédulas siga en su lugar.
     for (const personData of bulkUpdatePersonsDto.persons) {
       const { id, ...updateData } = personData;
-
-      // Obtener la persona primero para saber de qué contrato(s) es parte
-      const person = await this.findOne(id);
-
-      // Usamos el id del primer contrato de la persona si no se provee.
-      // Dado que solo permitiremos actualizar información básica de la persona,
-      // el contractId no debería afectar más que desencadenar recalculaciones (lo cual es deseado si el plan cambia, pero aquí no cambiará plan).
-      const contractId = person.contractPersons?.[0]?.contract?.id;
-
-      if (contractId) {
-        await this.update(id, { ...updateData, contractId });
-      } else {
-        // Fallback en caso extraño de que la persona no esté asociada a un contrato aún
-        // Aquí simulamos parte de la actualización básica.
-        Object.assign(person, updateData);
-        await this.personsRepository.save(person);
-      }
+      await this.update(id, updateData);
     }
   }
 
   async remove(id: string): Promise<void> {
     const person = await this.findOne(id);
-    const contractIds = person.contractPersons?.map((cp) => cp.contract.id) || [];
-
-    // Clean up junction tables to prevent orphaned records.
-    if (person.contractPersons && person.contractPersons.length > 0) {
-      await this.contractPersonRepository.softRemove(person.contractPersons);
-    }
-
     await this.personsRepository.softRemove(person);
-
-    for (const contractId of contractIds) {
-      await this.contractsService.recalculateMonthlyAmount(contractId);
-    }
-  }
-
-  /**
-   * Si ya existe una factura PENDING o PARTIAL para el mes en curso,
-   * agrega automáticamente una línea INCLUSION para el afiliado recién agregado,
-   * siempre que este no tenga ya una línea MENSUALIDAD en esa factura.
-   *
-   * Esto cubre el caso donde la factura ya fue generada por el cron (día 25)
-   * y el afiliado se incorpora después de esa fecha.
-   */
-  private async autoAddInclusionCharge(
-    contractId: string,
-    person: Person,
-    effectivePlan?: Plan | null,
-  ): Promise<void> {
-    const billingMonth = getBillingMonth();
-
-    // Buscar factura activa del mes actual para este contrato
-    const invoice = await this.invoiceRepository.findOne({
-      where: {
-        contract: { id: contractId },
-        billingMonth,
-        status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.PAID]),
-      },
-    });
-
-    // Si no hay factura aún, el cron la creará con el afiliado incluido
-    if (!invoice) return;
-
-    // Verificar si ya tiene línea MENSUALIDAD para esta persona
-    const existingMensualidad = await this.invoiceLineRepository.findOne({
-      where: {
-        invoice: { id: invoice.id },
-        person: { id: person.id },
-        category: InvoiceLineCategory.MENSUALIDAD,
-        deletedAt: IsNull(),
-      },
-    });
-
-    // Ya tiene mensualidad — la factura estaba actualizada, no hace falta INCLUSION
-    if (existingMensualidad) return;
-
-    const planToUse = effectivePlan ?? person.plan ?? null;
-    const planAmount = Number(planToUse?.amount ?? 0);
-    if (planAmount <= 0) return;
-
-    // Crear línea INCLUSION (no proyectable — cargo puntual por incorporación)
-    const line = this.invoiceLineRepository.create({
-      invoice,
-      category: InvoiceLineCategory.INCLUSION,
-      description: `Inclusión: ${person.name} - ${planToUse?.name ?? 'Plan'}`,
-      amount: planAmount,
-      quantity: 1,
-      person,
-      plan: planToUse,
-      isProjectable: false,
-    });
-
-    await this.invoiceLineRepository.save(line);
-
-    // Recalcular totalAmount = baseAmount + SUM(líneas no proyectables activas)
-    const result = await this.invoiceLineRepository
-      .createQueryBuilder('line')
-      .select('COALESCE(SUM(line.amount * line.quantity), 0)', 'total')
-      .where('line.invoice_id = :invoiceId', { invoiceId: invoice.id })
-      .andWhere('line.is_projectable = false')
-      .andWhere('line.deleted_at IS NULL')
-      .getRawOne<{ total: string }>();
-
-    const additionalAmount = Number(result?.total ?? 0);
-    invoice.totalAmount = Number(invoice.baseAmount) + additionalAmount;
-
-    // Ajustar status si corresponde
-    if (invoice.paidAmount < invoice.totalAmount && invoice.status === InvoiceStatus.PAID) {
-      invoice.status = InvoiceStatus.PARTIAL;
-    }
-
-    await this.invoiceRepository.save(invoice);
-  }
-  private async saveHealthDeclarations(
-    healthDeclarations: Partial<HealthDeclaration>[] | undefined,
-    contractPerson: ContractPerson,
-  ) {
-    if (healthDeclarations && healthDeclarations.length > 0) {
-      const hdEntities = healthDeclarations.map((hd) =>
-        this.healthDeclarationRepository.create({
-          ...hd,
-          contractPerson,
-        }),
-      );
-      await this.healthDeclarationRepository.save(hdEntities);
-    }
   }
 }
