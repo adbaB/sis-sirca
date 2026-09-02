@@ -192,16 +192,35 @@ describe('ContractAffiliationService', () => {
 
   describe('removeAffiliate', () => {
     it('should throw NotFoundException if contractPerson not found', async () => {
-      contractPersonsRepository.findOne.mockResolvedValue(null);
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+
       await expect(service.removeAffiliate('invalid-id')).rejects.toThrow(NotFoundException);
     });
 
+    it('should throw BadRequestException if contractId does not match', async () => {
+      const mockCp = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        contract: { id: 'contract-1' },
+      } as unknown as ContractPerson;
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockCp) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+
+      await expect(service.removeAffiliate('cp-1', 'different-contract')).rejects.toThrow(
+        'El afiliado no pertenece al contrato especificado.',
+      );
+    });
+
     it('should throw BadRequestException if trying to remove TITULAR', async () => {
-      contractPersonsRepository.findOne.mockResolvedValue({
+      const mockCp = {
         id: 'cp-1',
         role: PersonRole.TITULAR,
         isBillingOwner: false,
-      } as unknown as ContractPerson);
+        contract: { id: 'contract-1' },
+      } as unknown as ContractPerson;
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockCp) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
 
       await expect(service.removeAffiliate('cp-1')).rejects.toThrow(
         'El TITULAR no puede ser eliminado',
@@ -209,11 +228,14 @@ describe('ContractAffiliationService', () => {
     });
 
     it('should throw BadRequestException if trying to remove billing owner', async () => {
-      contractPersonsRepository.findOne.mockResolvedValue({
+      const mockCp = {
         id: 'cp-1',
         role: PersonRole.AFILIADO,
         isBillingOwner: true,
-      } as unknown as ContractPerson);
+        contract: { id: 'contract-1' },
+      } as unknown as ContractPerson;
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockCp) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
 
       await expect(service.removeAffiliate('cp-1')).rejects.toThrow(
         'Debe existir un responsable de facturación',
@@ -230,10 +252,9 @@ describe('ContractAffiliationService', () => {
         plan: { amount: 30 },
       } as unknown as ContractPerson;
 
-      contractPersonsRepository.findOne.mockResolvedValue(mockCp);
-
       const mockHistoryRepo = { create: jest.fn().mockImplementation((v) => v), save: jest.fn() };
       const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCp),
         softRemove: jest.fn().mockResolvedValue(true),
         find: jest.fn().mockResolvedValue([]),
       };
@@ -246,7 +267,7 @@ describe('ContractAffiliationService', () => {
         return {};
       });
 
-      await service.removeAffiliate('cp-1');
+      await service.removeAffiliate('cp-1', 'contract-1');
 
       expect(mockHistoryRepo.save).toHaveBeenCalled();
       expect(mockCpRepo.softRemove).toHaveBeenCalledWith(mockCp);
@@ -260,7 +281,9 @@ describe('ContractAffiliationService', () => {
 
   describe('setContractTitular', () => {
     it('should throw NotFoundException if contractPerson not found in contract', async () => {
-      contractPersonsRepository.findOne.mockResolvedValue(null);
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+
       await expect(
         service.setContractTitular('contract-1', { contractPersonId: 'cp-1' }),
       ).rejects.toThrow(NotFoundException);
@@ -274,9 +297,8 @@ describe('ContractAffiliationService', () => {
         person: { plan: { amount: 25 } },
       } as unknown as ContractPerson;
 
-      contractPersonsRepository.findOne.mockResolvedValue(mockTarget);
-
       const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(mockTarget),
         find: jest.fn().mockResolvedValue([]),
       };
       const mockContractRepo = {
@@ -300,7 +322,9 @@ describe('ContractAffiliationService', () => {
 
   describe('setBillingOwner', () => {
     it('should throw NotFoundException if target not found', async () => {
-      contractPersonsRepository.findOne.mockResolvedValue(null);
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+
       await expect(
         service.setBillingOwner('contract-1', { contractPersonId: 'cp-1' }),
       ).rejects.toThrow(NotFoundException);
@@ -308,7 +332,8 @@ describe('ContractAffiliationService', () => {
 
     it('should unset other billing owners and set target in transaction', async () => {
       const mockTarget = { id: 'cp-1', isBillingOwner: false } as unknown as ContractPerson;
-      contractPersonsRepository.findOne.mockResolvedValue(mockTarget);
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockTarget) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
 
       mockManager.update = jest.fn().mockResolvedValue(true);
       mockManager.save = jest.fn().mockResolvedValue(true);

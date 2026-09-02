@@ -130,9 +130,9 @@ export class ContractsController {
   @Delete(':contractId/beneficiaries/:contractPersonId')
   @RequirePermissions('update:contracts')
   removeBeneficiary(
-    @Param('contractId') _contractId: string,
+    @Param('contractId') contractId: string,
     @Param('contractPersonId') contractPersonId: string,
   ) {
-    return this.contractsService.removeAffiliate(contractPersonId);
+    return this.contractsService.removeAffiliate(contractPersonId, contractId);
   }
 }

@@ -87,6 +87,7 @@ export class ContractStatisticsService {
         `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN h.amount ELSE 0 END) AS revenue_lost`,
       ])
       .where('h.action_date BETWEEN :startDateStr AND :endDateStr', { startDateStr, endDateStr })
+      .andWhere("(h.reason IS NULL OR h.reason NOT LIKE 'REVERTIDO:%')")
       .getRawOne();
 
     const newAffiliations = Number(stats?.new_affiliations ?? 0);

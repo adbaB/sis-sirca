@@ -19,6 +19,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { generateContractCode } from '../helpers/contract-code-generator.helper';
+import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 import { validateContractAffiliates } from '../helpers/contract-validator.helper';
 import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractPdfService } from './contract-pdf.service';
@@ -138,32 +139,13 @@ export class ContractCreationService {
         }
 
         // Check if person belongs to an INACTIVE contract → CAMBIO_CONTRATO & softRemove from it
-        const inactiveAffiliations = await cpRepo.find({
-          where: {
-            person: { id: person.id },
-            contract: { status: ContractStatus.INACTIVE },
-          },
-          relations: ['contract', 'person', 'person.plan'],
-        });
-
-        for (const oldCp of inactiveAffiliations) {
-          await historyRepo.save(
-            historyRepo.create({
-              contract: oldCp.contract,
-              person,
-              plan: oldCp.person?.plan ?? null,
-              action: AffiliationAction.CAMBIO_CONTRATO,
-              amount: Number(oldCp.person?.plan?.amount ?? 0),
-              reason: `Migrado al contrato ${savedContract.code}`,
-            }),
-          );
-
-          await cpRepo.softRemove(oldCp);
-        }
-
-        if (inactiveAffiliations.length > 0) {
-          const oldCodes = inactiveAffiliations.map((cp) => cp.contract.code).join(', ');
-          affiliationReason = `Proveniente del contrato ${oldCodes}`;
+        const { affiliationReason: migrationReason } = await migrateFromInactiveContracts(
+          manager,
+          person,
+          savedContract.code,
+        );
+        if (migrationReason) {
+          affiliationReason = migrationReason;
         }
 
         // Update person details

@@ -212,6 +212,11 @@ describe('ContractLifecycleService', () => {
       const mockLockedContract = { ...mockContract, status: ContractStatus.INACTIVE };
       const mockHistoryList = [{ id: 'h-1', actionDate: new Date(), createdAt: new Date() }];
 
+      const mockHistoryRepo = {
+        find: jest.fn().mockResolvedValue(mockHistoryList),
+        save: jest.fn().mockImplementation(async (records) => records),
+      };
+
       mockManager.getRepository = jest.fn().mockImplementation((target) => {
         if (target === Contract) {
           return {
@@ -220,10 +225,7 @@ describe('ContractLifecycleService', () => {
           };
         }
         if (target === AffiliationHistory) {
-          return {
-            find: jest.fn().mockResolvedValue(mockHistoryList),
-            remove: jest.fn().mockResolvedValue(true),
-          };
+          return mockHistoryRepo;
         }
         return {};
       });
@@ -231,6 +233,11 @@ describe('ContractLifecycleService', () => {
       const res = await service.activate('contract-1');
       expect(res.status).toBe(ContractStatus.ACTIVE);
       expect(res.inactivationReason).toBeNull();
+      expect(mockHistoryRepo.save).toHaveBeenCalledWith([
+        expect.objectContaining({
+          reason: expect.stringMatching(/^REVERTIDO:/),
+        }),
+      ]);
     });
   });
 

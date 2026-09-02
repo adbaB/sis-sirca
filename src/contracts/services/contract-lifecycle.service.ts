@@ -164,7 +164,8 @@ export class ContractLifecycleService {
   }
 
   /**
-   * Reactivates an inactive contract and purges disaffiliation records of the current month.
+   * Reactivates an inactive contract and marks same-month disaffiliation records as reverted.
+   * Reverted records are preserved for audit trail but excluded from affiliation statistics.
    */
   @Transactional()
   async activate(contractId: string): Promise<Contract> {
@@ -213,8 +214,12 @@ export class ContractLifecycleService {
       return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
     });
 
+    // Mark as reverted instead of hard-deleting to preserve audit trail
     if (sameMonthRecords.length > 0) {
-      await historyRepo.remove(sameMonthRecords);
+      for (const record of sameMonthRecords) {
+        record.reason = `REVERTIDO: ${record.reason ?? 'Contrato reactivado'}`;
+      }
+      await historyRepo.save(sameMonthRecords);
     }
 
     return lockedContract;

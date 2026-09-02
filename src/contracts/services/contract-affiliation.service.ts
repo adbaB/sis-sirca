@@ -16,6 +16,7 @@ import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
+import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 
 @Injectable()
 export class ContractAffiliationService {
@@ -130,27 +131,7 @@ export class ContractAffiliationService {
     }
 
     // 6. Verificar si proviene de un contrato INACTIVO -> registrar CAMBIO_CONTRATO y softRemove
-    const inactiveAffiliations = await cpRepo.find({
-      where: {
-        person: { id: person.id },
-        contract: { status: ContractStatus.INACTIVE },
-      },
-      relations: ['contract', 'person', 'person.plan', 'plan'],
-    });
-
-    for (const oldCp of inactiveAffiliations) {
-      await historyRepo.save(
-        historyRepo.create({
-          contract: oldCp.contract,
-          person,
-          plan: oldCp.plan ?? oldCp.person?.plan ?? null,
-          action: AffiliationAction.CAMBIO_CONTRATO,
-          amount: Number(oldCp.plan?.amount ?? oldCp.person?.plan?.amount ?? 0),
-          reason: `Migrado al contrato ${contract.code}`,
-        }),
-      );
-      await cpRepo.softRemove(oldCp);
-    }
+    await migrateFromInactiveContracts(manager, person, contract.code);
 
     // 7. Crear y guardar ContractPerson
     const contractPerson = cpRepo.create({
@@ -205,14 +186,22 @@ export class ContractAffiliationService {
    * soft deletes the junction record and triggers monthly amount recalculation.
    */
   @Transactional()
-  async removeAffiliate(contractPersonId: string): Promise<void> {
-    const contractPerson = await this.contractPersonsRepository.findOne({
+  async removeAffiliate(contractPersonId: string, contractId?: string): Promise<void> {
+    const qr = resolveQueryRunner(undefined, this.dataSource);
+    const manager = qr.manager;
+
+    const contractPerson = await manager.getRepository(ContractPerson).findOne({
       where: { id: contractPersonId },
       relations: ['contract', 'person', 'person.plan', 'plan'],
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!contractPerson) {
       throw new NotFoundException(`Contract person with ID "${contractPersonId}" not found`);
+    }
+
+    if (contractId && contractPerson.contract.id !== contractId) {
+      throw new BadRequestException('El afiliado no pertenece al contrato especificado.');
     }
 
     if (contractPerson.role === PersonRole.TITULAR) {
@@ -222,9 +211,6 @@ export class ContractAffiliationService {
     if (contractPerson.isBillingOwner) {
       throw new BadRequestException('Debe existir un responsable de facturación');
     }
-
-    const qr = resolveQueryRunner(undefined, this.dataSource);
-    const manager = qr.manager;
 
     const historyRepo = manager.getRepository(AffiliationHistory);
     const cpRepo = manager.getRepository(ContractPerson);
@@ -243,15 +229,15 @@ export class ContractAffiliationService {
       }),
     );
 
-    // 2. Soft delete (mantiene trazabilidad)
-    await cpRepo.softRemove(contractPerson);
-
-    // 3. Billing es responsable de limpiar la línea MENSUALIDAD de la factura activa
+    // 2. Billing es responsable de limpiar la línea MENSUALIDAD de la factura activa
     await this.invoiceService.removeAffiliateLineFromActiveInvoice(
       contractPerson.contract.id,
       contractPerson.person.id,
       manager,
     );
+
+    // 3. Soft delete (mantiene trazabilidad)
+    await cpRepo.softRemove(contractPerson);
 
     // 4. Recalcular el monto mensual
     await this.recalculateMonthlyAmount(contractPerson.contract.id, manager);
@@ -265,16 +251,18 @@ export class ContractAffiliationService {
   async setContractTitular(contractId: string, dto: SetContractTitularDto): Promise<void> {
     const { contractPersonId } = dto;
 
-    const target = await this.contractPersonsRepository.findOne({
+    const qr = resolveQueryRunner(undefined, this.dataSource);
+    const manager = qr.manager;
+    const cpRepo = manager.getRepository(ContractPerson);
+
+    const target = await cpRepo.findOne({
       where: { id: contractPersonId, contract: { id: contractId } },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!target) {
       throw new NotFoundException('Afiliado no encontrado en este contrato.');
     }
-
-    const qr = resolveQueryRunner(undefined, this.dataSource);
-    const manager = qr.manager;
 
     const isAlreadyTitular = target.role === PersonRole.TITULAR;
 
@@ -312,16 +300,17 @@ export class ContractAffiliationService {
   async setBillingOwner(contractId: string, dto: SetBillingOwnerDto): Promise<void> {
     const { contractPersonId } = dto;
 
-    const target = await this.contractPersonsRepository.findOne({
+    const qr = resolveQueryRunner(undefined, this.dataSource);
+    const manager = qr.manager;
+
+    const target = await manager.getRepository(ContractPerson).findOne({
       where: { id: contractPersonId, contract: { id: contractId } },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!target) {
       throw new NotFoundException('Afiliado no encontrado en este contrato.');
     }
-
-    const qr = resolveQueryRunner(undefined, this.dataSource);
-    const manager = qr.manager;
 
     // Desmarcar a todos los demás responsables de cobro en este contrato
     await manager.update(

@@ -5,6 +5,7 @@ import { PaginatedResult } from '../../common/interfaces/paginated-result.interf
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { Contract } from '../entities/contract.entity';
+import { ContractStage } from '../enums/contract-stage.enum';
 
 @Injectable()
 export class ContractQueryRepository {
@@ -177,23 +178,19 @@ export class ContractQueryRepository {
   ): void {
     if (!stage) return;
 
-    const billingMonthClause = targetBillingMonth
-      ? 'AND inv.billing_month = :targetBillingMonth'
-      : '';
+    const stageHandlers: Record<string, (qb: SelectQueryBuilder<Contract>, bmc: string) => void> = {
+      [ContractStage.REJECTED]: (qb, bmc) => this.applyRejectedFilter(qb, bmc),
+      [ContractStage.PARTIAL]: (qb, bmc) => this.applyPartialFilter(qb, bmc),
+      [ContractStage.PAID]: (qb, bmc) => this.applyPaidFilter(qb, bmc),
+      [ContractStage.PENDING]: (qb, bmc) => this.applyPendingFilter(qb, bmc),
+    };
 
-    switch (stage) {
-      case 'rejected':
-        this.applyRejectedFilter(qb, billingMonthClause);
-        break;
-      case 'partial':
-        this.applyPartialFilter(qb, billingMonthClause);
-        break;
-      case 'paid':
-        this.applyPaidFilter(qb, billingMonthClause);
-        break;
-      case 'pending':
-        this.applyPendingFilter(qb, billingMonthClause);
-        break;
+    const handler = stageHandlers[stage];
+    if (handler) {
+      const billingMonthClause = targetBillingMonth
+        ? 'AND inv.billing_month = :targetBillingMonth'
+        : '';
+      handler(qb, billingMonthClause);
     }
   }
 

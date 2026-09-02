@@ -98,6 +98,7 @@ describe('ContractStatisticsService', () => {
       const mockQb = {
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
         getRawOne: jest.fn().mockResolvedValue({
           new_affiliations: '10',
           disaffiliations: '2',
@@ -111,6 +112,10 @@ describe('ContractStatisticsService', () => {
       );
 
       const res = await service.getAffiliationStats(8, 2026, 'billing');
+
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        "(h.reason IS NULL OR h.reason NOT LIKE 'REVERTIDO:%')",
+      );
 
       expect(res.newAffiliations).toBe(10);
       expect(res.disaffiliations).toBe(2);

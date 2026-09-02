@@ -213,7 +213,10 @@ describe('ContractsService (Facade)', () => {
 
     it('removeAffiliate should delegate to affiliationService.removeAffiliate', async () => {
       await service.removeAffiliate('cp-1');
-      expect(affiliationService.removeAffiliate).toHaveBeenCalledWith('cp-1');
+      expect(affiliationService.removeAffiliate).toHaveBeenCalledWith('cp-1', undefined);
+
+      await service.removeAffiliate('cp-1', 'contract-1');
+      expect(affiliationService.removeAffiliate).toHaveBeenCalledWith('cp-1', 'contract-1');
     });
 
     it('setContractTitular should delegate to affiliationService.setContractTitular', async () => {

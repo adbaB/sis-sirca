@@ -95,8 +95,8 @@ export class ContractsService {
     return this.affiliationService.addBeneficiary(contractId, dto);
   }
 
-  async removeAffiliate(contractPersonId: string): Promise<void> {
-    return this.affiliationService.removeAffiliate(contractPersonId);
+  async removeAffiliate(contractPersonId: string, contractId?: string): Promise<void> {
+    return this.affiliationService.removeAffiliate(contractPersonId, contractId);
   }
 
   async setContractTitular(contractId: string, dto: SetContractTitularDto): Promise<void> {
