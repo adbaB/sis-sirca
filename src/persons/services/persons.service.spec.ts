@@ -87,6 +87,7 @@ describe('PersonsService', () => {
             find: jest.fn(),
             findOne: jest.fn(),
             softRemove: jest.fn(),
+            restore: jest.fn().mockResolvedValue({ generatedMaps: [], raw: [] }),
             merge: jest.fn().mockImplementation((entity, data) => Object.assign(entity, data)),
           },
         },
@@ -122,6 +123,7 @@ describe('PersonsService', () => {
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { identityCard: '123456', typeIdentityCard: TypeIdentityCard.V },
+        withDeleted: true,
       });
       expect(repository.create).toHaveBeenCalledWith({
         typeIdentityCard: TypeIdentityCard.V,
@@ -145,9 +147,37 @@ describe('PersonsService', () => {
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { identityCard: '123456', typeIdentityCard: TypeIdentityCard.V },
+        withDeleted: true,
       });
       expect(repository.save).not.toHaveBeenCalled();
       expect(result).toEqual(mockPerson);
+    });
+
+    it('should restore and update a soft-deleted person if already found by identityCard', async () => {
+      const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '123456',
+        name: 'John Doe Restored',
+      };
+
+      const softDeletedPerson: Person = {
+        ...mockPerson,
+        deletedAt: new Date('2026-01-01'),
+      };
+
+      repository.findOne.mockResolvedValue(softDeletedPerson);
+      repository.save.mockImplementation(async (p) => p as Person);
+
+      const result = await service.create(createPersonDto);
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { identityCard: '123456', typeIdentityCard: TypeIdentityCard.V },
+        withDeleted: true,
+      });
+      expect(repository.restore).toHaveBeenCalledWith('1');
+      expect(repository.save).toHaveBeenCalled();
+      expect(result.deletedAt).toBeNull();
+      expect(result.name).toBe('John Doe Restored');
     });
 
     it('should parse and normalize birthDate when provided', async () => {

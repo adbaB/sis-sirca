@@ -9,6 +9,7 @@ import { ContractLifecycleService } from '../services/contract-lifecycle.service
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { PersonStatus } from '../../persons/entities/person.entity';
+import { AffiliationAction } from '../enums/affiliation-action.enum';
 
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
@@ -112,7 +113,12 @@ describe('ContractLifecycleService', () => {
   describe('findByCode', () => {
     it('should find by code or legacyCode', async () => {
       contractsRepository.findOne.mockResolvedValue(mockContract);
-      const res = await service.findByCode('SIR-001-00001');
+      const res = await service.findByCode('  SIR-001-00001  ');
+      expect(contractsRepository.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: [{ code: 'SIR-001-00001' }, { legacyCode: 'SIR-001-00001' }],
+        }),
+      );
       expect(res).toEqual(mockContract);
     });
   });
@@ -255,9 +261,10 @@ describe('ContractLifecycleService', () => {
       await expect(service.activate('contract-1')).rejects.toThrow(NotFoundException);
     });
 
-    it('should activate inactive contract in a transaction', async () => {
+    it('should revert same-month disaffiliations when activated in the same month', async () => {
       const mockLockedContract = { ...mockContract, status: ContractStatus.INACTIVE };
-      const mockHistoryList = [{ id: 'h-1', actionDate: new Date(), createdAt: new Date() }];
+      const now = new Date();
+      const mockHistoryList = [{ id: 'h-1', actionDate: now, createdAt: now }];
 
       const mockHistoryRepo = {
         find: jest.fn().mockResolvedValue(mockHistoryList),
@@ -284,6 +291,59 @@ describe('ContractLifecycleService', () => {
       const savedRecords = mockHistoryRepo.save.mock.calls[0][0];
       expect(savedRecords[0].isReverted).toBe(true);
       expect(savedRecords[0].revertedAt).toBeInstanceOf(Date);
+    });
+
+    it('should not revert past-month disaffiliations and record new AFILIACION when activated in a later month', async () => {
+      const mockLockedContract = { ...mockContract, status: ContractStatus.INACTIVE };
+      const pastDate = new Date('2025-01-15');
+      const mockHistoryList = [
+        { id: 'h-old', actionDate: pastDate, createdAt: pastDate, isReverted: false },
+      ];
+
+      const mockHistoryRepo = {
+        find: jest.fn().mockResolvedValue(mockHistoryList),
+        create: jest.fn().mockImplementation((dto) => dto),
+        save: jest.fn().mockImplementation(async (records) => records),
+      };
+
+      const mockActiveCp = {
+        contract: mockLockedContract,
+        person: { id: 'person-1', name: 'Pedro' },
+        plan: { id: 'plan-1', amount: 30 },
+        role: PersonRole.AFILIADO,
+      };
+
+      const mockCpRepo = {
+        find: jest.fn().mockResolvedValue([mockActiveCp]),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === AffiliationHistory) {
+          return mockHistoryRepo;
+        }
+        if (target === ContractPerson) {
+          return mockCpRepo;
+        }
+        return {};
+      });
+
+      const res = await service.activate('contract-1');
+      expect(res.status).toBe(ContractStatus.ACTIVE);
+      expect(mockHistoryList[0].isReverted).toBe(false);
+      expect(mockHistoryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AffiliationAction.AFILIACION,
+          reason: 'Reactivación de contrato',
+          amount: 30,
+        }),
+      );
+      expect(mockHistoryRepo.save).toHaveBeenCalled();
     });
   });
 

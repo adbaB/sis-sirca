@@ -131,7 +131,11 @@ export class ContractAffiliationService {
     }
 
     // 6. Verificar si proviene de un contrato INACTIVO -> registrar CAMBIO_CONTRATO y softRemove
-    await migrateFromInactiveContracts(manager, person, contract.code);
+    const { affiliationReason } = await migrateFromInactiveContracts(
+      manager,
+      person,
+      contract.code,
+    );
 
     // 7. Crear y guardar ContractPerson
     const contractPerson = cpRepo.create({
@@ -164,6 +168,7 @@ export class ContractAffiliationService {
           plan,
           action: AffiliationAction.AFILIACION,
           amount: Number(plan.amount ?? 0),
+          reason: affiliationReason ?? undefined,
         }),
       );
 

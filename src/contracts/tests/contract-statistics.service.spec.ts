@@ -119,6 +119,15 @@ describe('ContractStatisticsService', () => {
         BadRequestException,
       );
     });
+
+    it('should throw BadRequestException when month or year are fractional', async () => {
+      await expect(service.getPipelineStats(undefined, 1.5, 2026)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getPipelineStats(undefined, 8, 2026.5)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
   });
 
   describe('getAffiliationStats', () => {

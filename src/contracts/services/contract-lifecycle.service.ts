@@ -211,13 +211,42 @@ export class ContractLifecycleService {
       return dt.year === currentYear && dt.month === currentMonth;
     });
 
-    // Mark as reverted instead of hard-deleting to preserve audit trail
     if (sameMonthRecords.length > 0) {
+      // Reversión dentro del mismo mes: se anulan las desafiliaciones del período actual
       for (const record of sameMonthRecords) {
         record.isReverted = true;
         record.revertedAt = caracasNow.toJSDate();
       }
       await historyRepo.save(sameMonthRecords);
+    } else {
+      // Reactivación en un mes posterior (ej. desafiliado en mes 9 y reactivado en mes 10):
+      // NO se revierte la desafiliación del mes 9 (se mantiene el histórico cerrado).
+      // En cambio, cuenta como una AFILIACION en el mes actual para cada beneficiario activo.
+      const cpRepo = manager.getRepository(ContractPerson);
+      const activePersons = await cpRepo.find({
+        where: {
+          contract: { id: contractId },
+          role: PersonRole.AFILIADO,
+          person: { status: PersonStatus.ACTIVE },
+        },
+        relations: ['person', 'person.plan', 'plan'],
+      });
+
+      if (activePersons.length > 0) {
+        const newAffiliations = activePersons.map((cp) => {
+          const effectivePlan = cp.plan ?? cp.person?.plan ?? null;
+          return historyRepo.create({
+            contract: lockedContract,
+            person: cp.person,
+            plan: effectivePlan,
+            action: AffiliationAction.AFILIACION,
+            amount: Number(effectivePlan?.amount ?? 0),
+            reason: 'Reactivación de contrato',
+            actionDate: caracasNow.toJSDate(),
+          });
+        });
+        await historyRepo.save(newAffiliations);
+      }
     }
 
     return lockedContract;

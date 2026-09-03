@@ -2,6 +2,7 @@ import { EntityManager } from 'typeorm';
 import { Person } from '../../persons/entities/person.entity';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson } from '../entities/contract-person.entity';
+import { ContractStatus } from '../entities/contract.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 
@@ -35,6 +36,13 @@ describe('migrateFromInactiveContracts', () => {
     const person = { id: 'person-1', name: 'Carlos' } as Person;
     const result = await migrateFromInactiveContracts(mockManager, person, 'SIR-001-00002');
 
+    expect(mockCpRepo.find).toHaveBeenCalledWith({
+      where: {
+        person: { id: 'person-1' },
+        contract: { status: ContractStatus.INACTIVE },
+      },
+      relations: ['contract', 'person', 'person.plan', 'plan'],
+    });
     expect(result.affiliationReason).toBeNull();
     expect(mockHistoryRepo.save).not.toHaveBeenCalled();
     expect(mockCpRepo.softRemove).not.toHaveBeenCalled();

@@ -44,10 +44,10 @@ export class ContractStatisticsService {
     if (hasMonth && hasYear) {
       const monthNum = Number(month);
       const yearNum = Number(year);
-      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        throw new BadRequestException('El parámetro month debe ser un número entre 1 y 12.');
+      if (isNaN(monthNum) || !Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) {
+        throw new BadRequestException('El parámetro month debe ser un número entero entre 1 y 12.');
       }
-      if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2100) {
+      if (isNaN(yearNum) || !Number.isInteger(yearNum) || yearNum < 1900 || yearNum > 2100) {
         throw new BadRequestException(
           'El parámetro year debe ser un año válido entre 1900 y 2100.',
         );

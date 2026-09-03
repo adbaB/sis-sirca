@@ -56,9 +56,16 @@ export class PersonsService {
       createPersonDto.identityCard,
       createPersonDto.typeIdentityCard,
       manager,
+      true,
     );
 
     if (existingPerson) {
+      if (existingPerson.deletedAt) {
+        await repo.restore(existingPerson.id);
+        existingPerson.deletedAt = null as unknown as Date;
+        repo.merge(existingPerson, extractPersonData(createPersonDto));
+        return repo.save(existingPerson);
+      }
       return existingPerson;
     }
 
@@ -75,10 +82,12 @@ export class PersonsService {
     identityCard: string,
     typeIdentityCard: TypeIdentityCard,
     manager?: EntityManager,
+    withDeleted = false,
   ): Promise<Person | null> {
     const repo = manager ? manager.getRepository(Person) : this.personsRepository;
     return repo.findOne({
       where: { identityCard, typeIdentityCard },
+      ...(withDeleted ? { withDeleted: true } : {}),
     });
   }
 

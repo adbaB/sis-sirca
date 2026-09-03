@@ -12,6 +12,7 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
+import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
 
 describe('ContractAffiliationService', () => {
@@ -186,6 +187,55 @@ describe('ContractAffiliationService', () => {
         mockCreated,
         mockPlan,
         mockManager,
+      );
+    });
+
+    it('should propagate affiliationReason from migrateFromInactiveContracts to AffiliationHistory', async () => {
+      const mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue(mockContract),
+        update: jest.fn().mockResolvedValue(true),
+      };
+      const inactiveCp = {
+        id: 'cp-inactive',
+        contract: { id: 'c-inactive', code: 'SIR-001-00000', status: ContractStatus.INACTIVE },
+        person: mockCreated,
+        plan: mockPlan,
+      };
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        find: jest.fn().mockImplementation(async (opts) => {
+          if (opts?.where?.contract?.status === ContractStatus.INACTIVE) {
+            return [inactiveCp];
+          }
+          return [];
+        }),
+        create: jest.fn().mockImplementation((val) => ({ id: 'cp-new', ...val })),
+        save: jest.fn().mockImplementation(async (val) => val),
+        softRemove: jest.fn().mockResolvedValue(true),
+      };
+      const mockHistoryRepo = {
+        create: jest.fn().mockImplementation((val) => val),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        if (entity === AffiliationHistory) return mockHistoryRepo;
+        return {};
+      });
+
+      plansService.findOne.mockResolvedValue(mockPlan as unknown as Plan);
+      personsService.findByIdentityCard.mockResolvedValue(null);
+      personsService.create.mockResolvedValue(mockCreated);
+
+      await service.addBeneficiary('contract-1', dto);
+
+      expect(mockHistoryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AffiliationAction.AFILIACION,
+          reason: 'Proveniente del contrato SIR-001-00000',
+        }),
       );
     });
   });
