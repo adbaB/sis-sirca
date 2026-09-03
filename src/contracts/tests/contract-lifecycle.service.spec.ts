@@ -8,6 +8,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractLifecycleService } from '../services/contract-lifecycle.service';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { PersonStatus } from '../../persons/entities/person.entity';
 
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
@@ -142,9 +143,16 @@ describe('ContractLifecycleService', () => {
 
   describe('inactivate', () => {
     it('should throw if already inactive', async () => {
-      contractsRepository.findOne.mockResolvedValue({
-        ...mockContract,
-        status: ContractStatus.INACTIVE,
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue({
+              ...mockContract,
+              status: ContractStatus.INACTIVE,
+            }),
+          };
+        }
+        return {};
       });
 
       await expect(service.inactivate('contract-1', { reason: 'Mora' })).rejects.toThrow(
@@ -152,9 +160,22 @@ describe('ContractLifecycleService', () => {
       );
     });
 
-    it('should inactivate active contract in a transaction', async () => {
-      contractsRepository.findOne.mockResolvedValue({ ...mockContract });
+    it('should throw NotFoundException if contract not found', async () => {
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+          };
+        }
+        return {};
+      });
 
+      await expect(service.inactivate('contract-1', { reason: 'Mora' })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should inactivate active contract in a transaction', async () => {
       const mockLockedContract = { ...mockContract };
       const mockActivePersons = [
         {
@@ -163,6 +184,8 @@ describe('ContractLifecycleService', () => {
           person: { id: 'p-1', name: 'Pedro', plan: { amount: 50 } },
         },
       ];
+
+      const mockCpFind = jest.fn().mockResolvedValue(mockActivePersons);
 
       mockManager.getRepository = jest.fn().mockImplementation((target) => {
         if (target === Contract) {
@@ -173,7 +196,7 @@ describe('ContractLifecycleService', () => {
         }
         if (target === ContractPerson) {
           return {
-            find: jest.fn().mockResolvedValue(mockActivePersons),
+            find: mockCpFind,
           };
         }
         if (target === AffiliationHistory) {
@@ -190,25 +213,49 @@ describe('ContractLifecycleService', () => {
 
       expect(res.status).toBe(ContractStatus.INACTIVE);
       expect(res.inactivationReason).toBe('Falta de pago');
+      expect(mockCpFind).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            contract: { id: 'contract-1' },
+            role: PersonRole.AFILIADO,
+            person: { status: PersonStatus.ACTIVE },
+          },
+        }),
+      );
     });
   });
 
   describe('activate', () => {
     it('should throw if already active', async () => {
-      contractsRepository.findOne.mockResolvedValue({
-        ...mockContract,
-        status: ContractStatus.ACTIVE,
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue({
+              ...mockContract,
+              status: ContractStatus.ACTIVE,
+            }),
+          };
+        }
+        return {};
       });
 
       await expect(service.activate('contract-1')).rejects.toThrow(BadRequestException);
     });
 
-    it('should activate inactive contract in a transaction', async () => {
-      contractsRepository.findOne.mockResolvedValue({
-        ...mockContract,
-        status: ContractStatus.INACTIVE,
+    it('should throw NotFoundException if contract not found on activate', async () => {
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+          };
+        }
+        return {};
       });
 
+      await expect(service.activate('contract-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should activate inactive contract in a transaction', async () => {
       const mockLockedContract = { ...mockContract, status: ContractStatus.INACTIVE };
       const mockHistoryList = [{ id: 'h-1', actionDate: new Date(), createdAt: new Date() }];
 
@@ -233,11 +280,10 @@ describe('ContractLifecycleService', () => {
       const res = await service.activate('contract-1');
       expect(res.status).toBe(ContractStatus.ACTIVE);
       expect(res.inactivationReason).toBeNull();
-      expect(mockHistoryRepo.save).toHaveBeenCalledWith([
-        expect.objectContaining({
-          reason: expect.stringMatching(/^REVERTIDO:/),
-        }),
-      ]);
+      expect(mockHistoryRepo.save).toHaveBeenCalled();
+      const savedRecords = mockHistoryRepo.save.mock.calls[0][0];
+      expect(savedRecords[0].isReverted).toBe(true);
+      expect(savedRecords[0].revertedAt).toBeInstanceOf(Date);
     });
   });
 

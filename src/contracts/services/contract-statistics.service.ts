@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DateTime } from 'luxon';
 import { Repository } from 'typeorm';
@@ -29,9 +29,31 @@ export class ContractStatisticsService {
    */
   async getPipelineStats(
     advisorId?: string,
-    month?: string,
-    year?: string,
+    month?: string | number,
+    year?: string | number,
   ): Promise<PipelineStatsResult> {
+    const hasMonth = month !== undefined && month !== null && month !== '';
+    const hasYear = year !== undefined && year !== null && year !== '';
+
+    if ((hasMonth && !hasYear) || (!hasMonth && hasYear)) {
+      throw new BadRequestException(
+        'Los parámetros month y year deben proporcionarse juntos para filtrar por período.',
+      );
+    }
+
+    if (hasMonth && hasYear) {
+      const monthNum = Number(month);
+      const yearNum = Number(year);
+      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+        throw new BadRequestException('El parámetro month debe ser un número entre 1 y 12.');
+      }
+      if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2100) {
+        throw new BadRequestException(
+          'El parámetro year debe ser un año válido entre 1900 y 2100.',
+        );
+      }
+    }
+
     const targetBillingMonth = this.contractQueryRepo.buildTargetBillingMonth({ month, year });
 
     const contracts = await this.contractQueryRepo.findContractsForPipeline(
@@ -87,7 +109,7 @@ export class ContractStatisticsService {
         `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN h.amount ELSE 0 END) AS revenue_lost`,
       ])
       .where('h.action_date BETWEEN :startDateStr AND :endDateStr', { startDateStr, endDateStr })
-      .andWhere("(h.reason IS NULL OR h.reason NOT LIKE 'REVERTIDO:%')")
+      .andWhere('h.is_reverted = false')
       .getRawOne();
 
     const newAffiliations = Number(stats?.new_affiliations ?? 0);

@@ -15,6 +15,7 @@ import { Person } from '../../../persons/entities/person.entity';
 import { Plan } from '../../../plans/entities/plan.entity';
 import { Payment, PaymentStatus } from '../../payments/entities/payment.entity';
 import { Surplus, SurplusStatus } from '../../payments/entities/surplus.entity';
+import { Contract } from '../../../contracts/entities/contract.entity';
 
 /**
  * Servicio responsable de la gestión de líneas de factura.
@@ -190,7 +191,7 @@ export class InvoiceLineService {
         billingMonth,
         status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
       },
-      relations: ['contract'],
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!invoice) return;
@@ -251,7 +252,7 @@ export class InvoiceLineService {
           date: getCaracasTodayJSDate(),
           payment: lastPayment,
           invoice: null,
-          contract: invoice.contract,
+          contract: { id: contractId } as Contract,
           status: SurplusStatus.PENDING,
         }),
       );
@@ -307,6 +308,7 @@ export class InvoiceLineService {
         billingMonth,
         status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
       },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!invoice) return;
@@ -375,6 +377,7 @@ export class InvoiceLineService {
         billingMonth,
         status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.PAID]),
       },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!invoice) return;

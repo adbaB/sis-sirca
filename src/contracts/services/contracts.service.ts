@@ -123,8 +123,8 @@ export class ContractsService {
   // ── 6. Statistics & Analytics ─────────────────────────────────────────────
   async getPipelineStats(
     advisorId?: string,
-    month?: string,
-    year?: string,
+    month?: string | number,
+    year?: string | number,
   ): Promise<PipelineStatsResult> {
     return this.statisticsService.getPipelineStats(advisorId, month, year);
   }

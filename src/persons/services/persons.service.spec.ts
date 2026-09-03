@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { CreatePersonDto } from '../dto/create-person.dto';
@@ -9,9 +9,30 @@ import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, PersonStatus, TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from './persons.service';
 
+interface MockManager {
+  getRepository: jest.Mock;
+}
+
+interface MockQueryRunner {
+  isTransactionActive: boolean;
+  connect: jest.Mock;
+  startTransaction: jest.Mock;
+  commitTransaction: jest.Mock;
+  rollbackTransaction: jest.Mock;
+  release: jest.Mock;
+  manager: MockManager;
+}
+
+interface MockDataSource {
+  createQueryRunner: jest.Mock;
+}
+
 describe('PersonsService', () => {
   let service: PersonsService;
   let repository: jest.Mocked<Repository<Person>>;
+  let mockManager: MockManager;
+  let mockQr: MockQueryRunner;
+  let mockDataSource: MockDataSource;
 
   const mockPerson: Person = {
     id: '1',
@@ -31,6 +52,30 @@ describe('PersonsService', () => {
   const PERSONS_REPOSITORY_TOKEN = getRepositoryToken(Person);
 
   beforeEach(async () => {
+    mockManager = {
+      getRepository: jest.fn(),
+    };
+
+    mockQr = {
+      isTransactionActive: false,
+      connect: jest.fn().mockResolvedValue(undefined),
+      startTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = true;
+      }),
+      commitTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = false;
+      }),
+      rollbackTransaction: jest.fn().mockImplementation(async () => {
+        mockQr.isTransactionActive = false;
+      }),
+      release: jest.fn().mockResolvedValue(undefined),
+      manager: mockManager,
+    };
+
+    mockDataSource = {
+      createQueryRunner: jest.fn().mockReturnValue(mockQr),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PersonsService,
@@ -45,11 +90,16 @@ describe('PersonsService', () => {
             merge: jest.fn().mockImplementation((entity, data) => Object.assign(entity, data)),
           },
         },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
       ],
     }).compile();
 
     service = module.get<PersonsService>(PersonsService);
     repository = module.get(PERSONS_REPOSITORY_TOKEN);
+    mockManager.getRepository.mockReturnValue(repository);
   });
 
   it('should be defined', () => {
@@ -62,7 +112,6 @@ describe('PersonsService', () => {
         typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
-        planId: 'plan-1',
       };
 
       repository.findOne.mockResolvedValue(null);
@@ -88,7 +137,6 @@ describe('PersonsService', () => {
         typeIdentityCard: TypeIdentityCard.V,
         identityCard: '123456',
         name: 'John Doe',
-        planId: 'plan-1',
       };
 
       repository.findOne.mockResolvedValue(mockPerson);
@@ -100,6 +148,25 @@ describe('PersonsService', () => {
       });
       expect(repository.save).not.toHaveBeenCalled();
       expect(result).toEqual(mockPerson);
+    });
+
+    it('should parse and normalize birthDate when provided', async () => {
+      const createPersonDto: CreatePersonDto = {
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '123456',
+        name: 'John Doe',
+        birthDate: '1990-01-01',
+      };
+
+      repository.findOne.mockResolvedValue(null);
+      repository.create.mockReturnValue(mockPerson);
+      repository.save.mockResolvedValue(mockPerson);
+
+      await service.create(createPersonDto);
+
+      expect(repository.create).toHaveBeenCalled();
+      const createdArg = repository.create.mock.calls[0][0];
+      expect(createdArg.birthDate).toBeInstanceOf(Date);
     });
   });
 
@@ -159,7 +226,7 @@ describe('PersonsService', () => {
   });
 
   describe('bulkUpdate', () => {
-    it('should update each person in array', async () => {
+    it('should update each person in array using active transaction manager', async () => {
       repository.findOne.mockResolvedValue(mockPerson);
       repository.save.mockImplementation(async (entity) => entity as Person);
 
@@ -168,7 +235,31 @@ describe('PersonsService', () => {
       };
 
       await service.bulkUpdate(bulkDto);
+
+      expect(mockQr.startTransaction).toHaveBeenCalled();
+      expect(mockManager.getRepository).toHaveBeenCalledWith(Person);
       expect(repository.save).toHaveBeenCalled();
+      expect(mockQr.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('should rollback transaction if an update fails in the loop', async () => {
+      repository.findOne
+        .mockResolvedValueOnce(mockPerson) // findOne('1')
+        .mockResolvedValueOnce(mockPerson) // findOne('2')
+        .mockResolvedValueOnce({ id: '99', identityCard: '999999' } as Person); // duplicate lookup for '2'
+
+      const bulkDto: BulkUpdatePersonsDto = {
+        persons: [
+          { id: '1', name: 'Updated First' },
+          { id: '2', identityCard: '999999' },
+        ],
+      };
+
+      await expect(service.bulkUpdate(bulkDto)).rejects.toThrow(BadRequestException);
+
+      expect(mockQr.startTransaction).toHaveBeenCalled();
+      expect(mockQr.rollbackTransaction).toHaveBeenCalled();
+      expect(mockQr.commitTransaction).not.toHaveBeenCalled();
     });
   });
 

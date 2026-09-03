@@ -13,6 +13,7 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
+import { PersonStatus } from '../../persons/entities/person.entity';
 
 @Injectable()
 export class ContractLifecycleService {
@@ -108,12 +109,6 @@ export class ContractLifecycleService {
    */
   @Transactional()
   async inactivate(contractId: string, dto: InactivateContractDto): Promise<Contract> {
-    const contract = await this.findOne(contractId);
-
-    if (contract.status === ContractStatus.INACTIVE) {
-      throw new BadRequestException('El contrato ya se encuentra inactivo.');
-    }
-
     const qr = resolveQueryRunner(undefined, this.dataSource);
     const manager = qr.manager;
 
@@ -140,11 +135,12 @@ export class ContractLifecycleService {
     lockedContract.inactivationReason = dto.reason;
     await contractRepo.save(lockedContract);
 
-    // Record DESAFILIACION for each active person (only AFILIADOs)
+    // Record DESAFILIACION for each active person (only AFILIADOs with status ACTIVE)
     const activePersons = await cpRepo.find({
       where: {
         contract: { id: contractId },
         role: PersonRole.AFILIADO,
+        person: { status: PersonStatus.ACTIVE },
       },
       relations: ['person', 'person.plan', 'plan'],
     });
@@ -174,12 +170,6 @@ export class ContractLifecycleService {
    */
   @Transactional()
   async activate(contractId: string): Promise<Contract> {
-    const contract = await this.findOne(contractId);
-
-    if (contract.status === ContractStatus.ACTIVE) {
-      throw new BadRequestException('El contrato ya se encuentra activo.');
-    }
-
     const qr = resolveQueryRunner(undefined, this.dataSource);
     const manager = qr.manager;
 
@@ -207,6 +197,7 @@ export class ContractLifecycleService {
       where: {
         contract: { id: contractId },
         action: AffiliationAction.DESAFILIACION,
+        isReverted: false,
       },
     });
 
@@ -223,7 +214,8 @@ export class ContractLifecycleService {
     // Mark as reverted instead of hard-deleting to preserve audit trail
     if (sameMonthRecords.length > 0) {
       for (const record of sameMonthRecords) {
-        record.reason = `REVERTIDO: ${record.reason ?? 'Contrato reactivado'}`;
+        record.isReverted = true;
+        record.revertedAt = caracasNow.toJSDate();
       }
       await historyRepo.save(sameMonthRecords);
     }

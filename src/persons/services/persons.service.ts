@@ -1,17 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
+import { parseBirthDate } from '../../common/utils/date.util';
+import { Transactional } from '../../common/decorators/transactional.decorator';
+import { resolveQueryRunner } from '../../common/context/request-context';
 
-const PERSON_FIELDS: (keyof Person)[] = [
+const PERSON_FIELDS: (keyof Omit<CreatePersonDto, 'birthDate'> & keyof Person)[] = [
   'name',
   'typeIdentityCard',
   'identityCard',
-  'birthDate',
   'gender',
   'status',
   'phone',
@@ -34,6 +36,9 @@ function extractPersonData(dto: Partial<CreatePersonDto>): Partial<Person> {
       (data as Record<string, unknown>)[key] = dto[key];
     }
   }
+  if (dto.birthDate !== undefined) {
+    data.birthDate = parseBirthDate(dto.birthDate);
+  }
   return data;
 }
 
@@ -42,37 +47,44 @@ export class PersonsService {
   constructor(
     @InjectRepository(Person)
     private readonly personsRepository: Repository<Person>,
+    private readonly dataSource: DataSource,
   ) {}
 
-  async create(createPersonDto: CreatePersonDto): Promise<Person> {
+  async create(createPersonDto: CreatePersonDto, manager?: EntityManager): Promise<Person> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
     const existingPerson = await this.findByIdentityCard(
       createPersonDto.identityCard,
       createPersonDto.typeIdentityCard,
+      manager,
     );
 
     if (existingPerson) {
       return existingPerson;
     }
 
-    const newPerson = this.personsRepository.create(extractPersonData(createPersonDto));
-    return this.personsRepository.save(newPerson);
+    const newPerson = repo.create(extractPersonData(createPersonDto));
+    return repo.save(newPerson);
   }
 
-  async findAll(): Promise<Person[]> {
-    return this.personsRepository.find();
+  async findAll(manager?: EntityManager): Promise<Person[]> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    return repo.find();
   }
 
   async findByIdentityCard(
     identityCard: string,
     typeIdentityCard: TypeIdentityCard,
+    manager?: EntityManager,
   ): Promise<Person | null> {
-    return this.personsRepository.findOne({
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    return repo.findOne({
       where: { identityCard, typeIdentityCard },
     });
   }
 
-  async findOne(id: string): Promise<Person> {
-    const person = await this.personsRepository.findOne({
+  async findOne(id: string, manager?: EntityManager): Promise<Person> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    const person = await repo.findOne({
       where: { id },
     });
     if (!person) {
@@ -81,8 +93,13 @@ export class PersonsService {
     return person;
   }
 
-  async update(id: string, updatePersonDto: UpdatePersonDto): Promise<Person> {
-    const person = await this.findOne(id);
+  async update(
+    id: string,
+    updatePersonDto: UpdatePersonDto,
+    manager?: EntityManager,
+  ): Promise<Person> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    const person = await this.findOne(id, manager);
 
     const targetIdentityCard = updatePersonDto.identityCard ?? person.identityCard;
     const targetTypeIdentityCard = updatePersonDto.typeIdentityCard ?? person.typeIdentityCard;
@@ -91,7 +108,7 @@ export class PersonsService {
       targetIdentityCard !== person.identityCard ||
       targetTypeIdentityCard !== person.typeIdentityCard
     ) {
-      const existingPerson = await this.personsRepository.findOne({
+      const existingPerson = await repo.findOne({
         where: { identityCard: targetIdentityCard, typeIdentityCard: targetTypeIdentityCard },
         withDeleted: true,
       });
@@ -103,19 +120,24 @@ export class PersonsService {
       }
     }
 
-    this.personsRepository.merge(person, extractPersonData(updatePersonDto));
-    return this.personsRepository.save(person);
+    repo.merge(person, extractPersonData(updatePersonDto));
+    return repo.save(person);
   }
 
+  @Transactional()
   async bulkUpdate(bulkUpdatePersonsDto: BulkUpdatePersonsDto): Promise<void> {
+    const qr = resolveQueryRunner(undefined, this.dataSource);
+    const manager = qr.manager;
+
     for (const personData of bulkUpdatePersonsDto.persons) {
       const { id, ...updateData } = personData;
-      await this.update(id, updateData);
+      await this.update(id, updateData, manager);
     }
   }
 
-  async remove(id: string): Promise<void> {
-    const person = await this.findOne(id);
-    await this.personsRepository.softRemove(person);
+  async remove(id: string, manager?: EntityManager): Promise<void> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    const person = await this.findOne(id, manager);
+    await repo.softRemove(person);
   }
 }

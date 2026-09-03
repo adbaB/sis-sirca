@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
@@ -91,6 +92,33 @@ describe('ContractStatisticsService', () => {
       expect(res.stats.totalPending).toBe(75);
       expect(res.counts.pending).toBe(1);
     });
+
+    it('should throw BadRequestException when month is provided without year', async () => {
+      await expect(service.getPipelineStats(undefined, '08', undefined)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException when year is provided without month', async () => {
+      await expect(service.getPipelineStats(undefined, undefined, '2026')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException when month is out of range', async () => {
+      await expect(service.getPipelineStats(undefined, '13', '2026')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getPipelineStats(undefined, '0', '2026')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException when year is out of range', async () => {
+      await expect(service.getPipelineStats(undefined, '08', '1800')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
   });
 
   describe('getAffiliationStats', () => {
@@ -113,9 +141,7 @@ describe('ContractStatisticsService', () => {
 
       const res = await service.getAffiliationStats(8, 2026, 'billing');
 
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
-        "(h.reason IS NULL OR h.reason NOT LIKE 'REVERTIDO:%')",
-      );
+      expect(mockQb.andWhere).toHaveBeenCalledWith('h.is_reverted = false');
 
       expect(res.newAffiliations).toBe(10);
       expect(res.disaffiliations).toBe(2);

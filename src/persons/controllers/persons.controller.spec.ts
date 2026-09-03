@@ -55,8 +55,6 @@ describe('PersonsController', () => {
         name: 'John Doe',
         birthDate: '1990-01-01',
         gender: true,
-        planId: 'plan-1',
-        contractId: 'contract-1',
       };
       jest.spyOn(service, 'create').mockResolvedValue(mockPerson);
 
