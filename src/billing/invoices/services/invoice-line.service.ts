@@ -15,6 +15,7 @@ import { Person } from '../../../persons/entities/person.entity';
 import { Plan } from '../../../plans/entities/plan.entity';
 import { Payment, PaymentStatus } from '../../payments/entities/payment.entity';
 import { Surplus, SurplusStatus } from '../../payments/entities/surplus.entity';
+import { Contract } from '../../../contracts/entities/contract.entity';
 
 /**
  * Servicio responsable de la gestión de líneas de factura.
@@ -190,7 +191,7 @@ export class InvoiceLineService {
         billingMonth,
         status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
       },
-      relations: ['contract'],
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!invoice) return;
@@ -251,7 +252,7 @@ export class InvoiceLineService {
           date: getCaracasTodayJSDate(),
           payment: lastPayment,
           invoice: null,
-          contract: invoice.contract,
+          contract: { id: contractId } as Contract,
           status: SurplusStatus.PENDING,
         }),
       );
@@ -307,6 +308,7 @@ export class InvoiceLineService {
         billingMonth,
         status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
       },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!invoice) return;
@@ -348,6 +350,77 @@ export class InvoiceLineService {
 
     this.logger.log(
       `[billing] Línea MENSUALIDAD actualizada (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,
+    );
+  }
+
+  /**
+   * Si ya existe una factura activa (PENDING, PARTIAL o PAID) para el mes en curso,
+   * agrega una línea INCLUSION para el afiliado incorporado recientemente,
+   * siempre que no cuente ya con una línea MENSUALIDAD.
+   */
+  async addAffiliateInclusionLineToActiveInvoice(
+    contractId: string,
+    person: Person,
+    plan: Plan,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const qr = getQueryRunnerSafe();
+    const activeManager = manager ?? qr?.manager ?? this.dataSource.manager;
+    const invoiceRepo = activeManager.getRepository(Invoice);
+    const invoiceLineRepo = activeManager.getRepository(InvoiceLine);
+
+    const billingMonth = getBillingMonth();
+
+    const invoice = await invoiceRepo.findOne({
+      where: {
+        contract: { id: contractId },
+        billingMonth,
+        status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.PAID]),
+      },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!invoice) return;
+
+    const existingLine = await invoiceLineRepo.findOne({
+      where: {
+        invoice: { id: invoice.id },
+        person: { id: person.id },
+        category: In([InvoiceLineCategory.MENSUALIDAD, InvoiceLineCategory.INCLUSION]),
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (existingLine) return;
+
+    const planAmount = Number(plan.amount ?? 0);
+    if (planAmount <= 0) return;
+
+    const line = invoiceLineRepo.create({
+      invoice,
+      category: InvoiceLineCategory.INCLUSION,
+      description: `Inclusión: ${person.name} - ${plan.name ?? 'Plan'}`,
+      amount: planAmount,
+      quantity: 1,
+      person,
+      plan,
+      isProjectable: false,
+    });
+
+    await invoiceLineRepo.save(line);
+
+    const baseAmount = await this.queryRepo.sumBaseLines(activeManager, invoice.id);
+    const additionalAmount = await this.queryRepo.sumAdditionalLines(activeManager, invoice.id);
+    invoice.baseAmount = baseAmount;
+    invoice.totalAmount = baseAmount + additionalAmount;
+
+    await invoiceRepo.save(invoice);
+
+    // Recalcular status y montos desde pagos reales
+    await this.calculationService.recalculateInvoicePaidAmount(invoice.id, activeManager);
+
+    this.logger.log(
+      `[billing] Línea INCLUSION agregada para afiliado ${person.name} ($${planAmount}) en factura ${invoice.id}`,
     );
   }
 }

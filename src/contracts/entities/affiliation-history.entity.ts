@@ -19,6 +19,7 @@ import { AffiliationAction } from '../enums/affiliation-action.enum';
 @Index('IDX_ah_contract', ['contract'])
 @Index('IDX_ah_plan', ['plan'])
 @Index('IDX_ah_action_date', ['actionDate'])
+@Index('IDX_ah_is_reverted', ['isReverted'])
 @Check('CHK_ah_action', "\"action\" IN ('AFILIACION', 'DESAFILIACION', 'CAMBIO_CONTRATO')")
 export class AffiliationHistory {
   @PrimaryGeneratedColumn('uuid')
@@ -44,6 +45,12 @@ export class AffiliationHistory {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   reason: string;
+
+  @Column({ type: 'boolean', name: 'is_reverted', default: false })
+  isReverted: boolean;
+
+  @Column({ type: 'timestamptz', name: 'reverted_at', nullable: true })
+  revertedAt?: Date | null;
 
   @Column({ type: 'uuid', name: 'performed_by', nullable: true })
   performedBy: string;

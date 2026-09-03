@@ -1,22 +1,23 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
   Query,
   Res,
-  NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { RequirePermissions } from '../../auth/decorators';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
-import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { GetAffiliationStatsDto } from '../dto/get-affiliation-stats.dto';
+import { GetPipelineStatsDto } from '../dto/get-pipeline-stats.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
@@ -40,32 +41,18 @@ export class ContractsController {
 
   @Get('pipeline-stats')
   @RequirePermissions('read:contracts', 'read:pipeline')
-  getPipelineStats(
-    @Query('advisorId') advisorId?: string,
-    @Query('month') month?: string,
-    @Query('year') year?: string,
-  ) {
-    return this.contractsService.getPipelineStats(advisorId, month, year);
+  getPipelineStats(@Query() query: GetPipelineStatsDto) {
+    return this.contractsService.getPipelineStats(query.advisorId, query.month, query.year);
   }
 
   @Get('affiliation-stats')
   @RequirePermissions('read:contracts')
-  getAffiliationStats(
-    @Query('month') month: string,
-    @Query('year') year: string,
-    @Query('mode') mode?: 'billing' | 'calendar',
-  ) {
-    const parsedMonth = Number(month);
-    const parsedYear = Number(year);
-
-    if (isNaN(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
-      throw new BadRequestException('El parámetro month debe ser un número entre 1 y 12.');
-    }
-    if (isNaN(parsedYear) || parsedYear < 1900 || parsedYear > 2100) {
-      throw new BadRequestException('El parámetro year debe ser un año de 4 dígitos válido.');
-    }
-
-    return this.contractsService.getAffiliationStats(parsedMonth, parsedYear, mode ?? 'billing');
+  getAffiliationStats(@Query() query: GetAffiliationStatsDto) {
+    return this.contractsService.getAffiliationStats(
+      query.month,
+      query.year,
+      query.mode ?? 'billing',
+    );
   }
 
   @Get(':id')
@@ -146,6 +133,6 @@ export class ContractsController {
     @Param('contractId') contractId: string,
     @Param('contractPersonId') contractPersonId: string,
   ) {
-    return this.contractsService.removeAffiliate(contractPersonId);
+    return this.contractsService.removeAffiliate(contractPersonId, contractId);
   }
 }

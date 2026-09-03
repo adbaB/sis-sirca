@@ -1,24 +1,23 @@
+import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
+  IsDateString,
+  IsEmail,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
+  IsOptional,
   IsString,
   IsUUID,
-  IsOptional,
-  IsArray,
+  Min,
   ValidateNested,
-  IsNumber,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonRole, Parentesco } from '../entities/contract-person.entity';
 import { HealthDeclarationDto } from './health-declaration.dto';
+import { TypeIdentityCard } from '../../persons/entities/person.entity';
 
-export class CreateBeneficiaryDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
-
+export class AffiliatePersonDto {
   @IsEnum(TypeIdentityCard)
   @IsNotEmpty()
   typeIdentityCard: TypeIdentityCard;
@@ -27,21 +26,30 @@ export class CreateBeneficiaryDto {
   @IsNotEmpty()
   identityCard: string;
 
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
-  planId: string;
+  name: string;
+
+  @IsDateString()
+  @IsOptional()
+  birthDate?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  gender?: boolean;
+
+  /** Obligatorio para AFILIADO, ignorado para TITULAR */
+  @IsUUID()
+  @IsOptional()
+  planId?: string;
 
   @IsEnum(PersonRole)
   @IsNotEmpty()
   role: PersonRole;
 
   @IsBoolean()
-  @IsNotEmpty()
-  isBillingOwner: boolean;
-
-  @IsUUID()
   @IsOptional()
-  contractId?: string;
+  isBillingOwner?: boolean;
 
   @IsEnum(Parentesco)
   @IsOptional()
@@ -55,7 +63,7 @@ export class CreateBeneficiaryDto {
   @IsOptional()
   alternatePhone?: string;
 
-  @IsString()
+  @IsEmail()
   @IsOptional()
   email?: string;
 
@@ -76,10 +84,12 @@ export class CreateBeneficiaryDto {
   postalCode?: string;
 
   @IsNumber()
+  @Min(0.01)
   @IsOptional()
   weight?: number;
 
   @IsNumber()
+  @Min(0.01)
   @IsOptional()
   height?: number;
 
