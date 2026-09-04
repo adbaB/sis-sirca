@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -19,15 +20,24 @@ import type { ContractPerson } from './contract-person.entity';
 export enum ContractStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
+  SUSPENDED = 'SUSPENDED',
 }
 
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 
 @Entity('contracts')
 @Index('IDX_contracts_status', ['status'])
+@Check('CHK_contracts_cutoff_day', '"cutoff_day" >= 1 AND "cutoff_day" <= 31')
 export class Contract {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({
+    type: 'int',
+    default: 5,
+    name: 'cutoff_day',
+  })
+  cutoffDay: number;
 
   @Column({
     type: 'decimal',

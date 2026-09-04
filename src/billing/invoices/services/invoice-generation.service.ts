@@ -14,7 +14,9 @@ import {
   getQueryRunner,
   registerPostCommitHook,
 } from '../../../common/context/request-context';
+import { DateTime } from 'luxon';
 import {
+  CARACAS_ZONE,
   getBillingMonth,
   getCaracasNow,
   getCaracasTodayJSDate,
@@ -75,7 +77,10 @@ export class InvoiceGenerationService {
       throw new NotFoundException(`Contrato con ID ${contractId} no encontrado`);
     }
 
-    if (preContract.status !== ContractStatus.ACTIVE) {
+    if (
+      preContract.status !== ContractStatus.ACTIVE &&
+      preContract.status !== ContractStatus.SUSPENDED
+    ) {
       throw new BadRequestException('El contrato no está activo');
     }
 
@@ -130,7 +135,32 @@ export class InvoiceGenerationService {
     });
 
     const now = getCaracasNow();
-    const dueDate = now.plus({ days: 5 }).toJSDate();
+    const [yearStr, monthStr] = billingMonth.split('-');
+    const billingYear = parseInt(yearStr, 10);
+    const billingMonthNum = parseInt(monthStr, 10);
+    const dtMonth = DateTime.fromObject(
+      { year: billingYear, month: billingMonthNum },
+      { zone: CARACAS_ZONE },
+    );
+    const daysInMonth = dtMonth.daysInMonth ?? 28;
+    const effectiveDay = Math.min(preContract.cutoffDay ?? 5, daysInMonth);
+    let calculatedDueDate = DateTime.fromObject(
+      {
+        year: billingYear,
+        month: billingMonthNum,
+        day: effectiveDay,
+        hour: 23,
+        minute: 59,
+        second: 59,
+      },
+      { zone: CARACAS_ZONE },
+    );
+
+    if (isAffiliation && calculatedDueDate < now) {
+      calculatedDueDate = now.plus({ days: 5 }).endOf('day');
+    }
+
+    const dueDate = calculatedDueDate.toJSDate();
 
     const retentionPercentage = Number(preContract.retentionPercentage || 0);
     const retentionAmount = totalAmount * (retentionPercentage / 100);

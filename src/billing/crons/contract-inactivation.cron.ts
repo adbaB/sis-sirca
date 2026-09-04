@@ -47,7 +47,7 @@ export class ContractInactivationCron {
     while (true) {
       const contracts = await this.contractRepository.find({
         where: {
-          status: ContractStatus.ACTIVE,
+          status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]),
           ...(lastId ? { id: MoreThan(lastId) } : {}),
         },
         relations: ['contractPersons', 'contractPersons.person'],

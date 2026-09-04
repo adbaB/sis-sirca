@@ -26,6 +26,7 @@ describe('ContractLifecycleService', () => {
     advisorCommission: 0,
     excludeFromNextBilling: false,
     affiliationDate: new Date('2026-08-01'),
+    cutoffDay: 5,
     inactivationReason: null as unknown as string,
     contractPersons: [],
     createdAt: new Date(),
@@ -259,6 +260,36 @@ describe('ContractLifecycleService', () => {
       });
 
       await expect(service.activate('contract-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should activate a SUSPENDED contract directly without modifying affiliation history', async () => {
+      const mockLockedContract = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        inactivationReason: 'Suspendido por falta de pago al corte',
+      };
+
+      const mockHistoryRepo = {
+        find: jest.fn(),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === AffiliationHistory) {
+          return mockHistoryRepo;
+        }
+        return {};
+      });
+
+      const res = await service.activate('contract-1');
+      expect(res.status).toBe(ContractStatus.ACTIVE);
+      expect(res.inactivationReason).toBeNull();
+      expect(mockHistoryRepo.find).not.toHaveBeenCalled();
     });
 
     it('should revert same-month disaffiliations when activated in the same month', async () => {

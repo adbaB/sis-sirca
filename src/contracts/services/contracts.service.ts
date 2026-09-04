@@ -2,13 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { Person } from '../../persons/entities/person.entity';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { ContractPerson } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
 import {
   AffiliationStatsMode,
@@ -93,6 +96,21 @@ export class ContractsService {
   // ── 4. Affiliations & Beneficiaries ───────────────────────────────────────
   async addBeneficiary(contractId: string, dto: CreateBeneficiaryDto): Promise<Person> {
     return this.affiliationService.addBeneficiary(contractId, dto);
+  }
+
+  async updateBeneficiary(
+    contractId: string,
+    contractPersonId: string,
+    dto: UpdateBeneficiaryDto,
+  ): Promise<ContractPerson> {
+    return this.affiliationService.updateBeneficiary(contractId, contractPersonId, dto);
+  }
+
+  async bulkUpdateBeneficiaries(
+    contractId: string,
+    dto: BulkUpdateBeneficiariesDto,
+  ): Promise<ContractPerson[]> {
+    return this.affiliationService.bulkUpdateBeneficiaries(contractId, dto);
   }
 
   async removeAffiliate(contractPersonId: string, contractId?: string): Promise<void> {

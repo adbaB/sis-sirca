@@ -34,6 +34,7 @@ describe('ContractCreationService', () => {
     advisorCommission: 0,
     excludeFromNextBilling: false,
     affiliationDate: new Date('2026-08-01'),
+    cutoffDay: 5,
     inactivationReason: null as unknown as string,
     contractPersons: [],
     createdAt: new Date(),

@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -50,6 +51,12 @@ export class CreateContractFullDto {
   @IsOptional()
   @IsBoolean()
   excludeFromNextBilling?: boolean;
+
+  @IsOptional()
+  @IsInt({ message: 'El día de corte debe ser un número entero' })
+  @Min(1, { message: 'El día de corte no puede ser menor a 1' })
+  @Max(31, { message: 'El día de corte no puede ser mayor a 31' })
+  cutoffDay?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

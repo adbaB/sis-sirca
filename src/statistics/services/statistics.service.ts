@@ -88,7 +88,7 @@ export class StatisticsService {
         INNER JOIN payments p ON p.invoice_id  = i.id
         WHERE i.status        = 'PAID'
           AND i.billing_month = $1
-          AND c.status        = 'ACTIVE'
+          AND c.status        IN ('ACTIVE', 'SUSPENDED')
           AND c.deleted_at    IS NULL
           AND i.deleted_at    IS NULL
           AND p.deleted_at    IS NULL
@@ -150,7 +150,7 @@ export class StatisticsService {
         COALESCE(SUM(CASE WHEN i.status IN ('PAID', 'PARTIAL') THEN i.paid_amount ELSE 0 END), 0) AS total_collected
       FROM invoices i
       INNER JOIN contracts c ON c.id = i.contract_id
-      WHERE c.status      = 'ACTIVE'
+      WHERE c.status      IN ('ACTIVE', 'SUSPENDED')
         AND c.deleted_at  IS NULL
         AND i.deleted_at  IS NULL
         AND i.billing_month = $1
@@ -186,7 +186,7 @@ export class StatisticsService {
         SUM(CASE WHEN i.status IN ('PENDING', 'PARTIAL') THEN 1 ELSE 0 END)  AS pending
       FROM invoices i
       INNER JOIN contracts c ON c.id = i.contract_id
-      WHERE c.status         = 'ACTIVE'
+      WHERE c.status         IN ('ACTIVE', 'SUSPENDED')
         AND i.billing_month IS NOT NULL
         AND i.deleted_at IS NULL
         AND c.deleted_at IS NULL
@@ -213,7 +213,7 @@ export class StatisticsService {
       INNER JOIN contracts c ON c.id = i.contract_id
       WHERE il.category IN ('INCLUSION', 'MENSUALIDAD')
         AND i.billing_month = $1
-        AND c.status = 'ACTIVE'
+        AND c.status IN ('ACTIVE', 'SUSPENDED')
         AND c.deleted_at IS NULL
         AND i.deleted_at IS NULL
         AND il.deleted_at IS NULL

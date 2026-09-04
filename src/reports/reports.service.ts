@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import ExcelJS from 'exceljs';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { PaymentStatus } from '../billing/payments/entities/payment.entity';
 import { Invoice } from '../billing/invoices/entities/invoice.entity';
 import { ContractStatus } from '../contracts/entities/contract.entity';
@@ -56,7 +56,7 @@ export class ReportsService {
       where: {
         billingMonth,
         contract: {
-          status: ContractStatus.ACTIVE,
+          status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]),
         },
       },
       relations: [

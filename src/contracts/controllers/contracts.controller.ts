@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { RequirePermissions } from '../../auth/decorators';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
@@ -20,6 +21,7 @@ import { GetPipelineStatsDto } from '../dto/get-pipeline-stats.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractsService } from '../services/contracts.service';
 
@@ -107,6 +109,29 @@ export class ContractsController {
     @Body() createBeneficiaryDto: CreateBeneficiaryDto,
   ) {
     return this.contractsService.addBeneficiary(contractId, createBeneficiaryDto);
+  }
+
+  @Patch(':contractId/beneficiaries')
+  @RequirePermissions('update:contracts')
+  bulkUpdateBeneficiaries(
+    @Param('contractId') contractId: string,
+    @Body() bulkDto: BulkUpdateBeneficiariesDto,
+  ) {
+    return this.contractsService.bulkUpdateBeneficiaries(contractId, bulkDto);
+  }
+
+  @Patch(':contractId/beneficiaries/:contractPersonId')
+  @RequirePermissions('update:contracts')
+  updateBeneficiary(
+    @Param('contractId') contractId: string,
+    @Param('contractPersonId') contractPersonId: string,
+    @Body() updateBeneficiaryDto: UpdateBeneficiaryDto,
+  ) {
+    return this.contractsService.updateBeneficiary(
+      contractId,
+      contractPersonId,
+      updateBeneficiaryDto,
+    );
   }
 
   @Patch(':contractId/set-titular')

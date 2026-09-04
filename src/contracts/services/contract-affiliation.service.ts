@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
@@ -8,9 +8,11 @@ import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
@@ -113,7 +115,7 @@ export class ContractAffiliationService {
         where: {
           person: { id: person.id },
           role: PersonRole.AFILIADO,
-          contract: { status: ContractStatus.ACTIVE },
+          contract: { status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]) },
         },
         relations: ['contract'],
       });
@@ -363,5 +365,177 @@ export class ContractAffiliationService {
     } else {
       await this.contractsRepository.update(contractId, { monthlyAmount });
     }
+  }
+
+  /**
+   * Updates an existing beneficiary in a contract.
+   * Modifies person attributes (via PersonsService), plan, relationship, and health declarations.
+   * If plan changes, updates active invoice line and recalculates monthly amount.
+   */
+  @Transactional()
+  async updateBeneficiary(
+    contractId: string,
+    contractPersonId: string,
+    dto: UpdateBeneficiaryDto,
+    existingManager?: EntityManager,
+  ): Promise<ContractPerson> {
+    const manager = existingManager ?? resolveQueryRunner(undefined, this.dataSource).manager;
+    const cpRepo = manager.getRepository(ContractPerson);
+    const hdRepo = manager.getRepository(HealthDeclaration);
+
+    // 1. Lock junction row (support searching by contractPersonId OR personId within contract)
+    let lockedCp = await cpRepo.findOne({
+      where: { id: contractPersonId, contract: { id: contractId } },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!lockedCp) {
+      lockedCp = await cpRepo.findOne({
+        where: { person: { id: contractPersonId }, contract: { id: contractId } },
+        lock: { mode: 'pessimistic_write' },
+      });
+    }
+
+    if (!lockedCp) {
+      throw new NotFoundException(
+        `Beneficiario con ID "${contractPersonId}" no encontrado en este contrato.`,
+      );
+    }
+
+    // 2. Load with full relations
+    const contractPerson = (await cpRepo.findOne({
+      where: { id: lockedCp.id },
+      relations: ['contract', 'person', 'person.plan', 'plan'],
+    })) as ContractPerson;
+
+    // 3. Update Person fields if provided
+    const personDto: Record<string, unknown> = {};
+    const personFieldKeys = [
+      'name',
+      'typeIdentityCard',
+      'identityCard',
+      'birthDate',
+      'gender',
+      'phone',
+      'alternatePhone',
+      'email',
+      'address',
+      'city',
+      'state',
+      'postalCode',
+      'weight',
+      'height',
+      'occupation',
+      'legalRepresentative',
+    ] as const;
+
+    for (const key of personFieldKeys) {
+      if (dto[key] !== undefined) {
+        personDto[key] = dto[key];
+      }
+    }
+
+    if (Object.keys(personDto).length > 0) {
+      await this.personsService.update(contractPerson.person.id, personDto, manager);
+    }
+
+    // 4. Update relationship if provided
+    if (dto.relationship !== undefined) {
+      contractPerson.relationship = dto.relationship;
+    }
+
+    // 5. Update plan if provided
+    let planChanged = false;
+    if (dto.planId !== undefined) {
+      if (contractPerson.role === PersonRole.TITULAR) {
+        throw new BadRequestException('El titular no puede tener un plan asignado.');
+      }
+
+      if (!dto.planId) {
+        throw new BadRequestException('El afiliado debe tener un plan asignado.');
+      }
+
+      const newPlan = await this.plansService.findOne(dto.planId);
+      if (!newPlan) {
+        throw new NotFoundException(`Plan with ID "${dto.planId}" not found`);
+      }
+
+      const currentPlanId = contractPerson.plan?.id ?? contractPerson.person?.plan?.id;
+      if (currentPlanId !== newPlan.id) {
+        contractPerson.plan = newPlan;
+        contractPerson.person.plan = newPlan;
+        await manager.getRepository(Person).update(contractPerson.person.id, { plan: newPlan });
+
+        await this.invoiceService.updatePlanLineOnActiveInvoice(
+          contractId,
+          contractPerson.person.id,
+          newPlan.id,
+          Number(newPlan.amount ?? 0),
+          newPlan.name,
+        );
+        planChanged = true;
+      }
+    }
+
+    // 6. Update health declarations if provided
+    if (dto.healthDeclarations !== undefined) {
+      await hdRepo.delete({ contractPerson: { id: lockedCp.id } });
+      if (dto.healthDeclarations.length > 0) {
+        const newHds = dto.healthDeclarations.map((hd) =>
+          hdRepo.create({
+            ...hd,
+            contractPerson: lockedCp,
+          }),
+        );
+        await hdRepo.save(newHds);
+      }
+    }
+
+    await cpRepo.save(contractPerson);
+
+    // 7. Recalculate monthly amount if plan changed
+    if (planChanged) {
+      await this.recalculateMonthlyAmount(contractId, manager);
+    }
+
+    return (await cpRepo.findOne({
+      where: { id: lockedCp.id },
+      relations: ['contract', 'person', 'person.plan', 'plan', 'healthDeclarations'],
+    })) as ContractPerson;
+  }
+
+  /**
+   * Bulk updates multiple beneficiaries in a contract in a single transaction.
+   * Recalculates the monthly amount once after all beneficiaries are updated.
+   */
+  @Transactional()
+  async bulkUpdateBeneficiaries(
+    contractId: string,
+    dto: BulkUpdateBeneficiariesDto,
+  ): Promise<ContractPerson[]> {
+    const qr = resolveQueryRunner(undefined, this.dataSource);
+    const manager = qr.manager;
+
+    const contract = await manager.getRepository(Contract).findOne({
+      where: { id: contractId },
+    });
+    if (!contract) {
+      throw new NotFoundException(`Contract with ID "${contractId}" not found`);
+    }
+
+    const updatedBeneficiaries: ContractPerson[] = [];
+
+    for (const item of dto.beneficiaries) {
+      const contractPersonId = item.contractPersonId || item.id;
+      if (!contractPersonId) {
+        throw new BadRequestException('Cada elemento debe contener contractPersonId o id.');
+      }
+      const updated = await this.updateBeneficiary(contractId, contractPersonId, item, manager);
+      updatedBeneficiaries.push(updated);
+    }
+
+    await this.recalculateMonthlyAmount(contractId, manager);
+
+    return updatedBeneficiaries;
   }
 }

@@ -27,6 +27,7 @@ describe('ContractsController', () => {
     inactivationReason: null,
     advisorCommission: 0,
     excludeFromNextBilling: false,
+    cutoffDay: 5,
   };
 
   beforeEach(async () => {
@@ -45,6 +46,8 @@ describe('ContractsController', () => {
             inactivate: jest.fn(),
             activate: jest.fn(),
             addBeneficiary: jest.fn(),
+            updateBeneficiary: jest.fn(),
+            bulkUpdateBeneficiaries: jest.fn(),
             setContractTitular: jest.fn(),
             setBillingOwner: jest.fn(),
             removeAffiliate: jest.fn(),
@@ -220,6 +223,32 @@ describe('ContractsController', () => {
       await controller.removeBeneficiary('contract-1', 'cp-1');
 
       expect(service.removeAffiliate).toHaveBeenCalledWith('cp-1', 'contract-1');
+    });
+  });
+
+  describe('updateBeneficiary', () => {
+    it('should delegate to service.updateBeneficiary', async () => {
+      const dto = { name: 'Juan Carlos', relationship: undefined, planId: 'plan-1' };
+      const mockResult = { id: 'cp-1' } as any;
+      jest.spyOn(service, 'updateBeneficiary').mockResolvedValue(mockResult);
+
+      const result = await controller.updateBeneficiary('contract-1', 'cp-1', dto as any);
+
+      expect(service.updateBeneficiary).toHaveBeenCalledWith('contract-1', 'cp-1', dto);
+      expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('bulkUpdateBeneficiaries', () => {
+    it('should delegate to service.bulkUpdateBeneficiaries', async () => {
+      const dto = { beneficiaries: [{ contractPersonId: 'cp-1', name: 'Juan Carlos' }] };
+      const mockResult = [{ id: 'cp-1' }] as any;
+      jest.spyOn(service, 'bulkUpdateBeneficiaries').mockResolvedValue(mockResult);
+
+      const result = await controller.bulkUpdateBeneficiaries('contract-1', dto as any);
+
+      expect(service.bulkUpdateBeneficiaries).toHaveBeenCalledWith('contract-1', dto);
+      expect(result).toEqual(mockResult);
     });
   });
 });
