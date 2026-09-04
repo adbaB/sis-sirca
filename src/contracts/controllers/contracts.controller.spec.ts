@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
-import { UpdateContractDto } from '../dto/update-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
+import { UpdateContractDto } from '../dto/update-contract.dto';
 import { Contract, ContractStatus } from '../entities/contract.entity';
-import { PersonRole } from '../entities/contract-person.entity';
+import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
@@ -228,11 +230,15 @@ describe('ContractsController', () => {
 
   describe('updateBeneficiary', () => {
     it('should delegate to service.updateBeneficiary', async () => {
-      const dto = { name: 'Juan Carlos', relationship: undefined, planId: 'plan-1' };
-      const mockResult = { id: 'cp-1' } as any;
+      const dto: UpdateBeneficiaryDto = {
+        name: 'Juan Carlos',
+        relationship: undefined,
+        planId: 'plan-1',
+      };
+      const mockResult = { id: 'cp-1' } as unknown as ContractPerson;
       jest.spyOn(service, 'updateBeneficiary').mockResolvedValue(mockResult);
 
-      const result = await controller.updateBeneficiary('contract-1', 'cp-1', dto as any);
+      const result = await controller.updateBeneficiary('contract-1', 'cp-1', dto);
 
       expect(service.updateBeneficiary).toHaveBeenCalledWith('contract-1', 'cp-1', dto);
       expect(result).toEqual(mockResult);
@@ -241,11 +247,13 @@ describe('ContractsController', () => {
 
   describe('bulkUpdateBeneficiaries', () => {
     it('should delegate to service.bulkUpdateBeneficiaries', async () => {
-      const dto = { beneficiaries: [{ contractPersonId: 'cp-1', name: 'Juan Carlos' }] };
-      const mockResult = [{ id: 'cp-1' }] as any;
+      const dto: BulkUpdateBeneficiariesDto = {
+        beneficiaries: [{ contractPersonId: 'cp-1', name: 'Juan Carlos' }],
+      };
+      const mockResult = [{ id: 'cp-1' }] as unknown as ContractPerson[];
       jest.spyOn(service, 'bulkUpdateBeneficiaries').mockResolvedValue(mockResult);
 
-      const result = await controller.bulkUpdateBeneficiaries('contract-1', dto as any);
+      const result = await controller.bulkUpdateBeneficiaries('contract-1', dto);
 
       expect(service.bulkUpdateBeneficiaries).toHaveBeenCalledWith('contract-1', dto);
       expect(result).toEqual(mockResult);

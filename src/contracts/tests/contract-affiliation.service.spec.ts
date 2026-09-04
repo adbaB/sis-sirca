@@ -9,7 +9,7 @@ import { PlansService } from '../../plans/services/plans.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
-import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
+import { ContractPerson, Parentesco, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
@@ -506,11 +506,14 @@ describe('ContractAffiliationService', () => {
       });
 
       plansService.findOne.mockResolvedValue(mockNewPlan as unknown as Plan);
-      personsService.update.mockResolvedValue({ id: 'p-1', name: 'Pedro Actualizado' } as any);
+      personsService.update.mockResolvedValue({
+        id: 'p-1',
+        name: 'Pedro Actualizado',
+      } as unknown as Person);
 
       const result = await service.updateBeneficiary('contract-1', 'cp-1', {
         name: 'Pedro Actualizado',
-        relationship: 'HIJO' as any,
+        relationship: Parentesco.HIJO,
         planId: 'plan-new',
       });
 
@@ -570,7 +573,9 @@ describe('ContractAffiliationService', () => {
         return {};
       });
 
-      const updateSpy = jest.spyOn(service, 'updateBeneficiary').mockResolvedValue(mockCp as any);
+      const updateSpy = jest
+        .spyOn(service, 'updateBeneficiary')
+        .mockResolvedValue(mockCp as unknown as ContractPerson);
 
       const result = await service.bulkUpdateBeneficiaries('contract-1', {
         beneficiaries: [
