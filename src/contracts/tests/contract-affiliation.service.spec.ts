@@ -82,6 +82,8 @@ describe('ContractAffiliationService', () => {
           useValue: {
             create: jest.fn(),
             findByIdentityCard: jest.fn(),
+            findByIdentityCardOnly: jest.fn(),
+            findPNsByTitularIdentityCard: jest.fn(),
             update: jest.fn(),
           },
         },
@@ -845,8 +847,201 @@ describe('ContractAffiliationService', () => {
       expect(result.mode).toBe('BY_BENEFICIARY');
     });
 
+    it('should auto-detect PN document with prefix (PN-12345678-1) and delegate to verifyPersonAffiliation with TypeIdentityCard.PN', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+
+      const mockPNResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-pn-1',
+          name: 'Sofia Victoria Corona',
+          typeIdentityCard: TypeIdentityCard.PN,
+          identityCard: '19626778-1',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: true,
+        hasSuspendedContract: false,
+      };
+
+      const spy = jest.spyOn(service, 'verifyPersonAffiliation').mockResolvedValue(mockPNResult);
+
+      const result = await service.verifyUnified('PN-19626778-1');
+
+      expect(spy).toHaveBeenCalledWith(TypeIdentityCard.PN, '19626778-1');
+      expect(result.mode).toBe('BY_BENEFICIARY');
+    });
+
+    it('should auto-detect PN document without prefix (19626778-1) via findByIdentityCardOnly', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+
+      const mockPNPerson = {
+        id: 'p-pn-1',
+        name: 'Sofia Victoria Corona',
+        typeIdentityCard: TypeIdentityCard.PN,
+        identityCard: '19626778-1',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      const mockPNResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-pn-1',
+          name: 'Sofia Victoria Corona',
+          typeIdentityCard: TypeIdentityCard.PN,
+          identityCard: '19626778-1',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: true,
+        hasSuspendedContract: false,
+      };
+
+      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce(mockPNPerson);
+      const spy = jest.spyOn(service, 'verifyPersonAffiliation').mockResolvedValue(mockPNResult);
+
+      const result = await service.verifyUnified('19626778-1');
+
+      expect(personsService.findByIdentityCardOnly).toHaveBeenCalledWith('19626778-1');
+      expect(spy).toHaveBeenCalledWith(TypeIdentityCard.PN, '19626778-1');
+      expect(result.mode).toBe('BY_BENEFICIARY');
+    });
+
+    it('should fallback to PN when wrong prefix V is provided (V-19626778-1)', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+
+      const mockPNPerson = {
+        id: 'p-pn-1',
+        name: 'Sofia Victoria Corona',
+        typeIdentityCard: TypeIdentityCard.PN,
+        identityCard: '19626778-1',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      const mockPNResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-pn-1',
+          name: 'Sofia Victoria Corona',
+          typeIdentityCard: TypeIdentityCard.PN,
+          identityCard: '19626778-1',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: true,
+        hasSuspendedContract: false,
+      };
+
+      // Direct verification with V fails with NotFoundException
+      const spy = jest
+        .spyOn(service, 'verifyPersonAffiliation')
+        .mockRejectedValueOnce(new NotFoundException())
+        .mockResolvedValueOnce(mockPNResult);
+
+      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce(mockPNPerson);
+
+      const result = await service.verifyUnified('V-19626778-1');
+
+      expect(spy).toHaveBeenNthCalledWith(1, TypeIdentityCard.V, '19626778-1');
+      expect(spy).toHaveBeenNthCalledWith(2, TypeIdentityCard.PN, '19626778-1');
+      expect(result.mode).toBe('BY_BENEFICIARY');
+    });
+
+    it('should resolve single PN when query has PN prefix without correlative (PN-19626778)', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+
+      const mockPNPerson = {
+        id: 'p-pn-1',
+        name: 'Sofia Victoria Corona',
+        typeIdentityCard: TypeIdentityCard.PN,
+        identityCard: '19626778-1',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      const mockPNResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-pn-1',
+          name: 'Sofia Victoria Corona',
+          typeIdentityCard: TypeIdentityCard.PN,
+          identityCard: '19626778-1',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: true,
+        hasSuspendedContract: false,
+      };
+
+      // Direct lookup with 19626778 throws NotFound
+      jest
+        .spyOn(service, 'verifyPersonAffiliation')
+        .mockRejectedValueOnce(new NotFoundException())
+        .mockResolvedValueOnce(mockPNResult);
+
+      jest
+        .spyOn(personsService, 'findPNsByTitularIdentityCard')
+        .mockResolvedValueOnce([mockPNPerson]);
+
+      const result = await service.verifyUnified('PN-19626778');
+
+      expect(personsService.findPNsByTitularIdentityCard).toHaveBeenCalledWith('19626778');
+      expect(result.mode).toBe('BY_BENEFICIARY');
+    });
+
+    it('should resolve to contract when titular has multiple PNs (PN-26175756)', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+
+      const mockPN1 = {
+        id: 'p-pn-1',
+        identityCard: '26175756-1',
+        typeIdentityCard: TypeIdentityCard.PN,
+      } as Person;
+      const mockPN2 = {
+        id: 'p-pn-2',
+        identityCard: '26175756-2',
+        typeIdentityCard: TypeIdentityCard.PN,
+      } as Person;
+
+      // Direct lookup fails
+      jest.spyOn(service, 'verifyPersonAffiliation').mockRejectedValueOnce(new NotFoundException());
+      jest
+        .spyOn(personsService, 'findPNsByTitularIdentityCard')
+        .mockResolvedValueOnce([mockPN1, mockPN2]);
+
+      jest.spyOn(contractPersonsRepository, 'findOne').mockResolvedValueOnce({
+        id: 'cp-1',
+        contract: { id: 'c-1', code: 'SIR-009-00725' },
+      } as unknown as ContractPerson);
+
+      const mockContractResult: ContractVerificationResult = {
+        mode: 'BY_CONTRACT',
+        contract: {
+          id: 'c-1',
+          code: 'SIR-009-00725',
+          status: ContractStatus.ACTIVE,
+          isSuspended: false,
+          affiliationDate: new Date(),
+          cutoffDay: 5,
+          titular: null,
+        },
+        beneficiaries: [],
+        totalBeneficiaries: 2,
+      };
+
+      const spyContract = jest
+        .spyOn(service, 'verifyContractByCode')
+        .mockResolvedValueOnce(mockContractResult);
+
+      const result = await service.verifyUnified('PN-26175756');
+
+      expect(spyContract).toHaveBeenCalledWith('SIR-009-00725');
+      expect(result.mode).toBe('BY_CONTRACT');
+    });
+
     it('should throw NotFoundException if neither contract nor person is found', async () => {
       jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValue(null);
+      jest.spyOn(personsService, 'findPNsByTitularIdentityCard').mockResolvedValue([]);
       jest.spyOn(service, 'verifyPersonAffiliation').mockRejectedValue(new NotFoundException());
 
       await expect(service.verifyUnified('Z-99999999')).rejects.toThrow(NotFoundException);

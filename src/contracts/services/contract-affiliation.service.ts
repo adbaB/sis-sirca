@@ -563,7 +563,7 @@ export class ContractAffiliationService {
       );
     }
 
-    const affiliations = await this.contractPersonsRepository.find({
+    let affiliations = await this.contractPersonsRepository.find({
       where: {
         person: { id: person.id },
         role: PersonRole.AFILIADO,
@@ -574,13 +574,32 @@ export class ContractAffiliationService {
       },
     });
 
+    if (affiliations.length === 0) {
+      affiliations = await this.contractPersonsRepository.find({
+        where: {
+          person: { id: person.id },
+          role: PersonRole.TITULAR,
+        },
+        relations: ['contract', 'plan', 'person', 'person.plan'],
+        order: {
+          createdAt: 'DESC',
+        },
+      });
+    }
+
     const statusPriority: Record<ContractStatus, number> = {
       [ContractStatus.ACTIVE]: 1,
       [ContractStatus.SUSPENDED]: 2,
       [ContractStatus.INACTIVE]: 3,
     };
 
+    const seenContracts = new Set<string>();
     const contracts = affiliations
+      .filter((cp) => {
+        if (!cp.contract || seenContracts.has(cp.contract.id)) return false;
+        seenContracts.add(cp.contract.id);
+        return true;
+      })
       .map((cp) => ({
         id: cp.contract.id,
         code: cp.contract.code,
@@ -695,7 +714,7 @@ export class ContractAffiliationService {
 
   /**
    * Unified verification: Auto-detects whether rawQuery represents a contract code
-   * or a personal identity document.
+   * or a personal identity document (including Partida de Nacimiento "PN").
    */
   async verifyUnified(rawQuery: string): Promise<UnifiedVerificationResult> {
     if (!rawQuery || !rawQuery.trim()) {
@@ -717,31 +736,74 @@ export class ContractAffiliationService {
     }
 
     // 2. Si no es contrato directo, intentar interpretar como documento de identidad
-    // Formatos comunes: "V-12345678", "V12345678", "E-84123456", "12345678"
-    const docRegex = /^([a-zA-Z]{1,2})[-_\s]?(\d+)$/;
+    // Formatos soportados:
+    // - Documentos tradicionales: "V-12345678", "V12345678", "E-84123456", "12345678"
+    // - Partidas de Nacimiento (PN): "PN-12345678-1", "PN12345678-1", "12345678-1", "V-12345678-1", "PN-12345678"
+    const docRegex = /^([a-zA-Z]{1,2})[-_\s]?(\d+(?:[-/]\d+)?)$/;
     const match = query.match(docRegex);
 
-    let type: TypeIdentityCard = TypeIdentityCard.V;
+    let type: TypeIdentityCard | null = null;
     let number: string = query;
 
     if (match) {
       const candidateType = match[1].toUpperCase() as TypeIdentityCard;
       if (Object.values(TypeIdentityCard).includes(candidateType)) {
         type = candidateType;
-        number = match[2];
-      }
-    } else if (/^\d+$/.test(query)) {
-      // Solo números: verificar si existe la persona con ese número
-      const person = await this.dataSource.getRepository(Person).findOne({
-        where: { identityCard: query },
-      });
-      if (person) {
-        return this.verifyPersonAffiliation(person.typeIdentityCard, person.identityCard);
+        number = match[2].replace('/', '-');
       }
     }
 
+    const cleanNumber = number.replace('/', '-');
+
+    // 2a. Si se detectó tipo explícito (ej: V-12345678 o PN-12345678-1), intentar verificación directa
+    if (type) {
+      try {
+        return await this.verifyPersonAffiliation(type, cleanNumber);
+      } catch (err) {
+        if (!(err instanceof NotFoundException)) {
+          throw err;
+        }
+      }
+    }
+
+    // 2b. Si el usuario buscó con prefijo PN explícito pero omitió el correlativo (ej. "PN-12345678")
+    if (type === TypeIdentityCard.PN && !cleanNumber.includes('-')) {
+      const pnPersons = await this.personsService.findPNsByTitularIdentityCard(cleanNumber);
+      if (pnPersons.length === 1) {
+        return this.verifyPersonAffiliation(TypeIdentityCard.PN, pnPersons[0].identityCard);
+      } else if (pnPersons.length > 1) {
+        const cp = await this.contractPersonsRepository.findOne({
+          where: { person: { id: In(pnPersons.map((p) => p.id)) } },
+          relations: ['contract'],
+        });
+        if (cp?.contract) {
+          return this.verifyContractByCode(cp.contract.code);
+        }
+      }
+    }
+
+    // 2c. Fallback por identityCard exacto sin importar el tipo
+    // Cubre "12345678-1" (sin prefijo PN), "V-12345678-1" (prefijo V erróneo), o "12345678" (cédula pura sin prefijo)
+    const personByDoc =
+      (await this.personsService.findByIdentityCardOnly(cleanNumber)) ??
+      (cleanNumber !== query ? await this.personsService.findByIdentityCardOnly(query) : null);
+
+    if (personByDoc) {
+      return this.verifyPersonAffiliation(personByDoc.typeIdentityCard, personByDoc.identityCard);
+    }
+
+    // 2d. Fallback para cédulas sin guión que pudieran tener un PN asociado único
+    if (!cleanNumber.includes('-')) {
+      const pnPersons = await this.personsService.findPNsByTitularIdentityCard(cleanNumber);
+      if (pnPersons.length === 1) {
+        return this.verifyPersonAffiliation(TypeIdentityCard.PN, pnPersons[0].identityCard);
+      }
+    }
+
+    // 2e. Último intento con tipo asumido (o TypeIdentityCard.V)
+    const fallbackType = type ?? TypeIdentityCard.V;
     try {
-      return await this.verifyPersonAffiliation(type, number);
+      return await this.verifyPersonAffiliation(fallbackType, cleanNumber);
     } catch (err) {
       if (err instanceof NotFoundException) {
         throw new NotFoundException(
