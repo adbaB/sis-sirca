@@ -174,7 +174,7 @@ export class InvoiceLineService {
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
     const activeManager = manager ?? qr?.manager;
-    if (!activeManager) {
+    if (!activeManager?.queryRunner?.isTransactionActive) {
       throw new Error('Transaction required for removeAffiliateLineFromActiveInvoice');
     }
     const invoiceRepo = activeManager.getRepository(Invoice);
@@ -367,11 +367,7 @@ export class InvoiceLineService {
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
     const activeManager = manager ?? qr?.manager;
-    if (
-      !activeManager ||
-      activeManager === this.dataSource.manager ||
-      (activeManager.queryRunner && !activeManager.queryRunner.isTransactionActive)
-    ) {
+    if (!activeManager?.queryRunner?.isTransactionActive) {
       throw new Error('Transaction required for addAffiliateInclusionLineToActiveInvoice');
     }
     const invoiceRepo = activeManager.getRepository(Invoice);

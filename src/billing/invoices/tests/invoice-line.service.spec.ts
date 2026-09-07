@@ -74,6 +74,7 @@ interface MockQueryRunner {
   rollbackTransaction: jest.Mock;
   release: jest.Mock;
   manager: {
+    queryRunner?: QueryRunner;
     getRepository: jest.Mock;
     findOne: jest.Mock;
     create: jest.Mock;
@@ -186,6 +187,7 @@ describe('InvoiceLineService', () => {
         softRemove: jest.fn().mockResolvedValue({}),
       },
     };
+    mockQr.manager.queryRunner = mockQr as unknown as QueryRunner;
   });
 
   // ─── addAdditionalCharge ────────────────────────────────────────────────────
@@ -359,6 +361,43 @@ describe('InvoiceLineService', () => {
           mockManagerWithInactiveTx,
         ),
       ).rejects.toThrow('Transaction required for addAffiliateInclusionLineToActiveInvoice');
+    });
+
+    it('lanza Error si el manager suministrado no tiene queryRunner', async () => {
+      const mockManagerWithoutQr = {
+        getRepository: jest.fn(),
+      } as unknown as EntityManager;
+
+      await expect(
+        service.addAffiliateInclusionLineToActiveInvoice(
+          'contract-1',
+          mockPerson,
+          mockPlan,
+          mockManagerWithoutQr,
+        ),
+      ).rejects.toThrow('Transaction required for addAffiliateInclusionLineToActiveInvoice');
+    });
+
+    it('permite ejecución si el manager suministrado posee una transacción activa', async () => {
+      invoiceRepo.findOne.mockResolvedValue(null);
+
+      const mockTransactionalManager = {
+        queryRunner: { isTransactionActive: true } as unknown as QueryRunner,
+        getRepository: jest.fn().mockReturnValue(invoiceRepo),
+      } as unknown as EntityManager;
+
+      await service.addAffiliateInclusionLineToActiveInvoice(
+        'contract-1',
+        mockPerson,
+        mockPlan,
+        mockTransactionalManager,
+      );
+
+      expect(invoiceRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
     });
 
     it('no hace nada si no existe factura activa en el mes en curso', async () => {

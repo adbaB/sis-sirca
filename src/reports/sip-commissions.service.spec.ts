@@ -311,6 +311,52 @@ describe('SipCommissionsService', () => {
       expect(extNuevo.affiliateDetails[0].affiliateName).toBe('Prueba Extemporaneo');
       expect(extNuevo.affiliateDetails[0].advisorCommissionAmount).toBe(7.5); // 75.00 * 10%
     });
+
+    it('should classify INCLUSION records as afiliaciones and never send them to cobranzas extemporaneas even if billing_month differs', async () => {
+      const inclusionRecord = {
+        line_id: 'l-inc-diff-month',
+        line_category: 'INCLUSION',
+        plan_name: 'PLAN INCLUSION',
+        plan_amount: '21.00',
+        commission_amount: '1.00',
+        portfolio_code: 'HER',
+        contract_code: 'SIR-001-01168',
+        legacy_code: null,
+        billing_month: '2026-03', // Different from report month (2026-04)
+        affiliation_date: '2026-03-15', // Falls in extemporaneous window [2026-03-06, 2026-03-19]
+        payment_date: '2026-03-28',
+        operation_date: '2026-03-28',
+        due_date: '2026-03-29',
+        issue_date: '2026-03-24',
+        affiliate_count: '1',
+        advisor_name: 'Asesor 1',
+        advisor_code: '1',
+        advisor_commission_percentage: '10.00',
+        affiliate_id_type: 'V',
+        affiliate_id_number: '12861322',
+        affiliate_name: 'Afiliado Inclusion',
+      };
+
+      jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce(mockPortfolios)
+        .mockResolvedValueOnce([inclusionRecord]);
+
+      const result = await service.buildReportData(2026, 4);
+
+      // Section 1: AFILIACIONES EXTEMPORÁNEAS NUEVOS CONTRATOS (index 1)
+      const nuevosExt = result.sections[1];
+      expect(nuevosExt.rows).toHaveLength(1);
+      expect(nuevosExt.rows[0].planName).toBe('PLAN INCLUSION');
+      expect(nuevosExt.rows[0].totalAffiliates).toBe(1);
+      expect(nuevosExt.rows[0].totalCommission).toBe(1);
+      expect(nuevosExt.affiliateDetails).toHaveLength(1);
+      expect(nuevosExt.affiliateDetails[0].affiliateName).toBe('Afiliado Inclusion');
+
+      // Section 4: COBRANZAS EJECUTADA CON EXTEMPORANEIDAD (index 4) should be empty
+      const extNuevo = result.sections[4];
+      expect(extNuevo.rows).toHaveLength(0);
+    });
   });
 
   describe('generateExcel', () => {
