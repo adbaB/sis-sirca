@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
@@ -7,7 +8,11 @@ import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
-import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
+import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
+import {
+  BeneficiaryVerificationResult,
+  ContractVerificationResult,
+} from '../interfaces/person-verification.interface';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
 
@@ -53,6 +58,8 @@ describe('ContractsController', () => {
             setContractTitular: jest.fn(),
             setBillingOwner: jest.fn(),
             removeAffiliate: jest.fn(),
+            verifyPersonAffiliation: jest.fn(),
+            verifyUnified: jest.fn(),
           },
         },
       ],
@@ -108,7 +115,7 @@ describe('ContractsController', () => {
 
       const result = await controller.activate('1');
 
-      expect(service.activate).toHaveBeenCalledWith('1');
+      expect(service.activate).toHaveBeenCalledWith('1', undefined, undefined);
       expect(result).toEqual(mockContract);
     });
   });
@@ -256,6 +263,88 @@ describe('ContractsController', () => {
       const result = await controller.bulkUpdateBeneficiaries('contract-1', dto);
 
       expect(service.bulkUpdateBeneficiaries).toHaveBeenCalledWith('contract-1', dto);
+      expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('verifyPersonAffiliation', () => {
+    it('should delegate to service.verifyPersonAffiliation', async () => {
+      const mockResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-1',
+          name: 'Carlos Ruiz',
+          typeIdentityCard: TypeIdentityCard.V,
+          identityCard: '12345678',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: false,
+        hasSuspendedContract: false,
+      };
+
+      jest.spyOn(service, 'verifyPersonAffiliation').mockResolvedValue(mockResult);
+
+      const result = await controller.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
+
+      expect(service.verifyPersonAffiliation).toHaveBeenCalledWith(TypeIdentityCard.V, '12345678');
+      expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('verifyUnified', () => {
+    it('should throw BadRequestException if query is empty or undefined', () => {
+      expect(() => controller.verifyUnified('')).toThrow(BadRequestException);
+      expect(() => controller.verifyUnified('   ')).toThrow(BadRequestException);
+      expect(() => controller.verifyUnified(undefined)).toThrow(BadRequestException);
+    });
+
+    it('should delegate to service.verifyUnified when valid query is provided', async () => {
+      const mockResult: ContractVerificationResult = {
+        mode: 'BY_CONTRACT',
+        contract: {
+          id: 'c-1',
+          code: 'SIR-001-00001',
+          status: ContractStatus.ACTIVE,
+          isSuspended: false,
+          affiliationDate: new Date(),
+          cutoffDay: 5,
+          titular: null,
+        },
+        beneficiaries: [],
+        totalBeneficiaries: 0,
+      };
+
+      jest.spyOn(service, 'verifyUnified').mockResolvedValue(mockResult);
+
+      const result = await controller.verifyUnified('SIR-001-00001');
+
+      expect(service.verifyUnified).toHaveBeenCalledWith('SIR-001-00001');
+      expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('verifyUnifiedParam', () => {
+    it('should delegate to service.verifyUnified with path param', async () => {
+      const mockResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-1',
+          name: 'Carlos Ruiz',
+          typeIdentityCard: TypeIdentityCard.V,
+          identityCard: '12345678',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: false,
+        hasSuspendedContract: false,
+      };
+
+      jest.spyOn(service, 'verifyUnified').mockResolvedValue(mockResult);
+
+      const result = await controller.verifyUnifiedParam('V-12345678');
+
+      expect(service.verifyUnified).toHaveBeenCalledWith('V-12345678');
       expect(result).toEqual(mockResult);
     });
   });

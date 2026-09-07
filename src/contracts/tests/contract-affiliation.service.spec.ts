@@ -13,6 +13,10 @@ import { ContractPerson, Parentesco, PersonRole } from '../entities/contract-per
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
+import {
+  BeneficiaryVerificationResult,
+  ContractVerificationResult,
+} from '../interfaces/person-verification.interface';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
 
 describe('ContractAffiliationService', () => {
@@ -56,6 +60,7 @@ describe('ContractAffiliationService', () => {
           provide: getRepositoryToken(Contract),
           useValue: {
             update: jest.fn(),
+            findOne: jest.fn(),
           },
         },
         {
@@ -587,6 +592,264 @@ describe('ContractAffiliationService', () => {
       expect(updateSpy).toHaveBeenCalledTimes(2);
       expect(result).toHaveLength(2);
       expect(mockContractRepo.update).toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyPersonAffiliation', () => {
+    it('should throw NotFoundException if person is not found', async () => {
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(null);
+
+      await expect(service.verifyPersonAffiliation(TypeIdentityCard.V, '99999999')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should return person with empty contracts if person has no beneficiary affiliations', async () => {
+      const mockPerson = {
+        id: 'p-1',
+        name: 'Carlos Ruiz',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '12345678',
+        phone: '04121234567',
+        birthDate: new Date('1990-01-01'),
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest.spyOn(contractPersonsRepository, 'find').mockResolvedValue([]);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
+
+      expect(result.person.id).toBe('p-1');
+      expect(result.contracts).toHaveLength(0);
+      expect(result.hasActiveContract).toBe(false);
+      expect(result.hasSuspendedContract).toBe(false);
+    });
+
+    it('should return and prioritize contracts (ACTIVE first, then SUSPENDED, then INACTIVE)', async () => {
+      const mockPerson = {
+        id: 'p-1',
+        name: 'Carlos Ruiz',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '12345678',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      const mockAffiliations = [
+        {
+          id: 'cp-old',
+          role: PersonRole.AFILIADO,
+          contract: {
+            id: 'c-old',
+            code: 'SIR-001-00001',
+            status: ContractStatus.INACTIVE,
+            affiliationDate: new Date('2024-01-01'),
+          },
+          plan: { name: 'Plan Básico' },
+        },
+        {
+          id: 'cp-suspended',
+          role: PersonRole.AFILIADO,
+          contract: {
+            id: 'c-susp',
+            code: 'SIR-001-00002',
+            status: ContractStatus.SUSPENDED,
+            affiliationDate: new Date('2025-06-01'),
+          },
+          plan: { name: 'Plan Plus' },
+        },
+        {
+          id: 'cp-active',
+          role: PersonRole.AFILIADO,
+          contract: {
+            id: 'c-act',
+            code: 'SIR-001-00003',
+            status: ContractStatus.ACTIVE,
+            affiliationDate: new Date('2026-01-01'),
+          },
+          plan: { name: 'Plan Premium' },
+        },
+      ] as unknown as ContractPerson[];
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest.spyOn(contractPersonsRepository, 'find').mockResolvedValue(mockAffiliations);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
+
+      expect(result.contracts).toHaveLength(3);
+      expect(result.contracts[0].code).toBe('SIR-001-00003');
+      expect(result.contracts[0].status).toBe(ContractStatus.ACTIVE);
+      expect(result.contracts[0].isSuspended).toBe(false);
+
+      expect(result.contracts[1].code).toBe('SIR-001-00002');
+      expect(result.contracts[1].status).toBe(ContractStatus.SUSPENDED);
+      expect(result.contracts[1].isSuspended).toBe(true);
+
+      expect(result.contracts[2].code).toBe('SIR-001-00001');
+      expect(result.contracts[2].status).toBe(ContractStatus.INACTIVE);
+      expect(result.contracts[2].isSuspended).toBe(false);
+
+      expect(result.hasActiveContract).toBe(true);
+      expect(result.hasSuspendedContract).toBe(true);
+    });
+  });
+
+  describe('verifyContractByCode', () => {
+    it('should throw NotFoundException if contract is not found', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValue(null);
+
+      await expect(service.verifyContractByCode('SIR-404')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return contract details, titular and beneficiaries with eligibility', async () => {
+      const mockContract = {
+        id: 'c-1',
+        code: 'SIR-001-00001',
+        status: ContractStatus.ACTIVE,
+        affiliationDate: new Date('2026-01-15'),
+        cutoffDay: 5,
+        contractPersons: [
+          {
+            id: 'cp-titular',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+            person: {
+              id: 'p-titular',
+              name: 'Pedro Titular',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '11111111',
+              phone: '04141111111',
+            },
+          },
+          {
+            id: 'cp-beneficiary-1',
+            role: PersonRole.AFILIADO,
+            relationship: Parentesco.HIJO,
+            person: {
+              id: 'p-ben-1',
+              name: 'Hijo Activo',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '22222222',
+              status: PersonStatus.ACTIVE,
+            },
+            plan: { name: 'Plan Familiar' },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValue(mockContract);
+
+      const result = await service.verifyContractByCode('SIR-001-00001');
+
+      expect(result.mode).toBe('BY_CONTRACT');
+      expect(result.contract.code).toBe('SIR-001-00001');
+      expect(result.contract.isSuspended).toBe(false);
+      expect(result.contract.titular?.name).toBe('Pedro Titular');
+      expect(result.totalBeneficiaries).toBe(1);
+      expect(result.beneficiaries[0].name).toBe('Hijo Activo');
+      expect(result.beneficiaries[0].isEligible).toBe(true);
+    });
+
+    it('should mark beneficiaries as isEligible: false when contract is SUSPENDED', async () => {
+      const mockContract = {
+        id: 'c-susp',
+        code: 'SIR-001-00002',
+        status: ContractStatus.SUSPENDED,
+        affiliationDate: new Date('2026-01-15'),
+        cutoffDay: 10,
+        contractPersons: [
+          {
+            id: 'cp-beneficiary-1',
+            role: PersonRole.AFILIADO,
+            relationship: Parentesco.ESPOSA,
+            person: {
+              id: 'p-ben-2',
+              name: 'Esposa',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '33333333',
+              status: PersonStatus.ACTIVE,
+            },
+            plan: { name: 'Plan Oro' },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValue(mockContract);
+
+      const result = await service.verifyContractByCode('SIR-001-00002');
+
+      expect(result.contract.isSuspended).toBe(true);
+      expect(result.beneficiaries[0].isEligible).toBe(false);
+    });
+  });
+
+  describe('verifyUnified', () => {
+    it('should throw BadRequestException if query is empty or whitespace', async () => {
+      await expect(service.verifyUnified('')).rejects.toThrow(BadRequestException);
+      await expect(service.verifyUnified('   ')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should auto-detect contract code and delegate to verifyContractByCode', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce({
+        id: 'c-1',
+        code: 'SIR-001-00001',
+      } as Contract);
+
+      const mockContractResult: ContractVerificationResult = {
+        mode: 'BY_CONTRACT',
+        contract: {
+          id: 'c-1',
+          code: 'SIR-001-00001',
+          status: ContractStatus.ACTIVE,
+          isSuspended: false,
+          affiliationDate: new Date(),
+          cutoffDay: 5,
+          titular: null,
+        },
+        beneficiaries: [],
+        totalBeneficiaries: 0,
+      };
+
+      const spy = jest.spyOn(service, 'verifyContractByCode').mockResolvedValue(mockContractResult);
+
+      const result = await service.verifyUnified('SIR-001-00001');
+
+      expect(spy).toHaveBeenCalledWith('SIR-001-00001');
+      expect(result.mode).toBe('BY_CONTRACT');
+    });
+
+    it('should auto-detect document with prefix and delegate to verifyPersonAffiliation', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+
+      const mockPersonResult: BeneficiaryVerificationResult = {
+        mode: 'BY_BENEFICIARY',
+        person: {
+          id: 'p-1',
+          name: 'Carlos Ruiz',
+          typeIdentityCard: TypeIdentityCard.V,
+          identityCard: '12345678',
+          status: PersonStatus.ACTIVE,
+        },
+        contracts: [],
+        hasActiveContract: false,
+        hasSuspendedContract: false,
+      };
+
+      const spy = jest
+        .spyOn(service, 'verifyPersonAffiliation')
+        .mockResolvedValue(mockPersonResult);
+
+      const result = await service.verifyUnified('V-12345678');
+
+      expect(spy).toHaveBeenCalledWith(TypeIdentityCard.V, '12345678');
+      expect(result.mode).toBe('BY_BENEFICIARY');
+    });
+
+    it('should throw NotFoundException if neither contract nor person is found', async () => {
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
+      jest.spyOn(service, 'verifyPersonAffiliation').mockRejectedValue(new NotFoundException());
+
+      await expect(service.verifyUnified('Z-99999999')).rejects.toThrow(NotFoundException);
     });
   });
 });

@@ -1,17 +1,22 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   NotFoundException,
   Param,
+  ParseEnumPipe,
   Patch,
   Post,
   Query,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { RequirePermissions } from '../../auth/decorators';
+import { CurrentUser, RequirePermissions } from '../../auth/decorators';
+import type { JwtPayload } from '../../auth/guards/auth.guard';
+import { TypeIdentityCard } from '../../persons/entities/person.entity';
+import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
@@ -57,6 +62,32 @@ export class ContractsController {
     );
   }
 
+  @Get('verify')
+  @RequirePermissions('read:contracts', 'read:persons')
+  verifyUnified(@Query('q') query?: string) {
+    if (!query || !query.trim()) {
+      throw new BadRequestException(
+        'Debe proporcionar un parámetro de búsqueda "q" (cédula o código de contrato).',
+      );
+    }
+    return this.contractsService.verifyUnified(query);
+  }
+
+  @Get('verify/:query')
+  @RequirePermissions('read:contracts', 'read:persons')
+  verifyUnifiedParam(@Param('query') query: string) {
+    return this.contractsService.verifyUnified(query);
+  }
+
+  @Get('verify/:type/:number')
+  @RequirePermissions('read:contracts', 'read:persons')
+  verifyPersonAffiliation(
+    @Param('type', new ParseEnumPipe(TypeIdentityCard)) type: TypeIdentityCard,
+    @Param('number') number: string,
+  ) {
+    return this.contractsService.verifyPersonAffiliation(type, number);
+  }
+
   @Get(':id')
   @RequirePermissions('read:contracts', 'read:pipeline')
   findOne(@Param('id') id: string) {
@@ -98,8 +129,12 @@ export class ContractsController {
 
   @Patch(':id/activate')
   @RequirePermissions('update:contracts')
-  activate(@Param('id') id: string) {
-    return this.contractsService.activate(id);
+  activate(
+    @Param('id') id: string,
+    @Body() dto?: ActivateContractDto,
+    @CurrentUser() user?: JwtPayload,
+  ) {
+    return this.contractsService.activate(id, dto, user);
   }
 
   @Post(':contractId/beneficiaries')

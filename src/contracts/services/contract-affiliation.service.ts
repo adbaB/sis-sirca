@@ -4,10 +4,16 @@ import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
-import { Person, PersonStatus } from '../../persons/entities/person.entity';
+import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
+import {
+  ContractBeneficiaryItem,
+  ContractVerificationResult,
+  PersonVerificationResult,
+  UnifiedVerificationResult,
+} from '../interfaces/person-verification.interface';
 import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
@@ -537,5 +543,212 @@ export class ContractAffiliationService {
     await this.recalculateMonthlyAmount(contractId, manager);
 
     return updatedBeneficiaries;
+  }
+
+  /**
+   * Verifies a person's affiliation status across all contracts where they are a beneficiary (AFILIADO).
+   * Returns person data and all contracts where they are registered as a beneficiary,
+   * sorted with priority: ACTIVE (1), SUSPENDED (2), INACTIVE (3), and newest affiliationDate first.
+   */
+  async verifyPersonAffiliation(
+    typeIdentityCard: TypeIdentityCard,
+    identityCard: string,
+  ): Promise<PersonVerificationResult> {
+    const cleanNumber = identityCard.trim();
+    const person = await this.personsService.findByIdentityCard(cleanNumber, typeIdentityCard);
+
+    if (!person) {
+      throw new NotFoundException(
+        `No se encontró ninguna persona registrada con la cédula ${typeIdentityCard}-${cleanNumber}.`,
+      );
+    }
+
+    const affiliations = await this.contractPersonsRepository.find({
+      where: {
+        person: { id: person.id },
+        role: PersonRole.AFILIADO,
+      },
+      relations: ['contract', 'plan', 'person', 'person.plan'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    const statusPriority: Record<ContractStatus, number> = {
+      [ContractStatus.ACTIVE]: 1,
+      [ContractStatus.SUSPENDED]: 2,
+      [ContractStatus.INACTIVE]: 3,
+    };
+
+    const contracts = affiliations
+      .map((cp) => ({
+        id: cp.contract.id,
+        code: cp.contract.code,
+        status: cp.contract.status,
+        affiliationDate: cp.contract.affiliationDate,
+        role: cp.role,
+        planName: cp.plan?.name ?? cp.person?.plan?.name ?? null,
+        isSuspended: cp.contract.status === ContractStatus.SUSPENDED,
+      }))
+      .sort((a, b) => {
+        const pA = statusPriority[a.status] ?? 99;
+        const pB = statusPriority[b.status] ?? 99;
+        if (pA !== pB) return pA - pB;
+        const dA = a.affiliationDate ? new Date(a.affiliationDate).getTime() : 0;
+        const dB = b.affiliationDate ? new Date(b.affiliationDate).getTime() : 0;
+        return dB - dA;
+      });
+
+    const hasActiveContract = contracts.some((c) => c.status === ContractStatus.ACTIVE);
+    const hasSuspendedContract = contracts.some((c) => c.status === ContractStatus.SUSPENDED);
+
+    return {
+      mode: 'BY_BENEFICIARY',
+      person: {
+        id: person.id,
+        name: person.name,
+        typeIdentityCard: person.typeIdentityCard,
+        identityCard: person.identityCard,
+        phone: person.phone,
+        birthDate: person.birthDate,
+        status: person.status,
+      },
+      contracts,
+      hasActiveContract,
+      hasSuspendedContract,
+    };
+  }
+
+  /**
+   * Verifies a contract by its code or legacyCode.
+   * Returns contract data, titular information, and all its beneficiaries (role === AFILIADO).
+   */
+  async verifyContractByCode(code: string): Promise<ContractVerificationResult> {
+    const trimmed = code.trim();
+    const contract = await this.contractsRepository.findOne({
+      where: [{ code: trimmed }, { legacyCode: trimmed }],
+      relations: [
+        'contractPersons',
+        'contractPersons.person',
+        'contractPersons.plan',
+        'contractPersons.person.plan',
+      ],
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`No se encontró ningún contrato con el código "${trimmed}".`);
+    }
+
+    const titularCp = contract.contractPersons?.find(
+      (cp) => cp.role === PersonRole.TITULAR || cp.isBillingOwner === true,
+    );
+
+    const titularPerson = titularCp?.person ?? null;
+
+    const beneficiaryCps =
+      contract.contractPersons?.filter((cp) => cp.role === PersonRole.AFILIADO) ?? [];
+
+    const beneficiaries: ContractBeneficiaryItem[] = beneficiaryCps.map((cp) => {
+      const plan = cp.plan ?? cp.person?.plan ?? null;
+      const person = cp.person;
+      const isEligible =
+        contract.status === ContractStatus.ACTIVE && person?.status === PersonStatus.ACTIVE;
+
+      return {
+        contractPersonId: cp.id,
+        personId: person?.id,
+        name: person?.name,
+        typeIdentityCard: person?.typeIdentityCard,
+        identityCard: person?.identityCard,
+        birthDate: person?.birthDate,
+        phone: person?.phone,
+        relationship: cp.relationship,
+        planName: plan?.name ?? null,
+        personStatus: person?.status,
+        isEligible,
+      };
+    });
+
+    return {
+      mode: 'BY_CONTRACT',
+      contract: {
+        id: contract.id,
+        code: contract.code,
+        status: contract.status,
+        isSuspended: contract.status === ContractStatus.SUSPENDED,
+        affiliationDate: contract.affiliationDate,
+        cutoffDay: contract.cutoffDay ?? 5,
+        titular: titularPerson
+          ? {
+              id: titularPerson.id,
+              name: titularPerson.name,
+              typeIdentityCard: titularPerson.typeIdentityCard,
+              identityCard: titularPerson.identityCard,
+              phone: titularPerson.phone,
+            }
+          : null,
+      },
+      beneficiaries,
+      totalBeneficiaries: beneficiaries.length,
+    };
+  }
+
+  /**
+   * Unified verification: Auto-detects whether rawQuery represents a contract code
+   * or a personal identity document.
+   */
+  async verifyUnified(rawQuery: string): Promise<UnifiedVerificationResult> {
+    if (!rawQuery || !rawQuery.trim()) {
+      throw new BadRequestException(
+        'Debe proporcionar un valor de búsqueda (código de contrato o documento de identidad).',
+      );
+    }
+
+    const query = rawQuery.trim();
+
+    // 1. Intentar buscar primero como código de contrato (ej. SIR-001-00001 o legacyCode)
+    const contract = await this.contractsRepository.findOne({
+      where: [{ code: query }, { legacyCode: query }],
+      select: ['id', 'code'],
+    });
+
+    if (contract) {
+      return this.verifyContractByCode(contract.code);
+    }
+
+    // 2. Si no es contrato directo, intentar interpretar como documento de identidad
+    // Formatos comunes: "V-12345678", "V12345678", "E-84123456", "12345678"
+    const docRegex = /^([a-zA-Z]{1,2})[-_\s]?(\d+)$/;
+    const match = query.match(docRegex);
+
+    let type: TypeIdentityCard = TypeIdentityCard.V;
+    let number: string = query;
+
+    if (match) {
+      const candidateType = match[1].toUpperCase() as TypeIdentityCard;
+      if (Object.values(TypeIdentityCard).includes(candidateType)) {
+        type = candidateType;
+        number = match[2];
+      }
+    } else if (/^\d+$/.test(query)) {
+      // Solo números: verificar si existe la persona con ese número
+      const person = await this.dataSource.getRepository(Person).findOne({
+        where: { identityCard: query },
+      });
+      if (person) {
+        return this.verifyPersonAffiliation(person.typeIdentityCard, person.identityCard);
+      }
+    }
+
+    try {
+      return await this.verifyPersonAffiliation(type, number);
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        throw new NotFoundException(
+          `No se encontró ningún contrato ni beneficiario para la búsqueda "${query}".`,
+        );
+      }
+      throw err;
+    }
   }
 }

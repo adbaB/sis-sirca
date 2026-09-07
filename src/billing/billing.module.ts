@@ -2,9 +2,7 @@ import { Module } from '@nestjs/common';
 import { PaymentPdfCron } from './crons/payment-pdf.cron';
 import { InvoiceModule } from './invoices/invoice.module';
 import { PaymentModule } from './payments/payment.module';
-import { ContractInactivationCron } from './crons/contract-inactivation.cron';
 import { GenerateMonthlyInvoices } from './crons/generate-monthly-invoices.cron';
-import { ContractSuspensionCron } from './crons/contract-suspension.cron';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Contract } from '../contracts/entities/contract.entity';
 import { EmailModule } from '../email/email.module';
@@ -20,12 +18,7 @@ import { AwsModule } from '../aws/aws.module';
     AwsModule,
     PdfModule,
   ],
-  providers: [
-    ContractInactivationCron,
-    ContractSuspensionCron,
-    PaymentPdfCron,
-    GenerateMonthlyInvoices,
-  ],
+  providers: [PaymentPdfCron, GenerateMonthlyInvoices],
   exports: [],
 })
 export class BillingModule {}

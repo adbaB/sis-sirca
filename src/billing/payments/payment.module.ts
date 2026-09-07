@@ -14,6 +14,7 @@ import { AwsModule } from '../../aws/aws.module';
 import { OcrModule } from '../../ocr/ocr.module';
 import { ExchangeRateModule } from '../../exchange-rate/exchange-rate.module';
 import { InvoiceModule } from '../invoices/invoice.module';
+import { ContractsModule } from '../../contracts/contracts.module';
 
 /**
  * Módulo NestJS encargado de gestionar toda la lógica de dominio de Pagos y Excedentes.
@@ -28,6 +29,7 @@ import { InvoiceModule } from '../invoices/invoice.module';
     OcrModule,
     ExchangeRateModule,
     InvoiceModule,
+    ContractsModule,
   ],
   controllers: [PaymentBillingController],
   providers: [

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractSuspensionCron } from './contract-suspension.cron';
 
 describe('ContractSuspensionCron', () => {

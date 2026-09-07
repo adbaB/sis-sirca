@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
@@ -10,6 +10,8 @@ import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
+import { Invoice } from '../../billing/invoices/entities/invoice.entity';
+import { Role } from '../../roles/entities/role.entity';
 
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
@@ -28,6 +30,7 @@ describe('ContractLifecycleService', () => {
     affiliationDate: new Date('2026-08-01'),
     cutoffDay: 5,
     inactivationReason: null as unknown as string,
+    reactivationEligibleAt: null,
     contractPersons: [],
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -262,15 +265,19 @@ describe('ContractLifecycleService', () => {
       await expect(service.activate('contract-1')).rejects.toThrow(NotFoundException);
     });
 
-    it('should activate a SUSPENDED contract directly without modifying affiliation history', async () => {
+    it('should activate a SUSPENDED contract directly when eligible and solvent', async () => {
       const mockLockedContract = {
         ...mockContract,
         status: ContractStatus.SUSPENDED,
         inactivationReason: 'Suspendido por falta de pago al corte',
+        reactivationEligibleAt: new Date('2026-01-01'), // Plazo cumplido
       };
 
       const mockHistoryRepo = {
         find: jest.fn(),
+      };
+      const mockInvoiceRepo = {
+        count: jest.fn().mockResolvedValue(0), // Solvente
       };
 
       mockManager.getRepository = jest.fn().mockImplementation((target) => {
@@ -283,13 +290,145 @@ describe('ContractLifecycleService', () => {
         if (target === AffiliationHistory) {
           return mockHistoryRepo;
         }
+        if (target === Invoice) {
+          return mockInvoiceRepo;
+        }
         return {};
       });
 
       const res = await service.activate('contract-1');
       expect(res.status).toBe(ContractStatus.ACTIVE);
       expect(res.inactivationReason).toBeNull();
+      expect(res.reactivationEligibleAt).toBeNull();
       expect(mockHistoryRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if SUSPENDED contract is in 7-day cooldown without override permission', async () => {
+      const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+      const mockLockedContract = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        inactivationReason: 'Suspendido por corte',
+        reactivationEligibleAt: futureDate,
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+          };
+        }
+        if (target === Invoice) {
+          return { count: jest.fn().mockResolvedValue(0) };
+        }
+        return {};
+      });
+
+      await expect(service.activate('contract-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if SUSPENDED contract has overdue invoices without override permission', async () => {
+      const pastDate = new Date('2026-01-01');
+      const mockLockedContract = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        inactivationReason: 'Suspendido por corte',
+        reactivationEligibleAt: pastDate,
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+          };
+        }
+        if (target === Invoice) {
+          return { count: jest.fn().mockResolvedValue(2) }; // 2 facturas impagas
+        }
+        return {};
+      });
+
+      await expect(service.activate('contract-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if override permission is used for bypass without providing reason', async () => {
+      const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+      const mockLockedContract = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        inactivationReason: 'Suspendido por corte',
+        reactivationEligibleAt: futureDate,
+      };
+
+      const mockRoleRepo = {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'role-admin',
+          permissions: [{ name: 'override:contract-reactivation' }],
+        }),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+          };
+        }
+        if (target === Invoice) {
+          return { count: jest.fn().mockResolvedValue(0) };
+        }
+        if (target === Role) {
+          return mockRoleRepo;
+        }
+        return {};
+      });
+
+      // Sin motivo
+      await expect(
+        service.activate('contract-1', undefined, { userId: 'u-1', roleId: 'role-admin' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should successfully bypass cooldown and debt when user has override:contract-reactivation and provides reason', async () => {
+      const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+      const mockLockedContract = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        inactivationReason: 'Suspendido por corte',
+        reactivationEligibleAt: futureDate,
+      };
+
+      const mockRoleRepo = {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'role-admin',
+          permissions: [{ name: 'override:contract-reactivation' }],
+        }),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockLockedContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === Invoice) {
+          return { count: jest.fn().mockResolvedValue(1) }; // Tiene deuda
+        }
+        if (target === Role) {
+          return mockRoleRepo;
+        }
+        return {};
+      });
+
+      const res = await service.activate(
+        'contract-1',
+        { reason: 'Excepción médica autorizada por dirección' },
+        { userId: 'u-1', roleId: 'role-admin' },
+      );
+
+      expect(res.status).toBe(ContractStatus.ACTIVE);
+      expect(res.inactivationReason).toBeNull();
+      expect(res.reactivationEligibleAt).toBeNull();
     });
 
     it('should revert same-month disaffiliations when activated in the same month', async () => {
@@ -386,6 +525,107 @@ describe('ContractLifecycleService', () => {
         id: 'contract-1',
         advisor: { id: 'adv-99' },
       });
+    });
+  });
+
+  describe('syncReactivationEligibility', () => {
+    it('should return null if contract is not suspended', async () => {
+      const mockActive = { ...mockContract, status: ContractStatus.ACTIVE };
+      const em = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn().mockResolvedValue(mockActive),
+          save: jest.fn(),
+        }),
+        find: jest.fn(),
+      };
+
+      const result = await service.syncReactivationEligibility(
+        'contract-1',
+        em as unknown as EntityManager,
+      );
+      expect(result).toBeNull();
+    });
+
+    it('should compute 7 days from latest payment operation_date when overdue invoices are covered by PROCESSING payments', async () => {
+      const mockSuspended = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        reactivationEligibleAt: null,
+      };
+
+      const opDate = new Date('2026-09-01T10:00:00Z');
+      const mockInvoices = [
+        {
+          id: 'inv-1',
+          totalAmount: 100,
+          retentionAmount: 0,
+          paidAmount: 0,
+          status: 'PENDING',
+          dueDate: new Date('2026-08-15'), // Vencida
+          payments: [
+            {
+              id: 'p-1',
+              status: 'PROCESSING',
+              amount: 100,
+              operationDate: opDate,
+              paymentDate: opDate,
+            },
+          ],
+        },
+      ];
+
+      const saveMock = jest.fn().mockImplementation(async (c) => c);
+      const em = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn().mockResolvedValue(mockSuspended),
+          save: saveMock,
+        }),
+        find: jest.fn().mockResolvedValue(mockInvoices),
+      };
+
+      const result = await service.syncReactivationEligibility(
+        'contract-1',
+        em as unknown as EntityManager,
+      );
+      expect(result).toBeInstanceOf(Date);
+      expect(saveMock).toHaveBeenCalled();
+      expect(mockSuspended.reactivationEligibleAt).toBeInstanceOf(Date);
+    });
+
+    it('should set reactivationEligibleAt to null when overdue invoices are not covered', async () => {
+      const mockSuspended = {
+        ...mockContract,
+        status: ContractStatus.SUSPENDED,
+        reactivationEligibleAt: new Date(),
+      };
+
+      const mockInvoices = [
+        {
+          id: 'inv-1',
+          totalAmount: 100,
+          retentionAmount: 0,
+          paidAmount: 0,
+          status: 'PENDING',
+          dueDate: new Date('2026-08-15'), // Vencida
+          payments: [], // Sin pagos
+        },
+      ];
+
+      const saveMock = jest.fn().mockImplementation(async (c) => c);
+      const em = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn().mockResolvedValue(mockSuspended),
+          save: saveMock,
+        }),
+        find: jest.fn().mockResolvedValue(mockInvoices),
+      };
+
+      const result = await service.syncReactivationEligibility(
+        'contract-1',
+        em as unknown as EntityManager,
+      );
+      expect(result).toBeNull();
+      expect(mockSuspended.reactivationEligibleAt).toBeNull();
     });
   });
 });

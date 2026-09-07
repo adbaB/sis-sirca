@@ -7,6 +7,7 @@ import { Invoice, InvoiceStatus } from '../../invoices/entities/invoice.entity';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { InvoiceService } from '../../invoices/services/invoice.service';
+import { ContractsService } from '../../../contracts/services/contracts.service';
 import { SurplusService } from './surplus.service';
 import { PaymentSplit, TransactionResult } from '../interfaces/payment.interface';
 import {
@@ -36,6 +37,7 @@ export class PaymentCreationService {
     private readonly exchangeRateService: ExchangeRateService,
     private readonly invoiceService: InvoiceService,
     private readonly surplusService: SurplusService,
+    private readonly contractsService: ContractsService,
   ) {}
 
   /**
@@ -255,6 +257,11 @@ export class PaymentCreationService {
 
     for (const invId of rawInvoiceIds) {
       await this.invoiceService.recalculateInvoicePaidAmount(invId, queryRunner);
+    }
+
+    const contractId = invoices[0]?.contract?.id;
+    if (contractId) {
+      await this.contractsService.syncReactivationEligibility(contractId, queryRunner.manager);
     }
 
     const totalInvoiceDebtUsd = round2(

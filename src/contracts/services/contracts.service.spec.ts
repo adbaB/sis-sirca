@@ -185,7 +185,11 @@ describe('ContractsService (Facade)', () => {
 
     it('activate should delegate to lifecycleService.activate', async () => {
       const res = await service.activate('contract-uuid-1');
-      expect(lifecycleService.activate).toHaveBeenCalledWith('contract-uuid-1');
+      expect(lifecycleService.activate).toHaveBeenCalledWith(
+        'contract-uuid-1',
+        undefined,
+        undefined,
+      );
       expect(res).toEqual(mockContract);
     });
 

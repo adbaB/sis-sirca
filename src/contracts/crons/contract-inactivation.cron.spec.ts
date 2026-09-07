@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, In } from 'typeorm';
-import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
 import { EmailService } from '../../email/email.service';
 import { ContractInactivationCron } from './contract-inactivation.cron';
 

@@ -109,6 +109,9 @@ export class Contract {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'inactivation_reason' })
   inactivationReason: string;
 
+  @Column({ type: 'timestamptz', nullable: true, name: 'reactivation_eligible_at' })
+  reactivationEligibleAt?: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 

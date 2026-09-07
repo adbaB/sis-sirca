@@ -1,16 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
-import { Person } from '../../persons/entities/person.entity';
+import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
+import {
+  ContractVerificationResult,
+  PersonVerificationResult,
+  UnifiedVerificationResult,
+} from '../interfaces/person-verification.interface';
 import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import type { JwtPayload } from '../../auth/guards/auth.guard';
 import { ContractPerson } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
 import {
@@ -85,8 +92,19 @@ export class ContractsService {
     return this.lifecycleService.inactivate(contractId, dto);
   }
 
-  async activate(contractId: string): Promise<Contract> {
-    return this.lifecycleService.activate(contractId);
+  async activate(
+    contractId: string,
+    dto?: ActivateContractDto,
+    user?: JwtPayload,
+  ): Promise<Contract> {
+    return this.lifecycleService.activate(contractId, dto, user);
+  }
+
+  async syncReactivationEligibility(
+    contractId: string,
+    manager?: EntityManager,
+  ): Promise<Date | null> {
+    return this.lifecycleService.syncReactivationEligibility(contractId, manager);
   }
 
   async setAdvisor(contractId: string, advisorId: string | null): Promise<void> {
@@ -153,5 +171,21 @@ export class ContractsService {
     mode: AffiliationStatsMode = 'billing',
   ): Promise<AffiliationStatsResult> {
     return this.statisticsService.getAffiliationStats(month, year, mode);
+  }
+
+  // ── 7. Verification ───────────────────────────────────────────────────────
+  async verifyPersonAffiliation(
+    typeIdentityCard: TypeIdentityCard,
+    identityCard: string,
+  ): Promise<PersonVerificationResult> {
+    return this.affiliationService.verifyPersonAffiliation(typeIdentityCard, identityCard);
+  }
+
+  async verifyContractByCode(code: string): Promise<ContractVerificationResult> {
+    return this.affiliationService.verifyContractByCode(code);
+  }
+
+  async verifyUnified(query: string): Promise<UnifiedVerificationResult> {
+    return this.affiliationService.verifyUnified(query);
   }
 }

@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
-import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
-import { Invoice, InvoiceStatus } from '../invoices/entities/invoice.entity';
+import { Contract, ContractStatus } from '../entities/contract.entity';
+import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { formatDateES, getCaracasNow } from '../../common/utils/date.util';
 
 export interface SuspendedContractInfo {

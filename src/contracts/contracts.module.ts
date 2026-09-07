@@ -10,6 +10,10 @@ import { AffiliationHistory } from './entities/affiliation-history.entity';
 import { ContractPerson } from './entities/contract-person.entity';
 import { Contract } from './entities/contract.entity';
 import { HealthDeclaration } from './entities/health-declaration.entity';
+import { EmailModule } from '../email/email.module';
+import { ContractSuspensionCron } from './crons/contract-suspension.cron';
+import { ContractReactivationCron } from './crons/contract-reactivation.cron';
+import { ContractInactivationCron } from './crons/contract-inactivation.cron';
 import { ContractQueryRepository } from './repositories/contract-query.repository';
 import { ContractAffiliationService } from './services/contract-affiliation.service';
 import { ContractCreationService } from './services/contract-creation.service';
@@ -26,6 +30,7 @@ import { ContractsService } from './services/contracts.service';
     PlansModule,
     AwsModule,
     PdfModule,
+    EmailModule,
   ],
   controllers: [ContractsController],
   providers: [
@@ -36,6 +41,9 @@ import { ContractsService } from './services/contracts.service';
     ContractStatisticsService,
     ContractCreationService,
     ContractsService,
+    ContractSuspensionCron,
+    ContractReactivationCron,
+    ContractInactivationCron,
   ],
   exports: [ContractsService, TypeOrmModule],
 })
