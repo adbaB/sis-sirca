@@ -19,10 +19,6 @@ export class AddIsRevertedToAffiliationHistory1788447809560 implements Migration
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "contract_persons" DROP CONSTRAINT "FK_a31e2f22ff3f92d7e7064a41bf1"`,
-    );
-    await queryRunner.query(`DROP INDEX "public"."IDX_payments_status_send_at"`);
     await queryRunner.query(`DROP INDEX "public"."IDX_ah_is_reverted"`);
     await queryRunner.query(`ALTER TABLE "affiliation_history" DROP COLUMN "reverted_at"`);
     await queryRunner.query(`ALTER TABLE "affiliation_history" DROP COLUMN "is_reverted"`);
