@@ -184,7 +184,7 @@ export class SipCommissionsService {
           WHERE status = 'COMPLETED' AND deleted_at IS NULL
           GROUP BY invoice_id
         ) pay ON pay.invoice_id = inv.id
-        WHERE c.status IN ('ACTIVE', 'SUSPENDED')
+        WHERE c.status IN ('ACTIVE')
           AND il.category IN ('MENSUALIDAD', 'INCLUSION')
           AND il.deleted_at IS NULL
           AND COALESCE(pay.operation_date, pay.payment_date)::date >= $1::date
