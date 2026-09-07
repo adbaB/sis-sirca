@@ -1,1088 +1,270 @@
-import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  Repository,
-  SelectQueryBuilder,
-  EntityManager,
-  ObjectLiteral,
-  EntityTarget,
-} from 'typeorm';
-
-import { SystemCounter } from '../../common/entities/system-counter.entity';
-import { Advisor } from '../../advisors/entities/advisor.entity';
-import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
-import { PersonsService } from '../../persons/services/persons.service';
-import { Plan } from '../../plans/entities/plan.entity';
-import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
-import { CreateContractDto } from '../dto/create-contract.dto';
-import { CreateContractFullDto } from '../dto/create-contract-full.dto';
-import { InactivateContractDto } from '../dto/inactivate-contract.dto';
-import { UpdateContractDto } from '../dto/update-contract.dto';
-import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
-import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractAffiliationService } from './contract-affiliation.service';
+import { ContractCreationService } from './contract-creation.service';
+import { ContractLifecycleService } from './contract-lifecycle.service';
+import { ContractPdfService } from './contract-pdf.service';
+import { ContractStatisticsService } from './contract-statistics.service';
 import { ContractsService } from './contracts.service';
-import { AffiliationHistory } from '../entities/affiliation-history.entity';
-import { AffiliationAction } from '../enums/affiliation-action.enum';
-import { InvoiceService } from '../../billing/invoices/services/invoice.service';
-import { PlansService } from '../../plans/services/plans.service';
-import { PdfService } from '../../pdf/services/pdf.service';
-import { AwsService } from '../../aws/aws.service';
+import { ContractQueryRepository } from '../repositories/contract-query.repository';
+import { Contract, ContractStatus } from '../entities/contract.entity';
+import { CreateContractFullDto } from '../dto/create-contract-full.dto';
+import { FindContractDto } from '../dto/find-contract.dto';
+import { UpdateContractDto } from '../dto/update-contract.dto';
+import { InactivateContractDto } from '../dto/inactivate-contract.dto';
+import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
+import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
+import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
+import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
+import { PersonRole } from '../entities/contract-person.entity';
 
-describe('ContractsService', () => {
+describe('ContractsService (Facade)', () => {
   let service: ContractsService;
-  let repository: Repository<Contract>;
-  let contractPersonsRepository: Repository<ContractPerson>;
-  let personsService: PersonsService;
-  let pdfService: PdfService;
+  let creationService: jest.Mocked<ContractCreationService>;
+  let lifecycleService: jest.Mocked<ContractLifecycleService>;
+  let affiliationService: jest.Mocked<ContractAffiliationService>;
+  let pdfService: jest.Mocked<ContractPdfService>;
+  let statisticsService: jest.Mocked<ContractStatisticsService>;
+  let queryRepository: jest.Mocked<ContractQueryRepository>;
 
-  const mockContract: Contract = {
-    id: '1',
-    code: '1',
-    affiliationDate: new Date('2023-01-01'),
-    monthlyAmount: 0,
-    retentionPercentage: 0,
-    contractPersons: [],
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletedAt: null,
+  const mockContract = {
+    id: 'contract-uuid-1',
+    code: 'SIR-001-00001',
     status: ContractStatus.ACTIVE,
-    inactivationReason: null,
-    advisorCommission: 0,
-    excludeFromNextBilling: false,
-  };
-
-  const CONTRACTS_REPOSITORY_TOKEN = getRepositoryToken(Contract);
-  const CONTRACT_PERSONS_REPOSITORY_TOKEN = getRepositoryToken(ContractPerson);
-  const AFFILIATION_HISTORY_REPOSITORY_TOKEN = getRepositoryToken(AffiliationHistory);
+    monthlyAmount: 50,
+  } as Contract;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
         {
-          provide: PersonsService,
+          provide: ContractCreationService,
           useValue: {
-            create: jest.fn(),
-            findAll: jest.fn(),
-            findOne: jest.fn(),
-            update: jest.fn(),
-            remove: jest.fn(),
+            createFull: jest.fn().mockResolvedValue(mockContract),
           },
         },
         {
-          provide: InvoiceService,
+          provide: ContractLifecycleService,
           useValue: {
-            removeAffiliateLineFromActiveInvoice: jest.fn(),
+            findOne: jest.fn().mockResolvedValue(mockContract),
+            findByCode: jest.fn().mockResolvedValue(mockContract),
+            update: jest.fn().mockResolvedValue(mockContract),
+            remove: jest.fn().mockResolvedValue(undefined),
+            inactivate: jest.fn().mockResolvedValue(mockContract),
+            activate: jest.fn().mockResolvedValue(mockContract),
+            setAdvisor: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
-          provide: PlansService,
+          provide: ContractAffiliationService,
           useValue: {
-            findOne: jest.fn(),
+            addBeneficiary: jest.fn().mockResolvedValue({ id: 'person-1' } as Person),
+            removeAffiliate: jest.fn().mockResolvedValue(undefined),
+            setContractTitular: jest.fn().mockResolvedValue(undefined),
+            setBillingOwner: jest.fn().mockResolvedValue(undefined),
+            recalculateMonthlyAmount: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
-          provide: PdfService,
+          provide: ContractPdfService,
           useValue: {
-            generatePdf: jest.fn().mockResolvedValue(Buffer.from('mock-pdf')),
+            generateContractPdfBuffer: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+            generateAndUploadContractPdf: jest.fn().mockResolvedValue('https://s3/pdf.pdf'),
           },
         },
         {
-          provide: AwsService,
+          provide: ContractStatisticsService,
           useValue: {
-            uploadFile: jest
-              .fn()
-              .mockResolvedValue('https://mock-s3-url.com/contracts/SIR-001.pdf'),
+            getPipelineStats: jest.fn().mockResolvedValue({
+              stats: { totalPipeline: 100, totalCollected: 50, totalPending: 50 },
+              counts: { pending: 1, rejected: 0, partial: 0, paid: 0 },
+            }),
+            getAffiliationStats: jest.fn().mockResolvedValue({
+              mode: 'billing',
+              period: { startDate: '2026-07-25', endDate: '2026-08-24' },
+              newAffiliations: 5,
+              disaffiliations: 1,
+              revenueGained: 100,
+              revenueLost: 20,
+              netChange: 4,
+              netRevenueChange: 80,
+            }),
           },
         },
         {
-          provide: CONTRACTS_REPOSITORY_TOKEN,
+          provide: ContractQueryRepository,
           useValue: {
-            create: jest.fn(),
-            save: jest.fn(),
-            find: jest.fn(),
-            findOne: jest.fn(),
-            softRemove: jest.fn(),
-            findAndCount: jest.fn(),
-            update: jest.fn(),
-            createQueryBuilder: jest.fn(),
-            manager: {
-              transaction: jest.fn(),
-            },
-          },
-        },
-        {
-          provide: CONTRACT_PERSONS_REPOSITORY_TOKEN,
-          useValue: {
-            create: jest.fn(),
-            save: jest.fn(),
-            findOne: jest.fn(),
-            find: jest.fn(),
-          },
-        },
-        {
-          provide: AFFILIATION_HISTORY_REPOSITORY_TOKEN,
-          useValue: {
-            create: jest.fn(),
-            save: jest.fn(),
+            findAllPaginated: jest.fn().mockResolvedValue({
+              data: [mockContract],
+              meta: {
+                totalItems: 1,
+                itemCount: 1,
+                itemsPerPage: 10,
+                totalPages: 1,
+                currentPage: 1,
+              },
+            }),
           },
         },
       ],
     }).compile();
 
     service = module.get<ContractsService>(ContractsService);
-    repository = module.get<Repository<Contract>>(CONTRACTS_REPOSITORY_TOKEN);
-    contractPersonsRepository = module.get<Repository<ContractPerson>>(
-      CONTRACT_PERSONS_REPOSITORY_TOKEN,
-    );
-    personsService = module.get<PersonsService>(PersonsService);
-    pdfService = module.get<PdfService>(PdfService);
+    creationService = module.get(ContractCreationService);
+    lifecycleService = module.get(ContractLifecycleService);
+    affiliationService = module.get(ContractAffiliationService);
+    pdfService = module.get(ContractPdfService);
+    statisticsService = module.get(ContractStatisticsService);
+    queryRepository = module.get(ContractQueryRepository);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe('create', () => {
-    it('should successfully insert a contract', async () => {
-      const createContractDto: CreateContractDto = {
-        affiliationDate: '2023-01-01',
-        advisorId: '123',
-      };
-
-      const mockAdvisor = { id: '123', code: '001' };
-      const mockManager = {
-        getRepository: jest.fn().mockImplementation((entityClass) => {
-          if (entityClass === SystemCounter) {
-            return {
-              findOne: jest.fn().mockResolvedValue({ key: 'contract_code', value: 1 }),
-              save: jest.fn().mockResolvedValue(true),
-            };
-          }
-          return {
-            findOne: jest.fn().mockResolvedValue(mockAdvisor),
-            create: jest.fn().mockReturnValue(mockContract),
-            save: jest.fn().mockResolvedValue(mockContract),
-          };
-        }),
-      };
-      jest
-        .spyOn(repository.manager, 'transaction')
-        .mockImplementation(
-          (
-            isolationLevelOrRunInTransaction: unknown,
-            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
-          ) => {
-            const cb =
-              typeof isolationLevelOrRunInTransaction === 'function'
-                ? (isolationLevelOrRunInTransaction as (
-                    entityManager: EntityManager,
-                  ) => Promise<unknown>)
-                : runInTransaction!;
-            return cb(mockManager as unknown as EntityManager) as Promise<unknown>;
-          },
-        );
-
-      const result = await service.create(createContractDto);
-
-      expect(result).toEqual(mockContract);
-    });
-
-    it('should create SystemCounter if it does not exist and increment it', async () => {
-      const mockCounter = { key: 'contract_code', value: 1 };
-      const mockSystemCounterRepo = {
-        findOne: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockReturnValue(mockCounter),
-        save: jest.fn().mockResolvedValue(mockCounter),
-      };
-
-      const customManager = {
-        getRepository: jest.fn().mockImplementation((entityClass: unknown) => {
-          if (entityClass === SystemCounter) return mockSystemCounterRepo;
-          return {
-            findOne: jest.fn().mockResolvedValue({ id: 'adv-1', code: '001' }),
-            create: jest.fn().mockReturnValue({}),
-            save: jest.fn().mockResolvedValue({}),
-          };
-        }),
-      };
-
-      jest
-        .spyOn(repository.manager, 'transaction')
-        .mockImplementation(
-          (
-            isolationLevelOrRunInTransaction: unknown,
-            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
-          ) => {
-            const cb =
-              typeof isolationLevelOrRunInTransaction === 'function'
-                ? (isolationLevelOrRunInTransaction as (
-                    entityManager: EntityManager,
-                  ) => Promise<unknown>)
-                : runInTransaction!;
-            return cb(customManager as unknown as EntityManager) as Promise<unknown>;
-          },
-        );
-
-      const dto: CreateContractDto = {
-        affiliationDate: '2023-01-01',
-        advisorId: 'adv-1',
-      };
-
-      await service.create(dto);
-
-      expect(mockSystemCounterRepo.findOne).toHaveBeenCalledWith({
-        where: { key: 'contract_code' },
-        lock: { mode: 'pessimistic_write' },
-      });
-      expect(mockSystemCounterRepo.create).toHaveBeenCalledWith({ key: 'contract_code', value: 1 });
-      expect(mockSystemCounterRepo.save).toHaveBeenCalledWith({ key: 'contract_code', value: 2 });
-    });
-  });
-
-  describe('findAll', () => {
-    it('should return a paginated result of contracts', async () => {
-      const mockQueryBuilder = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        setParameter: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([[mockContract], 1]),
-      };
-
-      jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
-
-      const result = await service.findAll({});
-
-      expect(repository.createQueryBuilder).toHaveBeenCalledWith('contract');
-      expect(mockQueryBuilder.leftJoinAndSelect).toHaveBeenCalled();
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('contract.code', 'ASC');
-      expect(result).toEqual({
-        data: [mockContract],
-        meta: {
-          totalItems: 1,
-          itemCount: 1,
-          itemsPerPage: 10,
-          totalPages: 1,
-          currentPage: 1,
-        },
-      });
-    });
-
-    it('should apply search filter when search param is provided', async () => {
-      const mockQueryBuilder = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        setParameter: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
-      };
-
-      jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
-
-      await service.findAll({ search: 'test' });
-
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR person.name ILIKE :search OR person.identityCard ILIKE :search',
-        ),
-        { search: '%test%' },
-      );
-    });
-
-    it('should apply specific filters when code, legacyCode, identityCard, and beneficiaryName are provided', async () => {
-      const mockQueryBuilder = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        setParameter: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
-      };
-
-      jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
-
-      await service.findAll({
-        code: 'CTR-001',
-        legacyCode: 'LEG-123',
-        identityCard: '12345678',
-        beneficiaryName: 'Maria',
-      });
-
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('contract.code ILIKE :codeFilter', {
-        codeFilter: '%CTR-001%',
-      });
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'contract.legacy_code ILIKE :legacyCodeFilter',
-        { legacyCodeFilter: '%LEG-123%' },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('person.identityCard ILIKE :idCardFilter'),
-        { idCardFilter: '%12345678%' },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'person.name ILIKE :beneficiaryNameFilter',
-        { beneficiaryNameFilter: '%Maria%' },
-      );
-    });
-
-    it('should apply advisor filter when advisorId is provided', async () => {
-      const mockQueryBuilder = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        setParameter: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
-      };
-
-      jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as unknown as SelectQueryBuilder<Contract>);
-
-      const advisorId = '123e4567-e89b-12d3-a456-426614174000';
-      await service.findAll({ advisorId });
-
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('contract.advisor_id = :advisorId', {
-        advisorId,
-      });
-    });
-  });
-
-  describe('findOne', () => {
-    it('should return a contract if it exists', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(mockContract);
-
-      const result = await service.findOne('1');
-
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1' },
-        relations: [
-          'contractPersons',
-          'contractPersons.person',
-          'contractPersons.person.plan',
-          'contractPersons.healthDeclarations',
-          'invoices',
-          'invoices.payments',
-          'surpluses',
-          'surpluses.payment',
-          'advisor',
-          'portfolio',
-        ],
-      });
-      expect(result).toEqual(mockContract);
-    });
-
-    it('should throw NotFoundException if contract does not exist', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
-
-      await expect(service.findOne('2')).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe('update', () => {
-    it('should update and return a contract', async () => {
-      const updateContractDto: UpdateContractDto = { affiliationDate: '2023-02-01' };
-      const updatedContract = {
-        ...mockContract,
-        ...updateContractDto,
-        affiliationDate: new Date('2023-02-01'),
-      };
-
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'save').mockResolvedValue(updatedContract as Contract);
-
-      const result = await service.update('1', updateContractDto);
-
-      expect(service.findOne).toHaveBeenCalledWith('1');
-      expect(repository.save).toHaveBeenCalled();
-      expect(result.affiliationDate.toISOString()).toContain('2023-02-01');
-    });
-
-    it('should update and associate advisorId and portfolioId', async () => {
-      const updateContractDto: UpdateContractDto = {
-        advisorId: 'adv-1',
-        portfolioId: 'port-1',
-      };
-      const updatedContract = {
-        ...mockContract,
-        advisor: { id: 'adv-1' },
-        portfolio: { id: 'port-1' },
-      };
-
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'save').mockResolvedValue(updatedContract as unknown as Contract);
-
-      const result = await service.update('1', updateContractDto);
-
-      expect(service.findOne).toHaveBeenCalledWith('1');
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          advisor: { id: 'adv-1' },
-          portfolio: { id: 'port-1' },
-        }),
-      );
-      expect(result.advisor).toEqual({ id: 'adv-1' });
-      expect(result.portfolio).toEqual({ id: 'port-1' });
-    });
-
-    it('should detach advisorId and portfolioId when they are null', async () => {
-      const updateContractDto: UpdateContractDto = {
-        advisorId: null,
-        portfolioId: null,
-      };
-      const updatedContract = {
-        ...mockContract,
-        advisor: null,
-        portfolio: null,
-      };
-
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'save').mockResolvedValue(updatedContract as unknown as Contract);
-
-      const result = await service.update('1', updateContractDto);
-
-      expect(service.findOne).toHaveBeenCalledWith('1');
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          advisor: null,
-          portfolio: null,
-        }),
-      );
-      expect(result.advisor).toBeNull();
-      expect(result.portfolio).toBeNull();
-    });
-  });
-
-  describe('remove', () => {
-    it('should soft remove a contract', async () => {
-      jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
-      jest.spyOn(repository, 'softRemove').mockResolvedValue(mockContract);
-
-      await service.remove('1');
-
-      expect(service.findOne).toHaveBeenCalledWith('1');
-      expect(repository.softRemove).toHaveBeenCalledWith(mockContract);
-    });
-  });
-
-  describe('recalculateMonthlyAmount', () => {
-    it('should accurately calculate the amount based on associated persons plans', async () => {
-      const mockPlan1 = { amount: 10 } as Plan;
-      const mockPlan2 = { amount: 20 } as Plan;
-
-      const mockPerson1 = { plan: mockPlan1 } as Person;
-      const mockPerson2 = { plan: mockPlan2 } as Person;
-      const mockPersonWithoutPlan = { plan: null } as Person;
-
-      const mockAffiliates = [
-        { role: 'AFILIADO', person: mockPerson1 },
-        { role: 'AFILIADO', person: mockPerson2 },
-        { role: 'TITULAR', person: mockPersonWithoutPlan }, // should not be counted even if it had a plan
-      ];
-
-      jest
-        .spyOn(contractPersonsRepository, 'find')
-        .mockResolvedValue(mockAffiliates as ContractPerson[]);
-      jest
-        .spyOn(repository, 'update')
-        .mockResolvedValue(undefined as unknown as import('typeorm').UpdateResult);
-
-      await service.recalculateMonthlyAmount('1');
-
-      expect(contractPersonsRepository.find).toHaveBeenCalledWith({
-        where: {
-          contract: { id: '1' },
-          person: { status: PersonStatus.ACTIVE },
-        },
-        relations: ['plan', 'person', 'person.plan'],
-      });
-      expect(repository.update).toHaveBeenCalledWith('1', { monthlyAmount: 30 }); // 10 + 20
-    });
-
-    it('should gracefully handle an invalid contract id', async () => {
-      jest.spyOn(contractPersonsRepository, 'find').mockResolvedValue([]);
-      jest
-        .spyOn(repository, 'update')
-        .mockResolvedValue(undefined as unknown as import('typeorm').UpdateResult);
-
-      await service.recalculateMonthlyAmount('invalid-id');
-
-      expect(contractPersonsRepository.find).toHaveBeenCalledWith({
-        where: {
-          contract: { id: 'invalid-id' },
-          person: { status: PersonStatus.ACTIVE },
-        },
-        relations: ['plan', 'person', 'person.plan'],
-      });
-      expect(repository.update).toHaveBeenCalledWith('invalid-id', { monthlyAmount: 0 });
-    });
-  });
-
-  describe('createFull', () => {
-    let mockManager: Partial<EntityManager>;
-    let mockPersonRepo: {
-      findOne: jest.Mock;
-      create: jest.Mock;
-      save: jest.Mock;
-    };
-    let mockContractRepo: {
-      create: jest.Mock;
-      save: jest.Mock;
-      findOne: jest.Mock;
-      update: jest.Mock;
-    };
-    let mockCpRepo: {
-      find: jest.Mock;
-      create: jest.Mock;
-      save: jest.Mock;
-      softRemove: jest.Mock;
-    };
-    let mockHistoryRepo: {
-      create: jest.Mock;
-      save: jest.Mock;
-    };
-
-    beforeEach(() => {
-      mockPersonRepo = {
-        findOne: jest.fn(),
-        create: jest.fn().mockImplementation((d) => ({ id: 'new-person-id', ...d })),
-        save: jest.fn().mockImplementation((p) => Promise.resolve(p)),
-      };
-      mockContractRepo = {
-        create: jest.fn().mockReturnValue(mockContract),
-        save: jest.fn().mockResolvedValue(mockContract),
-        findOne: jest.fn().mockResolvedValue(mockContract),
-        update: jest.fn().mockResolvedValue(undefined),
-      };
-      mockCpRepo = {
-        find: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockImplementation((cp) => cp),
-        save: jest.fn().mockImplementation((cp) => Promise.resolve(cp)),
-        softRemove: jest.fn(),
-      };
-      mockHistoryRepo = {
-        create: jest.fn().mockImplementation((h) => h),
-        save: jest.fn().mockImplementation((h) => Promise.resolve(h)),
-      };
-
-      mockManager = {
-        getRepository: jest
-          .fn()
-          .mockImplementation(
-            <Entity extends ObjectLiteral>(
-              entityClass: EntityTarget<Entity>,
-            ): Repository<Entity> => {
-              if (entityClass === Person) return mockPersonRepo as unknown as Repository<Entity>;
-              if (entityClass === Contract)
-                return mockContractRepo as unknown as Repository<Entity>;
-              if (entityClass === ContractPerson)
-                return mockCpRepo as unknown as Repository<Entity>;
-              if (entityClass === AffiliationHistory)
-                return mockHistoryRepo as unknown as Repository<Entity>;
-              if (entityClass === Advisor)
-                return {
-                  findOne: jest.fn().mockResolvedValue({ id: 'adv-1', code: '001' }),
-                } as unknown as Repository<Entity>;
-              if (entityClass === SystemCounter)
-                return {
-                  findOne: jest.fn().mockResolvedValue({ key: 'contract_code', value: 1 }),
-                  save: jest.fn().mockResolvedValue(true),
-                } as unknown as Repository<Entity>;
-              return null as unknown as Repository<Entity>;
-            },
-          ),
-      };
-
-      jest
-        .spyOn(repository.manager, 'transaction')
-        .mockImplementation(
-          (
-            isolationLevelOrRunInTransaction: unknown,
-            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
-          ) => {
-            const cb =
-              typeof isolationLevelOrRunInTransaction === 'function'
-                ? (isolationLevelOrRunInTransaction as (
-                    entityManager: EntityManager,
-                  ) => Promise<unknown>)
-                : runInTransaction!;
-            return cb(mockManager as unknown as EntityManager) as Promise<unknown>; // return as Promise<unknown> since transaction is typed dynamically
-          },
-        );
-      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
-    });
-
-    it('should successfully create a contract with a new person', async () => {
+  describe('Creation delegates', () => {
+    it('createFull should delegate to creationService.createFull', async () => {
       const dto: CreateContractFullDto = {
-        affiliationDate: '2023-01-01',
+        affiliationDate: '2026-08-01',
         advisorId: 'adv-1',
         affiliates: [
           {
             typeIdentityCard: TypeIdentityCard.V,
             identityCard: '12345678',
-            name: 'Juan Perez',
-            role: PersonRole.TITULAR,
-            isBillingOwner: true,
-          },
-        ],
-      };
-
-      const result = await service.createFull(dto);
-
-      expect(mockContractRepo.create).toHaveBeenCalled();
-      expect(mockContractRepo.save).toHaveBeenCalled();
-      expect(mockPersonRepo.findOne).toHaveBeenCalledWith({
-        where: { identityCard: '12345678', typeIdentityCard: TypeIdentityCard.V },
-        lock: { mode: 'pessimistic_write' },
-      });
-      expect(mockPersonRepo.save).toHaveBeenCalled();
-      expect(mockCpRepo.save).toHaveBeenCalled();
-      expect(result).toEqual(mockContract);
-    });
-
-    it('should create SystemCounter if it does not exist and increment it', async () => {
-      const mockCounter = { key: 'contract_code', value: 1 };
-      const mockSystemCounterRepo = {
-        findOne: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockReturnValue(mockCounter),
-        save: jest.fn().mockResolvedValue(mockCounter),
-      };
-
-      const customManager = {
-        ...mockManager,
-        getRepository: jest.fn().mockImplementation((entityClass: unknown) => {
-          if (entityClass === SystemCounter)
-            return mockSystemCounterRepo as unknown as Repository<SystemCounter>;
-          return (mockManager.getRepository as jest.Mock)(entityClass);
-        }),
-      };
-
-      jest
-        .spyOn(repository.manager, 'transaction')
-        .mockImplementation(
-          (
-            isolationLevelOrRunInTransaction: unknown,
-            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
-          ) => {
-            const cb =
-              typeof isolationLevelOrRunInTransaction === 'function'
-                ? (isolationLevelOrRunInTransaction as (
-                    entityManager: EntityManager,
-                  ) => Promise<unknown>)
-                : runInTransaction!;
-            return cb(customManager as unknown as EntityManager) as Promise<unknown>;
-          },
-        );
-
-      const dto: CreateContractFullDto = {
-        affiliationDate: '2023-01-01',
-        advisorId: 'adv-1',
-        affiliates: [
-          {
-            typeIdentityCard: TypeIdentityCard.V,
-            identityCard: '12345678',
-            name: 'Juan Perez',
-            role: PersonRole.TITULAR,
-            isBillingOwner: true,
-          },
-        ],
-      };
-
-      await service.createFull(dto);
-
-      expect(mockSystemCounterRepo.findOne).toHaveBeenCalledWith({
-        where: { key: 'contract_code' },
-        lock: { mode: 'pessimistic_write' },
-      });
-      expect(mockSystemCounterRepo.create).toHaveBeenCalledWith({ key: 'contract_code', value: 1 });
-      expect(mockSystemCounterRepo.save).toHaveBeenCalledWith({ key: 'contract_code', value: 2 });
-    });
-
-    it('should throw BadRequestException if there is more than one titular', async () => {
-      const dto: CreateContractFullDto = {
-        affiliationDate: '2023-01-01',
-        advisorId: 'adv-1',
-        affiliates: [
-          {
-            typeIdentityCard: TypeIdentityCard.V,
-            identityCard: '1',
             name: 'Juan',
             role: PersonRole.TITULAR,
           },
-          {
-            typeIdentityCard: TypeIdentityCard.V,
-            identityCard: '2',
-            name: 'Pedro',
-            role: PersonRole.TITULAR,
-          },
         ],
       };
-
-      await expect(service.createFull(dto)).rejects.toThrow(
-        'Solo puede haber un TITULAR por contrato.',
-      );
-    });
-
-    it('should throw BadRequestException if affiliate is already an active beneficiary elsewhere', async () => {
-      const existingPerson = {
-        id: 'person-1',
-        name: 'Juan',
-        identityCard: '123',
-        typeIdentityCard: TypeIdentityCard.V,
-      } as Person;
-      mockPersonRepo.findOne.mockResolvedValue(existingPerson);
-      mockCpRepo.find.mockResolvedValue([
-        { id: 'cp-active-relation', contract: { code: 'ACTIVE-CODE' } },
-      ]);
-
-      const dto: CreateContractFullDto = {
-        affiliationDate: '2023-01-01',
-        advisorId: 'adv-1',
-        affiliates: [
-          {
-            typeIdentityCard: TypeIdentityCard.V,
-            identityCard: '123',
-            name: 'Juan',
-            role: PersonRole.AFILIADO,
-            planId: 'plan-1',
-          },
-        ],
-      };
-
-      jest
-        .spyOn(service['plansService'], 'findOne')
-        .mockResolvedValue({ id: 'plan-1', amount: 10 } as Plan);
-
-      await expect(service.createFull(dto)).rejects.toThrow(
-        'El afiliado Juan (V-123) ya es beneficiario activo en el contrato: ACTIVE-CODE. Debe ser desafiliado primero antes de asignarlo a otro contrato.',
-      );
+      const res = await service.createFull(dto);
+      expect(creationService.createFull).toHaveBeenCalledWith(dto);
+      expect(res).toEqual(mockContract);
     });
   });
 
-  describe('inactivate', () => {
-    let mockManager: Partial<EntityManager>;
-    let mockContractRepo: {
-      findOne: jest.Mock;
-      save: jest.Mock;
-    };
-    let mockCpRepo: {
-      find: jest.Mock;
-    };
-    let mockHistoryRepo: {
-      create: jest.Mock;
-      save: jest.Mock;
-    };
-
-    beforeEach(() => {
-      mockContractRepo = {
-        findOne: jest.fn().mockResolvedValue({ ...mockContract, status: ContractStatus.ACTIVE }),
-        save: jest.fn().mockImplementation((c) => Promise.resolve(c)),
-      };
-      mockCpRepo = {
-        find: jest
-          .fn()
-          .mockResolvedValue([{ person: { id: 'p-1', plan: { id: 'plan-1', amount: 50 } } }]),
-      };
-      mockHistoryRepo = {
-        create: jest.fn().mockImplementation((h) => h),
-        save: jest.fn().mockImplementation((h) => Promise.resolve(h)),
-      };
-
-      mockManager = {
-        getRepository: jest
-          .fn()
-          .mockImplementation(
-            <Entity extends ObjectLiteral>(
-              entityClass: EntityTarget<Entity>,
-            ): Repository<Entity> => {
-              if (entityClass === Contract)
-                return mockContractRepo as unknown as Repository<Entity>;
-              if (entityClass === ContractPerson)
-                return mockCpRepo as unknown as Repository<Entity>;
-              if (entityClass === AffiliationHistory)
-                return mockHistoryRepo as unknown as Repository<Entity>;
-              return null as unknown as Repository<Entity>;
-            },
-          ),
-      };
-
-      jest
-        .spyOn(repository.manager, 'transaction')
-        .mockImplementation(
-          (
-            isolationLevelOrRunInTransaction: unknown,
-            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
-          ) => {
-            const cb =
-              typeof isolationLevelOrRunInTransaction === 'function'
-                ? (isolationLevelOrRunInTransaction as (
-                    entityManager: EntityManager,
-                  ) => Promise<unknown>)
-                : runInTransaction!;
-            return cb(mockManager as unknown as EntityManager) as Promise<unknown>; // return as Promise<unknown> instead of any
-          },
-        );
+  describe('Queries & Search delegates', () => {
+    it('findAll should delegate to queryRepository.findAllPaginated', async () => {
+      const query: FindContractDto = { search: 'SIR' };
+      const res = await service.findAll(query);
+      expect(queryRepository.findAllPaginated).toHaveBeenCalledWith(query);
+      expect(res.data).toEqual([mockContract]);
     });
 
-    it('should successfully inactivate an active contract and truncate the history reason to 255 chars', async () => {
-      const activeContract = { ...mockContract, status: ContractStatus.ACTIVE };
-      jest.spyOn(service, 'findOne').mockResolvedValue(activeContract);
-      mockContractRepo.findOne.mockResolvedValue(activeContract);
-
-      const dto: InactivateContractDto = {
-        reason: 'A'.repeat(300), // 300 characters reason
-      };
-
-      const result = await service.inactivate('1', dto);
-
-      expect(result.status).toBe(ContractStatus.INACTIVE);
-      expect(result.inactivationReason).toBe(dto.reason);
-      expect(mockContractRepo.findOne).toHaveBeenCalledWith({
-        where: { id: '1' },
-        lock: { mode: 'pessimistic_write' },
-      });
-      expect(mockCpRepo.find).toHaveBeenCalledWith({
-        where: { contract: { id: '1' }, role: PersonRole.AFILIADO },
-        relations: ['person', 'person.plan'],
-      });
-      expect(mockHistoryRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          reason: 'A'.repeat(255), // Check that it was truncated to 255
-          action: 'DESAFILIACION',
-        }),
-      );
+    it('findOne should delegate to lifecycleService.findOne', async () => {
+      const res = await service.findOne('contract-uuid-1');
+      expect(lifecycleService.findOne).toHaveBeenCalledWith('contract-uuid-1');
+      expect(res).toEqual(mockContract);
     });
 
-    it('should throw BadRequestException if contract is already inactive before transaction', async () => {
-      const inactiveContract = { ...mockContract, status: ContractStatus.INACTIVE };
-      jest.spyOn(service, 'findOne').mockResolvedValue(inactiveContract);
-
-      const dto: InactivateContractDto = { reason: 'reason' };
-
-      await expect(service.inactivate('1', dto)).rejects.toThrow(
-        'El contrato ya se encuentra inactivo.',
-      );
-    });
-
-    it('should throw BadRequestException if contract becomes inactive under concurrency (lock returns inactive)', async () => {
-      const activeContract = { ...mockContract, status: ContractStatus.ACTIVE };
-      const inactiveContract = { ...mockContract, status: ContractStatus.INACTIVE };
-
-      jest.spyOn(service, 'findOne').mockResolvedValue(activeContract);
-      mockContractRepo.findOne.mockResolvedValue(inactiveContract); // Locks and discovers it was inactivated by another process
-
-      const dto: InactivateContractDto = { reason: 'reason' };
-
-      await expect(service.inactivate('1', dto)).rejects.toThrow(
-        'El contrato ya se encuentra inactivo.',
-      );
+    it('findByCode should delegate to lifecycleService.findByCode', async () => {
+      const res = await service.findByCode('SIR-001-00001');
+      expect(lifecycleService.findByCode).toHaveBeenCalledWith('SIR-001-00001');
+      expect(res).toEqual(mockContract);
     });
   });
 
-  describe('activate', () => {
-    let mockManager: Partial<EntityManager>;
-    let mockContractRepo: {
-      findOne: jest.Mock;
-      save: jest.Mock;
-    };
-    let mockHistoryRepo: {
-      find: jest.Mock;
-      remove: jest.Mock;
-    };
-
-    beforeEach(() => {
-      mockContractRepo = {
-        findOne: jest.fn().mockResolvedValue({ ...mockContract, status: ContractStatus.INACTIVE }),
-        save: jest.fn().mockImplementation((c) => Promise.resolve(c)),
-      };
-      mockHistoryRepo = {
-        find: jest.fn().mockResolvedValue([]),
-        remove: jest.fn().mockResolvedValue([]),
-      };
-
-      mockManager = {
-        getRepository: jest
-          .fn()
-          .mockImplementation(
-            <Entity extends ObjectLiteral>(
-              entityClass: EntityTarget<Entity>,
-            ): Repository<Entity> => {
-              if (entityClass === Contract)
-                return mockContractRepo as unknown as Repository<Entity>;
-              if (entityClass === AffiliationHistory)
-                return mockHistoryRepo as unknown as Repository<Entity>;
-              return null as unknown as Repository<Entity>;
-            },
-          ),
-      };
-
-      jest
-        .spyOn(repository.manager, 'transaction')
-        .mockImplementation(
-          (
-            isolationLevelOrRunInTransaction: unknown,
-            runInTransaction?: (entityManager: EntityManager) => Promise<unknown>,
-          ) => {
-            const cb =
-              typeof isolationLevelOrRunInTransaction === 'function'
-                ? (isolationLevelOrRunInTransaction as (
-                    entityManager: EntityManager,
-                  ) => Promise<unknown>)
-                : runInTransaction!;
-            return cb(mockManager as unknown as EntityManager) as Promise<unknown>;
-          },
-        );
+  describe('Lifecycle delegates', () => {
+    it('update should delegate to lifecycleService.update', async () => {
+      const dto: UpdateContractDto = { retentionPercentage: 10 };
+      const res = await service.update('contract-uuid-1', dto);
+      expect(lifecycleService.update).toHaveBeenCalledWith('contract-uuid-1', dto);
+      expect(res).toEqual(mockContract);
     });
 
-    it('should throw BadRequestException if contract is already active', async () => {
-      const activeContract = { ...mockContract, status: ContractStatus.ACTIVE };
-      jest.spyOn(service, 'findOne').mockResolvedValue(activeContract);
-
-      await expect(service.activate('1')).rejects.toThrow('El contrato ya se encuentra activo.');
+    it('remove should delegate to lifecycleService.remove', async () => {
+      await service.remove('contract-uuid-1');
+      expect(lifecycleService.remove).toHaveBeenCalledWith('contract-uuid-1');
     });
 
-    it('should reactivate contract and remove disaffiliation history from same month', async () => {
-      const inactiveContract = {
-        ...mockContract,
-        status: ContractStatus.INACTIVE,
-        inactivationReason: 'Motivo previo',
-      };
-      jest.spyOn(service, 'findOne').mockResolvedValue(inactiveContract);
-
-      const now = new Date();
-      const sameMonthHistory = {
-        id: 'h1',
-        contract: { id: '1' },
-        action: AffiliationAction.DESAFILIACION,
-        createdAt: now,
-        actionDate: now,
-      };
-
-      mockContractRepo.findOne.mockResolvedValue(inactiveContract);
-      mockHistoryRepo.find.mockResolvedValue([sameMonthHistory]);
-
-      const result = await service.activate('1');
-
-      expect(result.status).toBe(ContractStatus.ACTIVE);
-      expect(result.inactivationReason).toBeNull();
-      expect(mockHistoryRepo.remove).toHaveBeenCalledWith([sameMonthHistory]);
+    it('inactivate should delegate to lifecycleService.inactivate', async () => {
+      const dto: InactivateContractDto = { reason: 'Mora' };
+      const res = await service.inactivate('contract-uuid-1', dto);
+      expect(lifecycleService.inactivate).toHaveBeenCalledWith('contract-uuid-1', dto);
+      expect(res).toEqual(mockContract);
     });
 
-    it('should reactivate contract and keep disaffiliation history from a different month', async () => {
-      const inactiveContract = {
-        ...mockContract,
-        status: ContractStatus.INACTIVE,
-        inactivationReason: 'Motivo previo',
-      };
-      jest.spyOn(service, 'findOne').mockResolvedValue(inactiveContract);
+    it('activate should delegate to lifecycleService.activate', async () => {
+      const res = await service.activate('contract-uuid-1');
+      expect(lifecycleService.activate).toHaveBeenCalledWith('contract-uuid-1');
+      expect(res).toEqual(mockContract);
+    });
 
-      const pastDate = new Date('2020-01-01');
-      const pastMonthHistory = {
-        id: 'h2',
-        contract: { id: '1' },
-        action: AffiliationAction.DESAFILIACION,
-        createdAt: pastDate,
-        actionDate: pastDate,
-      };
-
-      mockContractRepo.findOne.mockResolvedValue(inactiveContract);
-      mockHistoryRepo.find.mockResolvedValue([pastMonthHistory]);
-
-      const result = await service.activate('1');
-
-      expect(result.status).toBe(ContractStatus.ACTIVE);
-      expect(result.inactivationReason).toBeNull();
-      expect(mockHistoryRepo.remove).not.toHaveBeenCalled();
+    it('setAdvisor should delegate to lifecycleService.setAdvisor', async () => {
+      await service.setAdvisor('contract-uuid-1', 'adv-2');
+      expect(lifecycleService.setAdvisor).toHaveBeenCalledWith('contract-uuid-1', 'adv-2');
     });
   });
 
-  describe('generateContractPdfBuffer', () => {
-    it('should correctly populate pdfData when a single affiliate is billing owner', async () => {
-      const mockAffiliatePerson: Partial<Person> = {
-        id: 'p-1',
-        name: 'Maria Perez',
-        typeIdentityCard: TypeIdentityCard.V,
-        identityCard: '99999999',
-        birthDate: new Date('1990-01-01'),
-        gender: false,
-        plan: { id: 'plan-1', name: 'Plan Oro', amount: 100, coverage: 10000 } as Plan,
-      };
-
-      const mockContractPerson: Partial<ContractPerson> = {
-        id: 'cp-1',
-        role: PersonRole.AFILIADO,
-        isBillingOwner: true,
-        person: mockAffiliatePerson as Person,
-      };
-
-      const fullContractData = {
-        ...mockContract,
-        contractPersons: [mockContractPerson as ContractPerson],
-      };
-
-      jest.spyOn(repository, 'findOne').mockResolvedValue(fullContractData as Contract);
-
-      await service.generateContractPdfBuffer('1');
-
-      expect(pdfService.generatePdf).toHaveBeenCalledWith(
-        'contract-affiliation',
-        expect.objectContaining({
-          titularRow: expect.objectContaining({
-            name: 'Maria Perez',
-            planName: 'Plan Oro',
-          }),
-          beneficiaries: expect.arrayContaining([
-            expect.objectContaining({
-              name: 'Maria Perez',
-              planName: 'Plan Oro',
-            }),
-          ]),
-          allMembers: expect.arrayContaining([
-            expect.objectContaining({
-              name: 'Maria Perez',
-              isPN: false,
-            }),
-          ]),
-        }),
-      );
-    });
-  });
-
-  describe('addBeneficiary', () => {
-    it('should delegate adding beneficiary to personsService.create with contractId', async () => {
+  describe('Affiliation delegates', () => {
+    it('addBeneficiary should delegate to affiliationService.addBeneficiary', async () => {
       const dto: CreateBeneficiaryDto = {
-        name: 'Maria Perez',
+        name: 'Maria',
         typeIdentityCard: TypeIdentityCard.V,
-        identityCard: '99999999',
+        identityCard: '87654321',
         planId: 'plan-1',
         role: PersonRole.AFILIADO,
         isBillingOwner: false,
-        contractId: '1',
+        contractId: 'contract-uuid-1',
       };
-      const mockCreatedPerson = { id: 'person-1', name: 'Maria Perez' } as Person;
-      jest.spyOn(personsService, 'create').mockResolvedValue(mockCreatedPerson);
+      const res = await service.addBeneficiary('contract-uuid-1', dto);
+      expect(affiliationService.addBeneficiary).toHaveBeenCalledWith('contract-uuid-1', dto);
+      expect(res.id).toBe('person-1');
+    });
 
-      const result = await service.addBeneficiary('1', dto);
+    it('removeAffiliate should delegate to affiliationService.removeAffiliate', async () => {
+      await service.removeAffiliate('cp-1');
+      expect(affiliationService.removeAffiliate).toHaveBeenCalledWith('cp-1', undefined);
 
-      expect(personsService.create).toHaveBeenCalledWith({
-        ...dto,
-        contractId: '1',
-      });
-      expect(result).toEqual(mockCreatedPerson);
+      await service.removeAffiliate('cp-1', 'contract-1');
+      expect(affiliationService.removeAffiliate).toHaveBeenCalledWith('cp-1', 'contract-1');
+    });
+
+    it('setContractTitular should delegate to affiliationService.setContractTitular', async () => {
+      const dto: SetContractTitularDto = { contractPersonId: 'cp-1' };
+      await service.setContractTitular('contract-uuid-1', dto);
+      expect(affiliationService.setContractTitular).toHaveBeenCalledWith('contract-uuid-1', dto);
+    });
+
+    it('setBillingOwner should delegate to affiliationService.setBillingOwner', async () => {
+      const dto: SetBillingOwnerDto = { contractPersonId: 'cp-1' };
+      await service.setBillingOwner('contract-uuid-1', dto);
+      expect(affiliationService.setBillingOwner).toHaveBeenCalledWith('contract-uuid-1', dto);
+    });
+
+    it('recalculateMonthlyAmount should delegate to affiliationService.recalculateMonthlyAmount', async () => {
+      await service.recalculateMonthlyAmount('contract-uuid-1');
+      expect(affiliationService.recalculateMonthlyAmount).toHaveBeenCalledWith(
+        'contract-uuid-1',
+        undefined,
+      );
+    });
+  });
+
+  describe('PDF delegates', () => {
+    it('generateContractPdfBuffer should delegate to pdfService.generateContractPdfBuffer', async () => {
+      const res = await service.generateContractPdfBuffer('contract-uuid-1');
+      expect(pdfService.generateContractPdfBuffer).toHaveBeenCalledWith('contract-uuid-1');
+      expect(res).toBeInstanceOf(Buffer);
+    });
+
+    it('generateAndUploadContractPdf should delegate to pdfService.generateAndUploadContractPdf', async () => {
+      const res = await service.generateAndUploadContractPdf('contract-uuid-1');
+      expect(pdfService.generateAndUploadContractPdf).toHaveBeenCalledWith('contract-uuid-1');
+      expect(res).toBe('https://s3/pdf.pdf');
+    });
+  });
+
+  describe('Statistics delegates', () => {
+    it('getPipelineStats should delegate to statisticsService.getPipelineStats', async () => {
+      const res = await service.getPipelineStats('adv-1', '08', '2026');
+      expect(statisticsService.getPipelineStats).toHaveBeenCalledWith('adv-1', '08', '2026');
+      expect(res.stats.totalPipeline).toBe(100);
+    });
+
+    it('getAffiliationStats should delegate to statisticsService.getAffiliationStats', async () => {
+      const res = await service.getAffiliationStats(8, 2026, 'billing');
+      expect(statisticsService.getAffiliationStats).toHaveBeenCalledWith(8, 2026, 'billing');
+      expect(res.netChange).toBe(4);
     });
   });
 });

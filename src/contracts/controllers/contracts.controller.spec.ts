@@ -45,6 +45,9 @@ describe('ContractsController', () => {
             inactivate: jest.fn(),
             activate: jest.fn(),
             addBeneficiary: jest.fn(),
+            setContractTitular: jest.fn(),
+            setBillingOwner: jest.fn(),
+            removeAffiliate: jest.fn(),
           },
         },
       ],
@@ -185,6 +188,38 @@ describe('ContractsController', () => {
 
       expect(service.addBeneficiary).toHaveBeenCalledWith('1', dto);
       expect(result).toEqual(mockCreatedPerson);
+    });
+  });
+
+  describe('setContractTitular', () => {
+    it('should delegate to service.setContractTitular', async () => {
+      const dto = { contractPersonId: 'cp-1' };
+      jest.spyOn(service, 'setContractTitular').mockResolvedValue(undefined);
+
+      await controller.setContractTitular('contract-1', dto);
+
+      expect(service.setContractTitular).toHaveBeenCalledWith('contract-1', dto);
+    });
+  });
+
+  describe('setBillingOwner', () => {
+    it('should delegate to service.setBillingOwner', async () => {
+      const dto = { contractPersonId: 'cp-1' };
+      jest.spyOn(service, 'setBillingOwner').mockResolvedValue(undefined);
+
+      await controller.setBillingOwner('contract-1', dto);
+
+      expect(service.setBillingOwner).toHaveBeenCalledWith('contract-1', dto);
+    });
+  });
+
+  describe('removeBeneficiary', () => {
+    it('should delegate to service.removeAffiliate with contractPersonId and contractId', async () => {
+      jest.spyOn(service, 'removeAffiliate').mockResolvedValue(undefined);
+
+      await controller.removeBeneficiary('contract-1', 'cp-1');
+
+      expect(service.removeAffiliate).toHaveBeenCalledWith('cp-1', 'contract-1');
     });
   });
 });

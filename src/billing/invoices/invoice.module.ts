@@ -1,4 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { InvoiceLine } from './entities/invoice-line.entity';
@@ -11,14 +11,12 @@ import { InvoiceCalculationService } from './services/invoice-calculation.servic
 import { InvoiceLineService } from './services/invoice-line.service';
 import { InvoicePdfService } from './services/invoice-pdf.service';
 import { InvoiceQueryRepository } from './repositories/invoice-query.repository';
-import { PaymentModule } from '../payments/payment.module';
 import { ExchangeRateModule } from '../../exchange-rate/exchange-rate.module';
 import { PdfModule } from '../../pdf/pdf.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Invoice, InvoiceLine, Contract]),
-    forwardRef(() => PaymentModule), // Necesario para SurplusService → InvoiceCalculationService
     ExchangeRateModule,
     PdfModule,
   ],

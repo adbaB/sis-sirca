@@ -1,21 +1,15 @@
 import {
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
-  IsArray,
-  ValidateNested,
-  IsEmail,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import { PersonStatus, TypeIdentityCard } from '../entities/person.entity';
-import { PersonRole, Parentesco } from '../../contracts/entities/contract-person.entity';
-import { HealthDeclarationDto } from '../../contracts/dto/health-declaration.dto';
 
 export class CreatePersonDto {
   @IsEnum(TypeIdentityCard)
@@ -37,22 +31,6 @@ export class CreatePersonDto {
   @IsBoolean()
   @IsOptional()
   gender?: boolean;
-
-  @IsUUID()
-  @IsNotEmpty()
-  planId: string;
-
-  @IsUUID()
-  @IsOptional()
-  contractId?: string;
-
-  @IsEnum(PersonRole)
-  @IsOptional()
-  role?: PersonRole;
-
-  @IsBoolean()
-  @IsOptional()
-  isBillingOwner?: boolean;
 
   @IsEnum(PersonStatus)
   @IsOptional()
@@ -103,14 +81,4 @@ export class CreatePersonDto {
   @IsString()
   @IsOptional()
   legalRepresentative?: string;
-
-  @IsEnum(Parentesco)
-  @IsOptional()
-  relationship?: Parentesco;
-
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => HealthDeclarationDto)
-  healthDeclarations?: HealthDeclarationDto[];
 }

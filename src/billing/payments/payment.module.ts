@@ -1,4 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { SurplusService } from './services/surplus.service';
 import { PaymentService } from './services/payment.service';
 import { PaymentCreationService } from './services/payment-creation.service';
@@ -27,7 +27,7 @@ import { InvoiceModule } from '../invoices/invoice.module';
     AwsModule,
     OcrModule,
     ExchangeRateModule,
-    forwardRef(() => InvoiceModule),
+    InvoiceModule,
   ],
   controllers: [PaymentBillingController],
   providers: [

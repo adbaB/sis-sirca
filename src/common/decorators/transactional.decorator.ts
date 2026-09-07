@@ -1,7 +1,6 @@
 import { DataSource } from 'typeorm';
 import {
   generateRequestId,
-  getContextSafe,
   getQueryRunnerSafe,
   requestContextStorage,
   runPostCommitHooks,
@@ -56,13 +55,13 @@ export function Transactional(): MethodDecorator {
         const qr = dataSource.createQueryRunner();
         await qr.connect();
         await qr.startTransaction();
+        const ctx = { queryRunner: qr, requestId: generateRequestId(), startTime: Date.now() };
         try {
-          const result = await requestContextStorage.run(
-            { queryRunner: qr, requestId: generateRequestId(), startTime: Date.now() },
-            () => originalMethod.apply(this, args),
+          const result = await requestContextStorage.run(ctx, () =>
+            originalMethod.apply(this, args),
           );
           await qr.commitTransaction();
-          await runPostCommitHooks(getContextSafe());
+          await runPostCommitHooks(ctx);
           return result;
         } catch (err) {
           if (qr.isTransactionActive) {
