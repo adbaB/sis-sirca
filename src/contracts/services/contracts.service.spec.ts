@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ContractAffiliationService } from './contract-affiliation.service';
+import { ContractVerificationService } from './contract-verification.service';
 import { ContractCreationService } from './contract-creation.service';
 import { ContractLifecycleService } from './contract-lifecycle.service';
+import { ContractReactivationService } from './contract-reactivation.service';
 import { ContractPdfService } from './contract-pdf.service';
 import { ContractStatisticsService } from './contract-statistics.service';
 import { ContractsService } from './contracts.service';
@@ -27,6 +29,8 @@ describe('ContractsService (Facade)', () => {
   let creationService: jest.Mocked<ContractCreationService>;
   let lifecycleService: jest.Mocked<ContractLifecycleService>;
   let affiliationService: jest.Mocked<ContractAffiliationService>;
+  let verificationService: jest.Mocked<ContractVerificationService>;
+  let reactivationService: jest.Mocked<ContractReactivationService>;
   let pdfService: jest.Mocked<ContractPdfService>;
   let statisticsService: jest.Mocked<ContractStatisticsService>;
   let queryRepository: jest.Mocked<ContractQueryRepository>;
@@ -46,6 +50,12 @@ describe('ContractsService (Facade)', () => {
           provide: ContractCreationService,
           useValue: {
             createFull: jest.fn().mockResolvedValue(mockContract),
+          },
+        },
+        {
+          provide: ContractReactivationService,
+          useValue: {
+            syncReactivationEligibility: jest.fn().mockResolvedValue(new Date('2026-09-08')),
           },
         },
         {
@@ -75,6 +85,11 @@ describe('ContractsService (Facade)', () => {
             setContractTitular: jest.fn().mockResolvedValue(undefined),
             setBillingOwner: jest.fn().mockResolvedValue(undefined),
             recalculateMonthlyAmount: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: ContractVerificationService,
+          useValue: {
             verifyPersonAffiliation: jest
               .fn()
               .mockResolvedValue({ exists: true, person: null, activeContracts: [] }),
@@ -130,6 +145,8 @@ describe('ContractsService (Facade)', () => {
     creationService = module.get(ContractCreationService);
     lifecycleService = module.get(ContractLifecycleService);
     affiliationService = module.get(ContractAffiliationService);
+    verificationService = module.get(ContractVerificationService);
+    reactivationService = module.get(ContractReactivationService);
     pdfService = module.get(ContractPdfService);
     statisticsService = module.get(ContractStatisticsService);
     queryRepository = module.get(ContractQueryRepository);
@@ -218,10 +235,10 @@ describe('ContractsService (Facade)', () => {
       expect(res).toEqual(mockContract);
     });
 
-    it('syncReactivationEligibility should delegate to lifecycleService.syncReactivationEligibility', async () => {
+    it('syncReactivationEligibility should delegate to reactivationService.syncReactivationEligibility', async () => {
       const manager = {} as unknown as EntityManager;
       const res = await service.syncReactivationEligibility('contract-uuid-1', manager);
-      expect(lifecycleService.syncReactivationEligibility).toHaveBeenCalledWith(
+      expect(reactivationService.syncReactivationEligibility).toHaveBeenCalledWith(
         'contract-uuid-1',
         manager,
       );
@@ -331,24 +348,24 @@ describe('ContractsService (Facade)', () => {
   });
 
   describe('Verification delegates', () => {
-    it('verifyPersonAffiliation should delegate to affiliationService.verifyPersonAffiliation', async () => {
+    it('verifyPersonAffiliation should delegate to verificationService.verifyPersonAffiliation', async () => {
       const res = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
-      expect(affiliationService.verifyPersonAffiliation).toHaveBeenCalledWith(
+      expect(verificationService.verifyPersonAffiliation).toHaveBeenCalledWith(
         TypeIdentityCard.V,
         '12345678',
       );
       expect(res).toEqual({ exists: true, person: null, activeContracts: [] });
     });
 
-    it('verifyContractByCode should delegate to affiliationService.verifyContractByCode', async () => {
+    it('verifyContractByCode should delegate to verificationService.verifyContractByCode', async () => {
       const res = await service.verifyContractByCode('SIR-001-00001');
-      expect(affiliationService.verifyContractByCode).toHaveBeenCalledWith('SIR-001-00001');
+      expect(verificationService.verifyContractByCode).toHaveBeenCalledWith('SIR-001-00001');
       expect(res).toEqual({ exists: true, contract: null });
     });
 
-    it('verifyUnified should delegate to affiliationService.verifyUnified', async () => {
+    it('verifyUnified should delegate to verificationService.verifyUnified', async () => {
       const res = await service.verifyUnified('query-test');
-      expect(affiliationService.verifyUnified).toHaveBeenCalledWith('query-test');
+      expect(verificationService.verifyUnified).toHaveBeenCalledWith('query-test');
       expect(res).toEqual({ type: 'contract', contract: null });
     });
   });

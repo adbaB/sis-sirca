@@ -7,7 +7,7 @@ import { ContractsService } from '../services/contracts.service';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { Payment, PaymentStatus } from '../../billing/payments/entities/payment.entity';
 import { getCaracasNow } from '../../common/utils/date.util';
-import { evaluateOverdueInvoices } from '../services/contract-lifecycle.service';
+import { evaluateOverdueInvoices } from '../policies/contract-debt-evaluator.policy';
 
 export interface ReactivatedContractInfo {
   contractCode: string;

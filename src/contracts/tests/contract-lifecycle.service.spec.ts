@@ -6,6 +6,7 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractLifecycleService } from '../services/contract-lifecycle.service';
+import { ContractReactivationService } from '../services/contract-reactivation.service';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { PersonStatus } from '../../persons/entities/person.entity';
@@ -63,6 +64,7 @@ describe('ContractLifecycleService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractLifecycleService,
+        ContractReactivationService,
         {
           provide: getRepositoryToken(Contract),
           useValue: {

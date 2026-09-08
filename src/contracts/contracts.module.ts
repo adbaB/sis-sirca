@@ -19,7 +19,9 @@ import { ContractAffiliationService } from './services/contract-affiliation.serv
 import { ContractCreationService } from './services/contract-creation.service';
 import { ContractLifecycleService } from './services/contract-lifecycle.service';
 import { ContractPdfService } from './services/contract-pdf.service';
+import { ContractReactivationService } from './services/contract-reactivation.service';
 import { ContractStatisticsService } from './services/contract-statistics.service';
+import { ContractVerificationService } from './services/contract-verification.service';
 import { ContractsService } from './services/contracts.service';
 
 @Module({
@@ -36,7 +38,9 @@ import { ContractsService } from './services/contracts.service';
   providers: [
     ContractQueryRepository,
     ContractAffiliationService,
+    ContractVerificationService,
     ContractLifecycleService,
+    ContractReactivationService,
     ContractPdfService,
     ContractStatisticsService,
     ContractCreationService,

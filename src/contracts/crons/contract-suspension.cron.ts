@@ -7,7 +7,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { CARACAS_ZONE, formatDateES, getCaracasNow } from '../../common/utils/date.util';
-import { evaluateOverdueInvoices } from '../services/contract-lifecycle.service';
+import { evaluateOverdueInvoices } from '../policies/contract-debt-evaluator.policy';
 
 export interface SuspendedContractInfo {
   contractCode: string;
