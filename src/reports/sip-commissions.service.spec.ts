@@ -357,6 +357,22 @@ describe('SipCommissionsService', () => {
       const extNuevo = result.sections[4];
       expect(extNuevo.rows).toHaveLength(0);
     });
+
+    it('should filter by advisorId and resolve advisor name when advisorId is provided', async () => {
+      const querySpy = jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce([{ name: 'Carlos Perez', code: 1 }]) // advisor query
+        .mockResolvedValueOnce(mockPortfolios) // portfolios query
+        .mockResolvedValueOnce(mockRawData); // invoice lines query
+
+      const result = await service.buildReportData(2026, 4, 'adv-123');
+
+      expect(querySpy).toHaveBeenCalledTimes(3);
+      expect(querySpy.mock.calls[0][1]).toEqual(['adv-123']);
+      expect(querySpy.mock.calls[2][0]).toContain('AND c.advisor_id = $3');
+      expect(querySpy.mock.calls[2][1]).toEqual(['2026-03-06', '2026-04-05', 'adv-123']);
+      expect(result.advisorName).toBe('Carlos Perez (001)');
+    });
   });
 
   describe('generateExcel', () => {
@@ -367,6 +383,18 @@ describe('SipCommissionsService', () => {
         .mockResolvedValueOnce(mockRawData);
 
       const buffer = await service.generateExcel(2026, 4);
+      expect(buffer).toBeInstanceOf(Buffer);
+      expect(buffer.length).toBeGreaterThan(0);
+    });
+
+    it('should generate an Excel workbook filtered by advisorId successfully', async () => {
+      jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce([{ name: 'Carlos Perez', code: 1 }])
+        .mockResolvedValueOnce(mockPortfolios)
+        .mockResolvedValueOnce(mockRawData);
+
+      const buffer = await service.generateExcel(2026, 4, 'adv-123');
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
     });
