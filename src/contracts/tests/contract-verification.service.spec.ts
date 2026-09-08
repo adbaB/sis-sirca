@@ -1,14 +1,15 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { ContractPerson, Parentesco, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import {
-  BeneficiaryVerificationResult,
   ContractVerificationResult,
+  PersonVerificationResult,
+  VerificationMode,
 } from '../interfaces/person-verification.interface';
 import { ContractVerificationService } from '../services/contract-verification.service';
 
@@ -26,6 +27,7 @@ describe('ContractVerificationService', () => {
           provide: getRepositoryToken(Contract),
           useValue: {
             findOne: jest.fn(),
+            find: jest.fn(),
           },
         },
         {
@@ -65,7 +67,7 @@ describe('ContractVerificationService', () => {
       );
     });
 
-    it('should return person with empty contracts if person has no beneficiary affiliations', async () => {
+    it('should return person with empty beneficiaryContracts and ownerContracts if person has no affiliations', async () => {
       const mockPerson = {
         id: 'p-1',
         name: 'Carlos Ruiz',
@@ -77,17 +79,18 @@ describe('ContractVerificationService', () => {
       } as Person;
 
       jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      // Both queries (for AFILIADO and for TITULAR/isBillingOwner) return empty
       jest.spyOn(contractPersonsRepository, 'find').mockResolvedValue([]);
 
       const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
 
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
       expect(result.person.id).toBe('p-1');
-      expect(result.contracts).toHaveLength(0);
-      expect(result.hasActiveContract).toBe(false);
-      expect(result.hasSuspendedContract).toBe(false);
+      expect(result.beneficiaryContracts).toHaveLength(0);
+      expect(result.ownerContracts).toHaveLength(0);
     });
 
-    it('should return and prioritize contracts (ACTIVE first, then SUSPENDED, then INACTIVE)', async () => {
+    it('should return and prioritize beneficiaryContracts (ACTIVE first, then SUSPENDED, then INACTIVE)', async () => {
       const mockPerson = {
         id: 'p-1',
         name: 'Carlos Ruiz',
@@ -133,25 +136,321 @@ describe('ContractVerificationService', () => {
       ] as unknown as ContractPerson[];
 
       jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
-      jest.spyOn(contractPersonsRepository, 'find').mockResolvedValue(mockAffiliations);
+      // First call for AFILIADO returns mockAffiliations, second call for TITULAR/Billing returns empty
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValueOnce(mockAffiliations)
+        .mockResolvedValueOnce([]);
 
       const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
 
-      expect(result.contracts).toHaveLength(3);
-      expect(result.contracts[0].code).toBe('SIR-001-00003');
-      expect(result.contracts[0].status).toBe(ContractStatus.ACTIVE);
-      expect(result.contracts[0].isSuspended).toBe(false);
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
+      expect(result.beneficiaryContracts).toHaveLength(3);
 
-      expect(result.contracts[1].code).toBe('SIR-001-00002');
-      expect(result.contracts[1].status).toBe(ContractStatus.SUSPENDED);
-      expect(result.contracts[1].isSuspended).toBe(true);
+      expect(result.beneficiaryContracts[0].code).toBe('SIR-001-00003');
+      expect(result.beneficiaryContracts[0].status).toBe(ContractStatus.ACTIVE);
+      expect(result.beneficiaryContracts[0].isSuspended).toBe(false);
+      expect(result.beneficiaryContracts[0].isEligible).toBe(true);
 
-      expect(result.contracts[2].code).toBe('SIR-001-00001');
-      expect(result.contracts[2].status).toBe(ContractStatus.INACTIVE);
-      expect(result.contracts[2].isSuspended).toBe(false);
+      expect(result.beneficiaryContracts[1].code).toBe('SIR-001-00002');
+      expect(result.beneficiaryContracts[1].status).toBe(ContractStatus.SUSPENDED);
+      expect(result.beneficiaryContracts[1].isSuspended).toBe(true);
+      expect(result.beneficiaryContracts[1].isEligible).toBe(false);
 
-      expect(result.hasActiveContract).toBe(true);
-      expect(result.hasSuspendedContract).toBe(true);
+      expect(result.beneficiaryContracts[2].code).toBe('SIR-001-00001');
+      expect(result.beneficiaryContracts[2].status).toBe(ContractStatus.INACTIVE);
+      expect(result.beneficiaryContracts[2].isSuspended).toBe(false);
+      expect(result.beneficiaryContracts[2].isEligible).toBe(false);
+
+      expect(result.ownerContracts).toHaveLength(0);
+    });
+
+    it('should return ownerContracts with beneficiaries when person is TITULAR', async () => {
+      const mockPerson = {
+        id: 'p-titular-1',
+        name: 'Maria Titular',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '15555555',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      // First query: AFILIADO -> empty
+      // Second query: TITULAR/BillingOwner -> returns affiliation as TITULAR
+      const mockOwnerAffiliations = [
+        {
+          id: 'cp-owner-1',
+          role: PersonRole.TITULAR,
+          isBillingOwner: true,
+          contract: { id: 'c-100' },
+        },
+      ] as unknown as ContractPerson[];
+
+      const mockFullContract = {
+        id: 'c-100',
+        code: 'SIR-005-00010',
+        status: ContractStatus.ACTIVE,
+        affiliationDate: new Date('2026-02-01'),
+        cutoffDay: 15,
+        contractPersons: [
+          {
+            id: 'cp-owner-1',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+            person: mockPerson,
+          },
+          {
+            id: 'cp-ben-1',
+            role: PersonRole.AFILIADO,
+            relationship: Parentesco.HIJA,
+            person: {
+              id: 'p-ben-1',
+              name: 'Hija Activa',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '28111222',
+              status: PersonStatus.ACTIVE,
+            },
+            plan: { name: 'Plan Familiar' },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValueOnce([]) // AFILIADO query
+        .mockResolvedValueOnce(mockOwnerAffiliations); // TITULAR / Billing query
+      jest.spyOn(contractsRepository, 'find').mockResolvedValueOnce([mockFullContract]);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '15555555');
+
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
+      expect(result.beneficiaryContracts).toHaveLength(0);
+      expect(result.ownerContracts).toHaveLength(1);
+
+      const ownerContract = result.ownerContracts[0];
+      expect(ownerContract.code).toBe('SIR-005-00010');
+      expect(ownerContract.isTitular).toBe(true);
+      expect(ownerContract.isBillingOwner).toBe(true);
+      expect(ownerContract.titular?.name).toBe('Maria Titular');
+      expect(ownerContract.totalBeneficiaries).toBe(1);
+      expect(ownerContract.beneficiaries[0].name).toBe('Hija Activa');
+      expect(ownerContract.beneficiaries[0].isEligible).toBe(true);
+      expect(ownerContract.beneficiaries[0].relationship).toBe(Parentesco.HIJA);
+    });
+
+    it('should return ownerContracts when person is isBillingOwner = true (e.g. corporate RIF)', async () => {
+      const mockCompany = {
+        id: 'p-company-1',
+        name: 'Inversiones ABC C.A.',
+        typeIdentityCard: TypeIdentityCard.J,
+        identityCard: '301234567',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      // Company is isBillingOwner = true, but role might be AFILIADO or not TITULAR
+      const mockOwnerAffiliations = [
+        {
+          id: 'cp-billing-1',
+          role: PersonRole.AFILIADO,
+          isBillingOwner: true,
+          contract: { id: 'c-corp-1' },
+        },
+      ] as unknown as ContractPerson[];
+
+      const mockCorpContract = {
+        id: 'c-corp-1',
+        code: 'SIR-009-00999',
+        status: ContractStatus.ACTIVE,
+        affiliationDate: new Date('2026-03-01'),
+        cutoffDay: 5,
+        contractPersons: [
+          {
+            id: 'cp-billing-1',
+            role: PersonRole.AFILIADO,
+            isBillingOwner: true,
+            person: mockCompany,
+          },
+          {
+            id: 'cp-worker-1',
+            role: PersonRole.AFILIADO,
+            isBillingOwner: false,
+            relationship: Parentesco.OTRO,
+            person: {
+              id: 'p-worker-1',
+              name: 'Empleado 1',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '19876543',
+              status: PersonStatus.ACTIVE,
+            },
+            plan: { name: 'Plan Corporativo' },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockCompany);
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValueOnce([]) // AFILIADO query without billing filter
+        .mockResolvedValueOnce(mockOwnerAffiliations); // TITULAR or Billing query
+      jest.spyOn(contractsRepository, 'find').mockResolvedValueOnce([mockCorpContract]);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.J, '301234567');
+
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
+      expect(result.ownerContracts).toHaveLength(1);
+      expect(result.ownerContracts[0].isBillingOwner).toBe(true);
+      expect(result.ownerContracts[0].isTitular).toBe(false);
+      expect(result.ownerContracts[0].totalBeneficiaries).toBe(2);
+    });
+
+    it('should return BOTH beneficiaryContracts and ownerContracts for dual-role person', async () => {
+      const mockPerson = {
+        id: 'p-dual',
+        name: 'Doble Rol',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '20000000',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      // 1. As AFILIADO in contract A
+      const mockBeneficiaryAffiliations = [
+        {
+          id: 'cp-ben-a',
+          role: PersonRole.AFILIADO,
+          contract: {
+            id: 'c-contract-a',
+            code: 'SIR-A-001',
+            status: ContractStatus.ACTIVE,
+            affiliationDate: new Date('2025-01-01'),
+          },
+          plan: { name: 'Plan Personal' },
+        },
+      ] as unknown as ContractPerson[];
+
+      // 2. As TITULAR in contract B
+      const mockOwnerAffiliations = [
+        {
+          id: 'cp-owner-b',
+          role: PersonRole.TITULAR,
+          isBillingOwner: true,
+          contract: { id: 'c-contract-b' },
+        },
+      ] as unknown as ContractPerson[];
+
+      const mockFullContractB = {
+        id: 'c-contract-b',
+        code: 'SIR-B-002',
+        status: ContractStatus.ACTIVE,
+        affiliationDate: new Date('2026-01-01'),
+        cutoffDay: 5,
+        contractPersons: [
+          {
+            id: 'cp-owner-b',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+            person: mockPerson,
+          },
+          {
+            id: 'cp-b-ben-1',
+            role: PersonRole.AFILIADO,
+            relationship: Parentesco.ESPOSO,
+            person: {
+              id: 'p-esposo',
+              name: 'Esposo',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '19000000',
+              status: PersonStatus.ACTIVE,
+            },
+            plan: { name: 'Plan Familiar' },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValueOnce(mockBeneficiaryAffiliations)
+        .mockResolvedValueOnce(mockOwnerAffiliations);
+      jest.spyOn(contractsRepository, 'find').mockResolvedValueOnce([mockFullContractB]);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '20000000');
+
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
+      expect(result.beneficiaryContracts).toHaveLength(1);
+      expect(result.beneficiaryContracts[0].code).toBe('SIR-A-001');
+
+      expect(result.ownerContracts).toHaveLength(1);
+      expect(result.ownerContracts[0].code).toBe('SIR-B-002');
+      expect(result.ownerContracts[0].beneficiaries).toHaveLength(1);
+      expect(result.ownerContracts[0].beneficiaries[0].name).toBe('Esposo');
+    });
+
+    it('should batch-load multiple owner contracts with In(ids) without duplicates', async () => {
+      const mockPerson = {
+        id: 'p-multi-owner',
+        name: 'Empresario Exitoso',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '99887766',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      const mockOwnerAffiliations = [
+        {
+          id: 'cp-1',
+          role: PersonRole.TITULAR,
+          isBillingOwner: false,
+          contract: { id: 'c-1' },
+        },
+        {
+          id: 'cp-2',
+          role: PersonRole.TITULAR,
+          isBillingOwner: true,
+          contract: { id: 'c-2' },
+        },
+        // Duplicate contract ID occurrence
+        {
+          id: 'cp-1-extra',
+          role: PersonRole.TITULAR,
+          isBillingOwner: true,
+          contract: { id: 'c-1' },
+        },
+      ] as unknown as ContractPerson[];
+
+      const mockContracts = [
+        {
+          id: 'c-1',
+          code: 'SIR-001',
+          status: ContractStatus.ACTIVE,
+          contractPersons: [],
+        },
+        {
+          id: 'c-2',
+          code: 'SIR-002',
+          status: ContractStatus.ACTIVE,
+          contractPersons: [],
+        },
+      ] as unknown as Contract[];
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(mockOwnerAffiliations);
+      const findContractsSpy = jest
+        .spyOn(contractsRepository, 'find')
+        .mockResolvedValueOnce(mockContracts);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '99887766');
+
+      expect(findContractsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: In(['c-1', 'c-2']) },
+        }),
+      );
+      expect(result.ownerContracts).toHaveLength(2);
+      const c1 = result.ownerContracts.find((c) => c.id === 'c-1');
+      expect(c1?.isTitular).toBe(true);
+      expect(c1?.isBillingOwner).toBe(true);
     });
   });
 
@@ -202,7 +501,7 @@ describe('ContractVerificationService', () => {
 
       const result = await service.verifyContractByCode('SIR-001-00001');
 
-      expect(result.mode).toBe('BY_CONTRACT');
+      expect(result.mode).toBe(VerificationMode.BY_CONTRACT);
       expect(result.contract.code).toBe('SIR-001-00001');
       expect(result.contract.isSuspended).toBe(false);
       expect(result.contract.titular?.name).toBe('Pedro Titular');
@@ -257,7 +556,7 @@ describe('ContractVerificationService', () => {
       } as Contract);
 
       const mockContractResult: ContractVerificationResult = {
-        mode: 'BY_CONTRACT',
+        mode: VerificationMode.BY_CONTRACT,
         contract: {
           id: 'c-1',
           code: 'SIR-001-00001',
@@ -276,14 +575,14 @@ describe('ContractVerificationService', () => {
       const result = await service.verifyUnified('SIR-001-00001');
 
       expect(spy).toHaveBeenCalledWith('SIR-001-00001');
-      expect(result.mode).toBe('BY_CONTRACT');
+      expect(result.mode).toBe(VerificationMode.BY_CONTRACT);
     });
 
     it('should auto-detect document with prefix and delegate to verifyPersonAffiliation', async () => {
       jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
 
-      const mockPersonResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockPersonResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-1',
           name: 'Carlos Ruiz',
@@ -291,9 +590,8 @@ describe('ContractVerificationService', () => {
           identityCard: '12345678',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: false,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
       const spy = jest
@@ -303,14 +601,14 @@ describe('ContractVerificationService', () => {
       const result = await service.verifyUnified('V-12345678');
 
       expect(spy).toHaveBeenCalledWith(TypeIdentityCard.V, '12345678');
-      expect(result.mode).toBe('BY_BENEFICIARY');
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
     });
 
     it('should auto-detect PN document with prefix (PN-12345678-1) and delegate to verifyPersonAffiliation with TypeIdentityCard.PN', async () => {
       jest.spyOn(contractsRepository, 'findOne').mockResolvedValueOnce(null);
 
-      const mockPNResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockPNResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-pn-1',
           name: 'Sofia Victoria Corona',
@@ -318,9 +616,8 @@ describe('ContractVerificationService', () => {
           identityCard: '19626778-1',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: true,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
       const spy = jest.spyOn(service, 'verifyPersonAffiliation').mockResolvedValue(mockPNResult);
@@ -328,7 +625,7 @@ describe('ContractVerificationService', () => {
       const result = await service.verifyUnified('PN-19626778-1');
 
       expect(spy).toHaveBeenCalledWith(TypeIdentityCard.PN, '19626778-1');
-      expect(result.mode).toBe('BY_BENEFICIARY');
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
     });
 
     it('should auto-detect PN document without prefix (19626778-1) via findByIdentityCardOnly', async () => {
@@ -342,8 +639,8 @@ describe('ContractVerificationService', () => {
         status: PersonStatus.ACTIVE,
       } as Person;
 
-      const mockPNResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockPNResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-pn-1',
           name: 'Sofia Victoria Corona',
@@ -351,9 +648,8 @@ describe('ContractVerificationService', () => {
           identityCard: '19626778-1',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: true,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
       jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce([mockPNPerson]);
@@ -363,7 +659,7 @@ describe('ContractVerificationService', () => {
 
       expect(personsService.findByIdentityCardOnly).toHaveBeenCalledWith('19626778-1');
       expect(spy).toHaveBeenCalledWith(TypeIdentityCard.PN, '19626778-1');
-      expect(result.mode).toBe('BY_BENEFICIARY');
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
     });
 
     it('should fallback to PN when wrong prefix V is provided (V-19626778-1)', async () => {
@@ -377,8 +673,8 @@ describe('ContractVerificationService', () => {
         status: PersonStatus.ACTIVE,
       } as Person;
 
-      const mockPNResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockPNResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-pn-1',
           name: 'Sofia Victoria Corona',
@@ -386,12 +682,10 @@ describe('ContractVerificationService', () => {
           identityCard: '19626778-1',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: true,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
-      // Direct verification with V fails with NotFoundException
       const spy = jest
         .spyOn(service, 'verifyPersonAffiliation')
         .mockRejectedValueOnce(new NotFoundException())
@@ -403,7 +697,7 @@ describe('ContractVerificationService', () => {
 
       expect(spy).toHaveBeenNthCalledWith(1, TypeIdentityCard.V, '19626778-1');
       expect(spy).toHaveBeenNthCalledWith(2, TypeIdentityCard.PN, '19626778-1');
-      expect(result.mode).toBe('BY_BENEFICIARY');
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
     });
 
     it('should resolve single PN when query has PN prefix without correlative (PN-19626778)', async () => {
@@ -417,8 +711,8 @@ describe('ContractVerificationService', () => {
         status: PersonStatus.ACTIVE,
       } as Person;
 
-      const mockPNResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockPNResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-pn-1',
           name: 'Sofia Victoria Corona',
@@ -426,12 +720,10 @@ describe('ContractVerificationService', () => {
           identityCard: '19626778-1',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: true,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
-      // Direct lookup with 19626778 throws NotFound
       jest
         .spyOn(service, 'verifyPersonAffiliation')
         .mockRejectedValueOnce(new NotFoundException())
@@ -444,7 +736,7 @@ describe('ContractVerificationService', () => {
       const result = await service.verifyUnified('PN-19626778');
 
       expect(personsService.findPNsByTitularIdentityCard).toHaveBeenCalledWith('19626778');
-      expect(result.mode).toBe('BY_BENEFICIARY');
+      expect(result.mode).toBe(VerificationMode.BY_PERSON);
     });
 
     it('should resolve to contract when titular has multiple PNs (PN-26175756)', async () => {
@@ -461,7 +753,6 @@ describe('ContractVerificationService', () => {
         typeIdentityCard: TypeIdentityCard.PN,
       } as Person;
 
-      // Direct lookup fails
       jest.spyOn(service, 'verifyPersonAffiliation').mockRejectedValueOnce(new NotFoundException());
       jest
         .spyOn(personsService, 'findPNsByTitularIdentityCard')
@@ -473,7 +764,7 @@ describe('ContractVerificationService', () => {
       } as unknown as ContractPerson);
 
       const mockContractResult: ContractVerificationResult = {
-        mode: 'BY_CONTRACT',
+        mode: VerificationMode.BY_CONTRACT,
         contract: {
           id: 'c-1',
           code: 'SIR-009-00725',
@@ -494,7 +785,7 @@ describe('ContractVerificationService', () => {
       const result = await service.verifyUnified('PN-26175756');
 
       expect(spyContract).toHaveBeenCalledWith('SIR-009-00725');
-      expect(result.mode).toBe('BY_CONTRACT');
+      expect(result.mode).toBe(VerificationMode.BY_CONTRACT);
     });
 
     it('should throw NotFoundException if neither contract nor person is found', async () => {

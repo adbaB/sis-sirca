@@ -7,10 +7,13 @@ import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import {
+  BeneficiaryContractItem,
   ContractBeneficiaryItem,
   ContractVerificationResult,
+  OwnerContractItem,
   PersonVerificationResult,
   UnifiedVerificationResult,
+  VerificationMode,
 } from '../interfaces/person-verification.interface';
 
 @Injectable()
@@ -24,9 +27,11 @@ export class ContractVerificationService {
   ) {}
 
   /**
-   * Verifies a person's affiliation status across all contracts where they are a beneficiary (AFILIADO).
-   * Returns person data and all contracts where they are registered as a beneficiary,
-   * sorted with priority: ACTIVE (1), SUSPENDED (2), INACTIVE (3), and newest affiliationDate first.
+   * Verifies a person's affiliation status across all contracts by their identity card.
+   * Returns two distinct lists:
+   * 1. beneficiaryContracts: Contracts where the person enjoys health plan coverage as AFILIADO.
+   * 2. ownerContracts: Contracts where the person is TITULAR or isBillingOwner, each containing
+   *    its full list of affiliated beneficiaries and eligibility status.
    */
   async verifyPersonAffiliation(
     typeIdentityCard: TypeIdentityCard,
@@ -41,7 +46,27 @@ export class ContractVerificationService {
       );
     }
 
-    let affiliations = await this.contractPersonsRepository.find({
+    const statusPriority: Record<ContractStatus, number> = {
+      [ContractStatus.ACTIVE]: 1,
+      [ContractStatus.SUSPENDED]: 2,
+      [ContractStatus.INACTIVE]: 3,
+    };
+
+    const sortByPriority = <T extends { status: ContractStatus; affiliationDate?: Date }>(
+      items: T[],
+    ): T[] => {
+      return items.sort((a, b) => {
+        const pA = statusPriority[a.status] ?? 99;
+        const pB = statusPriority[b.status] ?? 99;
+        if (pA !== pB) return pA - pB;
+        const dA = a.affiliationDate ? new Date(a.affiliationDate).getTime() : 0;
+        const dB = b.affiliationDate ? new Date(b.affiliationDate).getTime() : 0;
+        return dB - dA;
+      });
+    };
+
+    // ── 1. Contratos donde la persona es BENEFICIARIA (AFILIADO) ────────────
+    const beneficiaryAffiliations = await this.contractPersonsRepository.find({
       where: {
         person: { id: person.id },
         role: PersonRole.AFILIADO,
@@ -52,55 +77,127 @@ export class ContractVerificationService {
       },
     });
 
-    if (affiliations.length === 0) {
-      affiliations = await this.contractPersonsRepository.find({
-        where: {
-          person: { id: person.id },
-          role: PersonRole.TITULAR,
-        },
-        relations: ['contract', 'plan', 'person', 'person.plan'],
-        order: {
-          createdAt: 'DESC',
-        },
-      });
-    }
+    const seenBeneficiaryContractIds = new Set<string>();
+    const rawBeneficiaryContracts: BeneficiaryContractItem[] = [];
 
-    const statusPriority: Record<ContractStatus, number> = {
-      [ContractStatus.ACTIVE]: 1,
-      [ContractStatus.SUSPENDED]: 2,
-      [ContractStatus.INACTIVE]: 3,
-    };
+    for (const cp of beneficiaryAffiliations) {
+      if (!cp.contract || seenBeneficiaryContractIds.has(cp.contract.id)) continue;
+      seenBeneficiaryContractIds.add(cp.contract.id);
 
-    const seenContracts = new Set<string>();
-    const contracts = affiliations
-      .filter((cp) => {
-        if (!cp.contract || seenContracts.has(cp.contract.id)) return false;
-        seenContracts.add(cp.contract.id);
-        return true;
-      })
-      .map((cp) => ({
+      const isEligible =
+        cp.contract.status === ContractStatus.ACTIVE && person.status === PersonStatus.ACTIVE;
+
+      rawBeneficiaryContracts.push({
         id: cp.contract.id,
         code: cp.contract.code,
         status: cp.contract.status,
-        affiliationDate: cp.contract.affiliationDate,
-        role: cp.role,
-        planName: cp.plan?.name ?? cp.person?.plan?.name ?? null,
         isSuspended: cp.contract.status === ContractStatus.SUSPENDED,
-      }))
-      .sort((a, b) => {
-        const pA = statusPriority[a.status] ?? 99;
-        const pB = statusPriority[b.status] ?? 99;
-        if (pA !== pB) return pA - pB;
-        const dA = a.affiliationDate ? new Date(a.affiliationDate).getTime() : 0;
-        const dB = b.affiliationDate ? new Date(b.affiliationDate).getTime() : 0;
-        return dB - dA;
+        isEligible,
+        affiliationDate: cp.contract.affiliationDate,
+        planName: cp.plan?.name ?? cp.person?.plan?.name ?? null,
+      });
+    }
+
+    const beneficiaryContracts = sortByPriority(rawBeneficiaryContracts);
+
+    // ── 2. Contratos donde la persona es TITULAR o isBillingOwner ─────────────
+    const ownerAffiliations = await this.contractPersonsRepository.find({
+      where: [
+        { person: { id: person.id }, role: PersonRole.TITULAR },
+        { person: { id: person.id }, isBillingOwner: true },
+      ],
+      relations: ['contract'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    const ownerContractMap = new Map<string, { isTitular: boolean; isBillingOwner: boolean }>();
+    for (const aff of ownerAffiliations) {
+      if (!aff.contract?.id) continue;
+      const existing = ownerContractMap.get(aff.contract.id) ?? {
+        isTitular: false,
+        isBillingOwner: false,
+      };
+      if (aff.role === PersonRole.TITULAR) existing.isTitular = true;
+      if (aff.isBillingOwner) existing.isBillingOwner = true;
+      ownerContractMap.set(aff.contract.id, existing);
+    }
+
+    let ownerContracts: OwnerContractItem[] = [];
+
+    if (ownerContractMap.size > 0) {
+      const ownerContractIds = Array.from(ownerContractMap.keys());
+      const ownerContractsEntities = await this.contractsRepository.find({
+        where: { id: In(ownerContractIds) },
+        relations: [
+          'contractPersons',
+          'contractPersons.person',
+          'contractPersons.plan',
+          'contractPersons.person.plan',
+        ],
       });
 
-    const hasActiveContract = contracts.some((c) => c.status === ContractStatus.ACTIVE);
-    const hasSuspendedContract = contracts.some((c) => c.status === ContractStatus.SUSPENDED);
+      const rawOwnerContracts: OwnerContractItem[] = ownerContractsEntities.map((contract) => {
+        const titularCp = contract.contractPersons?.find(
+          (cp) => cp.role === PersonRole.TITULAR || cp.isBillingOwner === true,
+        );
+        const titularPerson = titularCp?.person ?? null;
+
+        const beneficiaryCps =
+          contract.contractPersons?.filter((cp) => cp.role === PersonRole.AFILIADO) ?? [];
+
+        const beneficiaries: ContractBeneficiaryItem[] = beneficiaryCps.map((bcp) => {
+          const plan = bcp.plan ?? bcp.person?.plan ?? null;
+          const bPerson = bcp.person;
+          const isEligible =
+            contract.status === ContractStatus.ACTIVE && bPerson?.status === PersonStatus.ACTIVE;
+
+          return {
+            contractPersonId: bcp.id,
+            personId: bPerson?.id,
+            name: bPerson?.name,
+            typeIdentityCard: bPerson?.typeIdentityCard,
+            identityCard: bPerson?.identityCard,
+            birthDate: bPerson?.birthDate,
+            phone: bPerson?.phone,
+            relationship: bcp.relationship,
+            planName: plan?.name ?? null,
+            personStatus: bPerson?.status,
+            isEligible,
+          };
+        });
+
+        const flags = ownerContractMap.get(contract.id);
+
+        return {
+          id: contract.id,
+          code: contract.code,
+          status: contract.status,
+          isSuspended: contract.status === ContractStatus.SUSPENDED,
+          affiliationDate: contract.affiliationDate,
+          cutoffDay: contract.cutoffDay ?? DEFAULT_CUTOFF_DAY,
+          isTitular: flags?.isTitular ?? false,
+          isBillingOwner: flags?.isBillingOwner ?? false,
+          titular: titularPerson
+            ? {
+                id: titularPerson.id,
+                name: titularPerson.name,
+                typeIdentityCard: titularPerson.typeIdentityCard,
+                identityCard: titularPerson.identityCard,
+                phone: titularPerson.phone,
+              }
+            : null,
+          beneficiaries,
+          totalBeneficiaries: beneficiaries.length,
+        };
+      });
+
+      ownerContracts = sortByPriority(rawOwnerContracts);
+    }
 
     return {
-      mode: 'BY_BENEFICIARY',
+      mode: VerificationMode.BY_PERSON,
       person: {
         id: person.id,
         name: person.name,
@@ -110,9 +207,8 @@ export class ContractVerificationService {
         birthDate: person.birthDate,
         status: person.status,
       },
-      contracts,
-      hasActiveContract,
-      hasSuspendedContract,
+      beneficiaryContracts,
+      ownerContracts,
     };
   }
 
@@ -167,7 +263,7 @@ export class ContractVerificationService {
     });
 
     return {
-      mode: 'BY_CONTRACT',
+      mode: VerificationMode.BY_CONTRACT,
       contract: {
         id: contract.id,
         code: contract.code,
@@ -215,7 +311,7 @@ export class ContractVerificationService {
 
     // 2. Si no es contrato directo, intentar interpretar como documento de identidad
     // Formatos soportados:
-    // - Documentos tradicionales: "V-12345678", "V12345678", "E-84123456", "12345678"
+    // - Documentos tradicionales: "V-12345678", "V12345678", "E-84123456", "12345678", "J-123456789"
     // - Partidas de Nacimiento (PN): "PN-12345678-1", "PN12345678-1", "12345678-1", "V-12345678-1", "PN-12345678"
     const docRegex = /^([a-zA-Z]{1,2})[-_\s]?(\d+(?:[-/]\d+)?)$/;
     const match = query.match(docRegex);
@@ -261,7 +357,6 @@ export class ContractVerificationService {
     }
 
     // 2c. Fallback por identityCard exacto sin importar el tipo
-    // Cubre "12345678-1" (sin prefijo PN), "V-12345678-1" (prefijo V erróneo), o "12345678" (cédula pura sin prefijo)
     const normalizeCandidates = (res: unknown): Person[] => {
       if (Array.isArray(res)) return res;
       if (res) return [res as Person];
@@ -287,7 +382,7 @@ export class ContractVerificationService {
             candidate.typeIdentityCard,
             candidate.identityCard,
           );
-          if (res.contracts && res.contracts.length > 0) {
+          if (res.beneficiaryContracts.length > 0 || res.ownerContracts.length > 0) {
             return res;
           }
         } catch {
