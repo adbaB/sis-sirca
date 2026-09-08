@@ -6,6 +6,11 @@ import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import {
+  EvaluateHealthExclusionsDto,
+  HealthExclusionEvaluationResult,
+} from '../dto/evaluate-health-exclusions.dto';
+
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
@@ -60,6 +65,7 @@ describe('ContractsController', () => {
             removeAffiliate: jest.fn(),
             verifyPersonAffiliation: jest.fn(),
             verifyUnified: jest.fn(),
+            evaluateHealthExclusions: jest.fn(),
           },
         },
       ],
@@ -94,6 +100,28 @@ describe('ContractsController', () => {
 
       expect(service.createFull).toHaveBeenCalledWith(dto);
       expect(result).toEqual(mockContract);
+    });
+  });
+
+  describe('evaluateHealthExclusions', () => {
+    it('should delegate to service.evaluateHealthExclusions', async () => {
+      const dto: EvaluateHealthExclusionsDto = { healthDeclarations: [] };
+      const mockResult: HealthExclusionEvaluationResult = {
+        suggestedExclusions: [],
+        manualExclusions: [],
+        allExclusions: [],
+        summary: {
+          totalConditionsDeclared: 0,
+          totalServicesExcluded: 0,
+          hasManualModifications: false,
+        },
+      };
+      jest.spyOn(service, 'evaluateHealthExclusions').mockResolvedValue(mockResult);
+
+      const result = await controller.evaluateHealthExclusions(dto);
+
+      expect(service.evaluateHealthExclusions).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(mockResult);
     });
   });
 

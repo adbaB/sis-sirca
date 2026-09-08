@@ -10,6 +10,7 @@ import { AffiliationHistory } from './entities/affiliation-history.entity';
 import { ContractPerson } from './entities/contract-person.entity';
 import { Contract } from './entities/contract.entity';
 import { HealthDeclaration } from './entities/health-declaration.entity';
+import { ContractPersonExclusion } from './entities/contract-person-exclusion.entity';
 import { EmailModule } from '../email/email.module';
 import { ContractSuspensionCron } from './crons/contract-suspension.cron';
 import { ContractReactivationCron } from './crons/contract-reactivation.cron';
@@ -21,10 +22,17 @@ import { ContractLifecycleService } from './services/contract-lifecycle.service'
 import { ContractPdfService } from './services/contract-pdf.service';
 import { ContractStatisticsService } from './services/contract-statistics.service';
 import { ContractsService } from './services/contracts.service';
+import { HealthExclusionsService } from './services/health-exclusions.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Contract, ContractPerson, AffiliationHistory, HealthDeclaration]),
+    TypeOrmModule.forFeature([
+      Contract,
+      ContractPerson,
+      AffiliationHistory,
+      HealthDeclaration,
+      ContractPersonExclusion,
+    ]),
     PersonsModule,
     InvoiceModule,
     PlansModule,
@@ -41,10 +49,11 @@ import { ContractsService } from './services/contracts.service';
     ContractStatisticsService,
     ContractCreationService,
     ContractsService,
+    HealthExclusionsService,
     ContractSuspensionCron,
     ContractReactivationCron,
     ContractInactivationCron,
   ],
-  exports: [ContractsService, TypeOrmModule],
+  exports: [ContractsService, HealthExclusionsService, TypeOrmModule],
 })
 export class ContractsModule {}

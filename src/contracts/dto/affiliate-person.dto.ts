@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import { PersonRole, Parentesco } from '../entities/contract-person.entity';
 import { HealthDeclarationDto } from './health-declaration.dto';
+import { CreateContractPersonExclusionDto } from './create-contract-person-exclusion.dto';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 
 export class AffiliatePersonDto {
@@ -106,4 +107,10 @@ export class AffiliatePersonDto {
   @ValidateNested({ each: true })
   @Type(() => HealthDeclarationDto)
   healthDeclarations?: HealthDeclarationDto[];
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateContractPersonExclusionDto)
+  exclusions?: CreateContractPersonExclusionDto[];
 }

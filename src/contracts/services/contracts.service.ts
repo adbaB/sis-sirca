@@ -35,6 +35,11 @@ import { ContractCreationService } from './contract-creation.service';
 import { ContractLifecycleService } from './contract-lifecycle.service';
 import { ContractPdfService } from './contract-pdf.service';
 import { ContractStatisticsService } from './contract-statistics.service';
+import { HealthExclusionsService } from './health-exclusions.service';
+import {
+  EvaluateHealthExclusionsDto,
+  HealthExclusionEvaluationResult,
+} from '../dto/evaluate-health-exclusions.dto';
 
 export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationStatsResult };
 
@@ -49,6 +54,7 @@ export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationSt
  * - `ContractPdfService`        → Template formatting, PDF generation & S3 storage
  * - `ContractStatisticsService` → Pipeline classification & affiliation period analytics
  * - `ContractQueryRepository`   → Query building, pagination & stage filters
+ * - `HealthExclusionsService`   → Pre-evaluation & health exclusions persistence
  */
 @Injectable()
 export class ContractsService {
@@ -59,11 +65,18 @@ export class ContractsService {
     private readonly pdfService: ContractPdfService,
     private readonly statisticsService: ContractStatisticsService,
     private readonly queryRepository: ContractQueryRepository,
+    private readonly healthExclusionsService: HealthExclusionsService,
   ) {}
 
   // ── 1. Creation ────────────────────────────────────────────────────────────
   async createFull(dto: CreateContractFullDto): Promise<Contract> {
     return this.creationService.createFull(dto);
+  }
+
+  async evaluateHealthExclusions(
+    dto: EvaluateHealthExclusionsDto,
+  ): Promise<HealthExclusionEvaluationResult> {
+    return this.healthExclusionsService.evaluateHealthExclusions(dto);
   }
 
   // ── 2. Queries & Search ───────────────────────────────────────────────────

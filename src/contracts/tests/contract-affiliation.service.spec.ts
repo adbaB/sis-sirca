@@ -8,16 +8,20 @@ import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, Parentesco, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
-import { HealthDeclaration } from '../entities/health-declaration.entity';
+import { HealthCategory, HealthDeclaration } from '../entities/health-declaration.entity';
+import { ContractPersonExclusion } from '../entities/contract-person-exclusion.entity';
+
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import {
   BeneficiaryVerificationResult,
   ContractVerificationResult,
 } from '../interfaces/person-verification.interface';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
+import { HealthExclusionsService } from '../services/health-exclusions.service';
 
 describe('ContractAffiliationService', () => {
   let service: ContractAffiliationService;
@@ -26,6 +30,7 @@ describe('ContractAffiliationService', () => {
   let personsService: jest.Mocked<PersonsService>;
   let invoiceService: jest.Mocked<InvoiceService>;
   let plansService: jest.Mocked<PlansService>;
+  let healthExclusionsService: jest.Mocked<HealthExclusionsService>;
   let mockManager: Record<string, unknown>;
   let mockQr: Record<string, unknown>;
 
@@ -101,6 +106,15 @@ describe('ContractAffiliationService', () => {
             findOne: jest.fn(),
           },
         },
+        {
+          provide: HealthExclusionsService,
+          useValue: {
+            detectAndPersistExclusions: jest.fn().mockResolvedValue([]),
+            replaceExclusions: jest.fn().mockResolvedValue([]),
+            resyncAutomaticExclusions: jest.fn().mockResolvedValue([]),
+            findByContractPerson: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
@@ -110,6 +124,7 @@ describe('ContractAffiliationService', () => {
     personsService = module.get(PersonsService);
     invoiceService = module.get(InvoiceService);
     plansService = module.get(PlansService);
+    healthExclusionsService = module.get(HealthExclusionsService);
   });
 
   it('should be defined', () => {
@@ -178,6 +193,7 @@ describe('ContractAffiliationService', () => {
         if (entity === ContractPerson) return mockCpRepo;
         if (entity === AffiliationHistory) return mockHistoryRepo;
         if (entity === HealthDeclaration) return mockHdRepo;
+        if (entity === ContractPersonExclusion) return { create: jest.fn(), save: jest.fn() };
         return {};
       });
 
@@ -190,7 +206,9 @@ describe('ContractAffiliationService', () => {
       expect(res).toEqual(mockCreated);
       expect(personsService.create).toHaveBeenCalled();
       expect(mockCpRepo.save).toHaveBeenCalled();
+      expect(healthExclusionsService.detectAndPersistExclusions).toHaveBeenCalled();
       expect(mockHistoryRepo.save).toHaveBeenCalled();
+
       expect(invoiceService.addAffiliateInclusionLineToActiveInvoice).toHaveBeenCalledWith(
         'contract-1',
         mockCreated,
@@ -231,6 +249,8 @@ describe('ContractAffiliationService', () => {
         if (entity === Contract) return mockContractRepo;
         if (entity === ContractPerson) return mockCpRepo;
         if (entity === AffiliationHistory) return mockHistoryRepo;
+        if (entity === HealthDeclaration) return { create: jest.fn(), save: jest.fn() };
+        if (entity === ContractPersonExclusion) return { create: jest.fn(), save: jest.fn() };
         return {};
       });
 
@@ -1045,6 +1065,82 @@ describe('ContractAffiliationService', () => {
       jest.spyOn(service, 'verifyPersonAffiliation').mockRejectedValue(new NotFoundException());
 
       await expect(service.verifyUnified('Z-99999999')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('updateBeneficiary - Health Exclusions integration', () => {
+    it('should replace exclusions when dto.exclusions is provided', async () => {
+      const mockContract = { id: 'contract-1' };
+      const mockCp = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        plan: { id: 'plan-1' },
+        contract: mockContract,
+        person: { id: 'p-1' },
+      };
+      const mockContractRepo = { findOne: jest.fn().mockResolvedValue(mockContract) };
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCp),
+        save: jest.fn().mockResolvedValue(mockCp),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        return {};
+      });
+
+      const dto: UpdateBeneficiaryDto = {
+        exclusions: [{ medicalServiceId: 'ms-1', reason: 'Excluido' }],
+      };
+
+      await service.updateBeneficiary('contract-1', 'cp-1', dto);
+
+      expect(healthExclusionsService.replaceExclusions).toHaveBeenCalledWith(
+        mockCp,
+        dto.exclusions,
+        mockManager,
+      );
+    });
+
+    it('should resync automatic exclusions when dto.exclusions is undefined and dto.healthDeclarations is provided', async () => {
+      const mockContract = { id: 'contract-1' };
+      const mockCp = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        plan: { id: 'plan-1' },
+        contract: mockContract,
+        person: { id: 'p-1' },
+      };
+      const mockContractRepo = { findOne: jest.fn().mockResolvedValue(mockContract) };
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCp),
+        save: jest.fn().mockResolvedValue(mockCp),
+      };
+      const mockHdRepo = {
+        delete: jest.fn().mockResolvedValue({ affected: 1 }),
+        save: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((x) => x),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        if (entity === HealthDeclaration) return mockHdRepo;
+        return {};
+      });
+
+      const dto: UpdateBeneficiaryDto = {
+        healthDeclarations: [{ category: HealthCategory.CARDIOVASCULAR, hasCondition: true }],
+      };
+
+      await service.updateBeneficiary('contract-1', 'cp-1', dto);
+
+      expect(healthExclusionsService.resyncAutomaticExclusions).toHaveBeenCalledWith(
+        mockCp,
+        dto.healthDeclarations,
+        mockManager,
+      );
     });
   });
 });

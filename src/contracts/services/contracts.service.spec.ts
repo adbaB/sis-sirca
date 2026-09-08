@@ -5,6 +5,7 @@ import { ContractLifecycleService } from './contract-lifecycle.service';
 import { ContractPdfService } from './contract-pdf.service';
 import { ContractStatisticsService } from './contract-statistics.service';
 import { ContractsService } from './contracts.service';
+import { HealthExclusionsService } from './health-exclusions.service';
 import { ContractQueryRepository } from '../repositories/contract-query.repository';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
@@ -25,6 +26,7 @@ describe('ContractsService (Facade)', () => {
   let pdfService: jest.Mocked<ContractPdfService>;
   let statisticsService: jest.Mocked<ContractStatisticsService>;
   let queryRepository: jest.Mocked<ContractQueryRepository>;
+  let healthExclusionsService: jest.Mocked<HealthExclusionsService>;
 
   const mockContract = {
     id: 'contract-uuid-1',
@@ -106,6 +108,12 @@ describe('ContractsService (Facade)', () => {
             }),
           },
         },
+        {
+          provide: HealthExclusionsService,
+          useValue: {
+            evaluateHealthExclusions: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -116,6 +124,7 @@ describe('ContractsService (Facade)', () => {
     pdfService = module.get(ContractPdfService);
     statisticsService = module.get(ContractStatisticsService);
     queryRepository = module.get(ContractQueryRepository);
+    healthExclusionsService = module.get(HealthExclusionsService);
   });
 
   it('should be defined', () => {
@@ -269,6 +278,27 @@ describe('ContractsService (Facade)', () => {
       const res = await service.getAffiliationStats(8, 2026, 'billing');
       expect(statisticsService.getAffiliationStats).toHaveBeenCalledWith(8, 2026, 'billing');
       expect(res.netChange).toBe(4);
+    });
+  });
+
+  describe('Health Exclusions delegates', () => {
+    it('evaluateHealthExclusions should delegate to healthExclusionsService.evaluateHealthExclusions', async () => {
+      const dto = { healthDeclarations: [] };
+      const mockResult = {
+        suggestedExclusions: [],
+        manualExclusions: [],
+        allExclusions: [],
+        summary: {
+          totalConditionsDeclared: 0,
+          totalServicesExcluded: 0,
+          hasManualModifications: false,
+        },
+      };
+      healthExclusionsService.evaluateHealthExclusions.mockResolvedValue(mockResult);
+
+      const res = await service.evaluateHealthExclusions(dto);
+      expect(healthExclusionsService.evaluateHealthExclusions).toHaveBeenCalledWith(dto);
+      expect(res).toEqual(mockResult);
     });
   });
 });

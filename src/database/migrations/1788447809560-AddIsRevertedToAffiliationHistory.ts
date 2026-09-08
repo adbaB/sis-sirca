@@ -5,10 +5,10 @@ export class AddIsRevertedToAffiliationHistory1788447809560 implements Migration
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "contract_persons" DROP CONSTRAINT "FK_contract_persons_plan"`,
+      `ALTER TABLE "contract_persons" DROP CONSTRAINT IF EXISTS "FK_contract_persons_plan"`,
     );
-    await queryRunner.query(`DROP INDEX "public"."IDX_users_email"`);
-    await queryRunner.query(`DROP INDEX "public"."IDX_payments_status"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_users_email"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_payments_status"`);
     await queryRunner.query(
       `ALTER TABLE "affiliation_history" ADD "is_reverted" boolean NOT NULL DEFAULT false`,
     );
@@ -16,16 +16,21 @@ export class AddIsRevertedToAffiliationHistory1788447809560 implements Migration
       `ALTER TABLE "affiliation_history" ADD "reverted_at" TIMESTAMP WITH TIME ZONE`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_ah_is_reverted" ON "affiliation_history" ("is_reverted") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_ah_is_reverted" ON "affiliation_history" ("is_reverted") `,
     );
     await queryRunner.query(
       `UPDATE "affiliation_history" SET "is_reverted" = true WHERE "reason" LIKE 'REVERTIDO:%'`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_payments_status_send_at" ON "payments" ("status", "send_at") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_payments_status_send_at" ON "payments" ("status", "send_at") `,
     );
     await queryRunner.query(
-      `ALTER TABLE "contract_persons" ADD CONSTRAINT "FK_a31e2f22ff3f92d7e7064a41bf1" FOREIGN KEY ("plan_id") REFERENCES "plans"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+      `DO $$
+      BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_a31e2f22ff3f92d7e7064a41bf1') THEN
+              ALTER TABLE "contract_persons" ADD CONSTRAINT "FK_a31e2f22ff3f92d7e7064a41bf1" FOREIGN KEY ("plan_id") REFERENCES "plans"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+          END IF;
+      END $$;`,
     );
   }
 

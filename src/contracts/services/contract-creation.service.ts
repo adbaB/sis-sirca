@@ -23,6 +23,7 @@ import { migrateFromInactiveContracts } from '../helpers/contract-migration.help
 import { validateContractAffiliates } from '../helpers/contract-validator.helper';
 import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { HealthExclusionsService } from './health-exclusions.service';
 
 @Injectable()
 export class ContractCreationService {
@@ -36,6 +37,7 @@ export class ContractCreationService {
     private readonly plansService: PlansService,
     private readonly affiliationService: ContractAffiliationService,
     private readonly contractPdfService: ContractPdfService,
+    private readonly healthExclusionsService: HealthExclusionsService,
   ) {}
 
   /**
@@ -222,6 +224,14 @@ export class ContractCreationService {
         await hdRepo.save(hdEntities);
       }
 
+      // Process health exclusions (Requirement R3)
+      await this.healthExclusionsService.detectAndPersistExclusions(
+        savedCp,
+        healthDeclarations ?? [],
+        affiliate.exclusions,
+        manager,
+      );
+
       // Record affiliation history for AFILIADOs
       if (role === PersonRole.AFILIADO) {
         await historyRepo.save(
@@ -249,6 +259,9 @@ export class ContractCreationService {
         'contractPersons.plan',
         'contractPersons.person',
         'contractPersons.person.plan',
+        'contractPersons.exclusions',
+        'contractPersons.exclusions.medicalService',
+        'contractPersons.exclusions.serviceCategory',
         'advisor',
         'portfolio',
       ],

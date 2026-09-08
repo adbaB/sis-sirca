@@ -185,3 +185,7 @@ spa.traineddata
 
 # TestSprite MCP
 /testsprite_tests/
+
+# Agents temporary workspaces and artifacts
+.agents/*
+!.agents/skills/

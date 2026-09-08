@@ -25,6 +25,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
+import { HealthExclusionsService } from './health-exclusions.service';
 
 @Injectable()
 export class ContractAffiliationService {
@@ -37,6 +38,7 @@ export class ContractAffiliationService {
     private readonly personsService: PersonsService,
     private readonly invoiceService: InvoiceService,
     private readonly plansService: PlansService,
+    private readonly healthExclusionsService: HealthExclusionsService,
   ) {}
 
   /**
@@ -167,7 +169,16 @@ export class ContractAffiliationService {
       await hdRepo.save(hdEntities);
     }
 
+    // Process health exclusions (Requirement R3)
+    await this.healthExclusionsService.detectAndPersistExclusions(
+      savedCp,
+      healthDeclarations ?? [],
+      dto.exclusions,
+      manager,
+    );
+
     // 9. Registrar en historial y auto-agregar cargo INCLUSION si corresponde
+
     if (resolvedRole === PersonRole.AFILIADO && plan) {
       await historyRepo.save(
         historyRepo.create({
@@ -497,6 +508,17 @@ export class ContractAffiliationService {
       }
     }
 
+    // Process health exclusions (Requirement R3)
+    if (dto.exclusions !== undefined) {
+      await this.healthExclusionsService.replaceExclusions(lockedCp, dto.exclusions, manager);
+    } else if (dto.healthDeclarations !== undefined) {
+      await this.healthExclusionsService.resyncAutomaticExclusions(
+        lockedCp,
+        dto.healthDeclarations,
+        manager,
+      );
+    }
+
     await cpRepo.save(contractPerson);
 
     // 7. Recalculate monthly amount if plan changed
@@ -506,7 +528,16 @@ export class ContractAffiliationService {
 
     return (await cpRepo.findOne({
       where: { id: lockedCp.id },
-      relations: ['contract', 'person', 'person.plan', 'plan', 'healthDeclarations'],
+      relations: [
+        'contract',
+        'person',
+        'person.plan',
+        'plan',
+        'healthDeclarations',
+        'exclusions',
+        'exclusions.medicalService',
+        'exclusions.serviceCategory',
+      ],
     })) as ContractPerson;
   }
 

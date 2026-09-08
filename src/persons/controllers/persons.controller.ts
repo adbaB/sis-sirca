@@ -6,16 +6,21 @@ import {
   NotFoundException,
   Param,
   ParseEnumPipe,
+  ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
 import { RequirePermissions } from '../../auth/decorators';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { TypeIdentityCard } from '../entities/person.entity';
+import { PersonBenefitsService } from '../services/person-benefits.service';
 import { PersonsService } from '../services/persons.service';
 
 @Controller('persons')
 export class PersonsController {
-  constructor(private readonly personsService: PersonsService) {}
+  constructor(
+    private readonly personsService: PersonsService,
+    private readonly personBenefitsService: PersonBenefitsService,
+  ) {}
 
   @Post()
   @RequirePermissions('create:contracts', 'create:persons')
@@ -40,6 +45,12 @@ export class PersonsController {
       throw new NotFoundException(`Person with cedula ${type}-${number} not found`);
     }
     return person;
+  }
+
+  @Get(':id/benefits')
+  @RequirePermissions('read:persons', 'read:contracts')
+  getPersonBenefits(@Param('id', ParseUUIDPipe) id: string) {
+    return this.personBenefitsService.getPersonBenefits(id);
   }
 
   @Get(':id')

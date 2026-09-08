@@ -12,15 +12,18 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
+import { ContractPersonExclusion } from '../entities/contract-person-exclusion.entity';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
 import { ContractCreationService } from '../services/contract-creation.service';
 import { ContractPdfService } from '../services/contract-pdf.service';
+import { HealthExclusionsService } from '../services/health-exclusions.service';
 
 describe('ContractCreationService', () => {
   let service: ContractCreationService;
   let invoiceService: jest.Mocked<InvoiceService>;
   let affiliationService: jest.Mocked<ContractAffiliationService>;
   let contractPdfService: jest.Mocked<ContractPdfService>;
+  let healthExclusionsService: jest.Mocked<HealthExclusionsService>;
   let mockManager: Record<string, unknown>;
   let mockQr: Record<string, unknown>;
 
@@ -103,6 +106,12 @@ describe('ContractCreationService', () => {
             generateAndUploadContractPdf: jest.fn().mockResolvedValue('https://s3/contract.pdf'),
           },
         },
+        {
+          provide: HealthExclusionsService,
+          useValue: {
+            detectAndPersistExclusions: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
@@ -110,6 +119,7 @@ describe('ContractCreationService', () => {
     invoiceService = module.get(InvoiceService);
     affiliationService = module.get(ContractAffiliationService);
     contractPdfService = module.get(ContractPdfService);
+    healthExclusionsService = module.get(HealthExclusionsService);
   });
 
   it('should be defined', () => {
@@ -265,16 +275,24 @@ describe('ContractCreationService', () => {
             save: jest.fn().mockResolvedValue([]),
           };
         }
+        if (entity === ContractPersonExclusion) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }
         return {};
       });
 
       const res = await service.createFull(dto);
 
       expect(res).toEqual(mockContract);
+      expect(healthExclusionsService.detectAndPersistExclusions).toHaveBeenCalled();
       expect(affiliationService.recalculateMonthlyAmount).toHaveBeenCalledWith(
         mockContract.id,
         mockManager,
       );
+
       expect(invoiceService.generateInvoiceForContract).toHaveBeenCalledWith(
         mockContract.id,
         undefined,

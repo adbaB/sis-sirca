@@ -28,6 +28,7 @@ import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { EvaluateHealthExclusionsDto } from '../dto/evaluate-health-exclusions.dto';
 import { ContractsService } from '../services/contracts.service';
 
 @Controller('contracts')
@@ -38,6 +39,12 @@ export class ContractsController {
   @RequirePermissions('create:contracts')
   create(@Body() createContractFullDto: CreateContractFullDto) {
     return this.contractsService.createFull(createContractFullDto);
+  }
+
+  @Post('evaluate-health-exclusions')
+  @RequirePermissions('create:contracts', 'read:contracts')
+  evaluateHealthExclusions(@Body() dto: EvaluateHealthExclusionsDto) {
+    return this.contractsService.evaluateHealthExclusions(dto);
   }
 
   @Get()

@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -21,16 +20,23 @@ export class CreatePersonDto {
   identityCard: string;
 
   @IsString()
-  @IsNotEmpty()
-  name: string;
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  lastName?: string;
 
   @IsDateString()
   @IsOptional()
   birthDate?: string;
 
-  @IsBoolean()
   @IsOptional()
-  gender?: boolean;
+  gender?: boolean | string;
 
   @IsEnum(PersonStatus)
   @IsOptional()
@@ -39,6 +45,10 @@ export class CreatePersonDto {
   @IsString()
   @IsOptional()
   phone?: string;
+
+  @IsString()
+  @IsOptional()
+  mobilePhone?: string;
 
   @IsString()
   @IsOptional()
