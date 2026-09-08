@@ -192,6 +192,9 @@
     <div class="report-title">
       <h2>RESUMEN MENSUAL DE COMISIONES SIP</h2>
       <p>Corte: Del {{ startDateES }} Al {{ endDateES }}</p>
+      {{#if advisorName}}
+      <p>Asesor: {{ advisorName }}</p>
+      {{/if}}
     </div>
 
     <!-- Sections Loop -->
@@ -270,6 +273,9 @@
     <div class="report-title">
       <h2>DETALLE DE AFILIADOS SIP POR CATEGORÍA Y ASESOR</h2>
       <p>Corte: Del {{ startDateES }} Al {{ endDateES }}</p>
+      {{#if advisorName}}
+      <p>Asesor: {{ advisorName }}</p>
+      {{/if}}
     </div>
 
     {{#each sections}}

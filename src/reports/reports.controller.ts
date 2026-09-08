@@ -64,11 +64,16 @@ export class ReportsController {
   async downloadSipCommissionsExcel(
     @Query('year') year: number,
     @Query('month') month: number,
+    @Query('advisorId') advisorId: string,
     @Res() res: Response,
   ) {
     this.validatePeriod(year, month);
 
-    const buffer = await this.sipCommissionsService.generateExcel(Number(year), Number(month));
+    const buffer = await this.sipCommissionsService.generateExcel(
+      Number(year),
+      Number(month),
+      advisorId || undefined,
+    );
     const monthStr = String(month).padStart(2, '0');
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -83,11 +88,16 @@ export class ReportsController {
   async downloadSipCommissionsPdf(
     @Query('year') year: number,
     @Query('month') month: number,
+    @Query('advisorId') advisorId: string,
     @Res() res: Response,
   ) {
     this.validatePeriod(year, month);
 
-    const buffer = await this.sipCommissionsService.generatePdf(Number(year), Number(month));
+    const buffer = await this.sipCommissionsService.generatePdf(
+      Number(year),
+      Number(month),
+      advisorId || undefined,
+    );
     const monthStr = String(month).padStart(2, '0');
     res.set({
       'Content-Type': 'application/pdf',

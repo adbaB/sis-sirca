@@ -101,9 +101,9 @@ describe('ReportsController', () => {
   describe('downloadSipCommissionsExcel', () => {
     it('should generate and return SIP commissions Excel file with headers', async () => {
       const res = mockResponse();
-      await controller.downloadSipCommissionsExcel(2026, 4, res);
+      await controller.downloadSipCommissionsExcel(2026, 4, 'advisor-uuid', res);
 
-      expect(sipCommissionsService.generateExcel).toHaveBeenCalledWith(2026, 4);
+      expect(sipCommissionsService.generateExcel).toHaveBeenCalledWith(2026, 4, 'advisor-uuid');
       expect(res.set).toHaveBeenCalledWith(
         expect.objectContaining({
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -117,9 +117,9 @@ describe('ReportsController', () => {
   describe('downloadSipCommissionsPdf', () => {
     it('should generate and return SIP commissions PDF file with headers', async () => {
       const res = mockResponse();
-      await controller.downloadSipCommissionsPdf(2026, 4, res);
+      await controller.downloadSipCommissionsPdf(2026, 4, 'advisor-uuid', res);
 
-      expect(sipCommissionsService.generatePdf).toHaveBeenCalledWith(2026, 4);
+      expect(sipCommissionsService.generatePdf).toHaveBeenCalledWith(2026, 4, 'advisor-uuid');
       expect(res.set).toHaveBeenCalledWith(
         expect.objectContaining({
           'Content-Type': 'application/pdf',

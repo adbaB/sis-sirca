@@ -14,6 +14,7 @@ import {
   applyGrandTotalStyle,
   BRAND_COLORS,
   createWorkbook,
+  fetchAdvisorName,
   finishWorkbook,
   formatDateES,
   getGeneratedAtTimestamp,
@@ -67,6 +68,7 @@ export interface ReportSection {
 export interface SipCommissionReport {
   startDate: string;
   endDate: string;
+  advisorName?: string;
   sections: ReportSection[];
   grandTotalCommission: number;
   portfolioCodes: string[];
@@ -115,12 +117,24 @@ export class SipCommissionsService {
   /**
    * Build the complete SIP commission report data from the database.
    */
-  async buildReportData(year: number, month: number): Promise<SipCommissionReport> {
+  async buildReportData(
+    year: number,
+    month: number,
+    advisorId?: string,
+  ): Promise<SipCommissionReport> {
     const monthStr = String(month).padStart(2, '0');
 
     const startDate = `${year}-${monthStr}-01`;
     const lastDay = getEndOfMonth(startDate).getDate();
     const endDate = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
+    let advisorName: string;
+    try {
+      advisorName = await fetchAdvisorName(this.dataSource, advisorId);
+    } catch (err) {
+      this.logger.error('Error fetching advisor name:', err);
+      throw new InternalServerErrorException('Error al obtener el nombre del asesor.');
+    }
 
     // 1. Get all active portfolio codes for column headers
     let portfolios: Array<{ code: string }>;
@@ -143,8 +157,7 @@ export class SipCommissionsService {
     const windows = getBillingDateWindows(year, month);
     let rawData: SipCommissionQueryRow[];
     try {
-      rawData = await this.dataSource.query(
-        `
+      let query = `
         SELECT
           il.id        AS line_id,
           il.category  AS line_category,
@@ -189,9 +202,15 @@ export class SipCommissionsService {
           AND il.deleted_at IS NULL
           AND COALESCE(pay.operation_date, pay.payment_date)::date >= $1::date
           AND COALESCE(pay.operation_date, pay.payment_date)::date <= $2::date
-        `,
-        [windows.queryStart, windows.queryEnd],
-      );
+      `;
+
+      const params: string[] = [windows.queryStart, windows.queryEnd];
+      if (advisorId) {
+        query += ` AND c.advisor_id = $3`;
+        params.push(advisorId);
+      }
+
+      rawData = await this.dataSource.query(query, params);
     } catch (err) {
       this.logger.error('Error querying invoice lines for SIP commissions:', err);
       throw new InternalServerErrorException(
@@ -239,7 +258,7 @@ export class SipCommissionsService {
 
     const grandTotalCommission = sections.reduce((sum, s) => sum + s.subtotalCommission, 0);
 
-    return { startDate, endDate, sections, grandTotalCommission, portfolioCodes };
+    return { startDate, endDate, advisorName, sections, grandTotalCommission, portfolioCodes };
   }
 
   private classifyRowsIntoBuckets(
@@ -453,8 +472,8 @@ export class SipCommissionsService {
    * Includes Sheet 1: 'CUADRO DE COMISIONES MES' (Resumen)
    * and Sheet 2: 'Detalle de Afiliados' (Desglose por Asesor)
    */
-  async generateExcel(year: number, month: number): Promise<Buffer> {
-    const report = await this.buildReportData(year, month);
+  async generateExcel(year: number, month: number, advisorId?: string): Promise<Buffer> {
+    const report = await this.buildReportData(year, month, advisorId);
 
     // === SHEET 1: RESUMEN DE COMISIONES ===
     const { workbook, ws } = createWorkbook('CUADRO DE COMISIONES MES');
@@ -550,6 +569,14 @@ export class SipCommissionsService {
     corteCell2.value = `Corte: Del ${formatDateES(report.startDate)} Al ${formatDateES(report.endDate)}`;
     corteCell2.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BRAND.darkText } };
     corteCell2.alignment = { horizontal: 'center', vertical: 'middle' };
+    detailRowIdx++;
+
+    const advisorRow2 = wsDetails.getRow(detailRowIdx);
+    wsDetails.mergeCells(detailRowIdx, 1, detailRowIdx, 13);
+    const advisorCell2 = advisorRow2.getCell(1);
+    advisorCell2.value = `Asesor: ${report.advisorName || 'Todos los Asesores'}`;
+    advisorCell2.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BRAND.darkText } };
+    advisorCell2.alignment = { horizontal: 'center', vertical: 'middle' };
     detailRowIdx += 2;
 
     for (const section of report.sections) {
@@ -804,6 +831,15 @@ export class SipCommissionsService {
     corteCell.value = `Corte: Del ${formatDateES(report.startDate)} Al ${formatDateES(report.endDate)}`;
     corteCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BRAND.darkText } };
     corteCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    currentRow++;
+
+    // Advisor
+    const advisorRow = ws.getRow(currentRow);
+    ws.mergeCells(currentRow, 1, currentRow, totalCols);
+    const advisorCell = advisorRow.getCell(1);
+    advisorCell.value = `Asesor: ${report.advisorName || 'Todos los Asesores'}`;
+    advisorCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BRAND.darkText } };
+    advisorCell.alignment = { horizontal: 'center', vertical: 'middle' };
     currentRow += 2; // extra blank row
 
     return currentRow;
@@ -1032,8 +1068,8 @@ export class SipCommissionsService {
   /**
    * Generate the formatted PDF report buffer.
    */
-  async generatePdf(year: number, month: number): Promise<Buffer> {
-    const report = await this.buildReportData(year, month);
+  async generatePdf(year: number, month: number, advisorId?: string): Promise<Buffer> {
+    const report = await this.buildReportData(year, month, advisorId);
 
     const generatedAt = getGeneratedAtTimestamp();
     const logoBase64 = await loadLogoBase64(this.logger);
@@ -1088,6 +1124,7 @@ export class SipCommissionsService {
       generatedAt,
       startDateES: formatDateES(report.startDate),
       endDateES: formatDateES(report.endDate),
+      advisorName: report.advisorName,
       sections: formattedSections,
       portfolioCodes: report.portfolioCodes,
       colspan: 4 + report.portfolioCodes.length,
