@@ -24,6 +24,7 @@ export enum ContractStatus {
 }
 
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
+import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 
 @Entity('contracts')
 @Index('IDX_contracts_status', ['status'])
@@ -34,7 +35,7 @@ export class Contract {
 
   @Column({
     type: 'int',
-    default: 5,
+    default: DEFAULT_CUTOFF_DAY,
     name: 'cutoff_day',
   })
   cutoffDay: number;

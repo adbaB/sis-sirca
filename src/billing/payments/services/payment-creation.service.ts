@@ -259,9 +259,11 @@ export class PaymentCreationService {
       await this.invoiceService.recalculateInvoicePaidAmount(invId, queryRunner);
     }
 
-    const contractId = invoices[0]?.contract?.id;
-    if (contractId) {
-      await this.contractsService.syncReactivationEligibility(contractId, queryRunner.manager);
+    const contractIds = [
+      ...new Set(invoices.map((inv) => inv.contract?.id).filter((id): id is string => Boolean(id))),
+    ];
+    for (const cId of contractIds) {
+      await this.contractsService.syncReactivationEligibility(cId, queryRunner.manager);
     }
 
     const totalInvoiceDebtUsd = round2(

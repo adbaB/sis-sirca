@@ -29,6 +29,9 @@ export class AddSuspendedStatusAndCutoffDayToContracts1788464590396 implements M
     await queryRunner.query(
       `CREATE TYPE "public"."contracts_status_enum_old" AS ENUM('ACTIVE', 'INACTIVE')`,
     );
+    await queryRunner.query(
+      `UPDATE "contracts" SET "status" = 'INACTIVE' WHERE "status"::text = 'SUSPENDED'`,
+    );
     await queryRunner.query(`ALTER TABLE "contracts" ALTER COLUMN "status" DROP DEFAULT`);
     await queryRunner.query(
       `ALTER TABLE "contracts" ALTER COLUMN "status" TYPE "public"."contracts_status_enum_old" USING "status"::"text"::"public"."contracts_status_enum_old"`,

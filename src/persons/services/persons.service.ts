@@ -95,9 +95,9 @@ export class PersonsService {
     identityCard: string,
     manager?: EntityManager,
     withDeleted = false,
-  ): Promise<Person | null> {
+  ): Promise<Person[]> {
     const repo = manager ? manager.getRepository(Person) : this.personsRepository;
-    return repo.findOne({
+    return repo.find({
       where: { identityCard },
       ...(withDeleted ? { withDeleted: true } : {}),
     });
@@ -109,10 +109,11 @@ export class PersonsService {
     withDeleted = false,
   ): Promise<Person[]> {
     const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    const escaped = titularIdentityCard.replace(/[\\%_]/g, '\\$&');
     return repo.find({
       where: {
         typeIdentityCard: TypeIdentityCard.PN,
-        identityCard: Like(`${titularIdentityCard}-%`),
+        identityCard: Like(`${escaped}-%`),
       },
       ...(withDeleted ? { withDeleted: true } : {}),
     });

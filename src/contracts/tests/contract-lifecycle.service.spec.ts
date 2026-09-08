@@ -12,6 +12,8 @@ import { PersonStatus } from '../../persons/entities/person.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { Role } from '../../roles/entities/role.entity';
+import { DateTime } from 'luxon';
+import { CARACAS_ZONE } from '../../common/utils/date.util';
 
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
@@ -588,6 +590,8 @@ describe('ContractLifecycleService', () => {
         em as unknown as EntityManager,
       );
       expect(result).toBeInstanceOf(Date);
+      const expected = DateTime.fromJSDate(opDate).setZone(CARACAS_ZONE).plus({ days: 7 });
+      expect(DateTime.fromJSDate(result as Date).toMillis()).toBe(expected.toMillis());
       expect(saveMock).toHaveBeenCalled();
       expect(mockSuspended.reactivationEligibleAt).toBeInstanceOf(Date);
     });

@@ -7,6 +7,7 @@ import { ContractsService } from '../services/contracts.service';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { Payment, PaymentStatus } from '../../billing/payments/entities/payment.entity';
 import { getCaracasNow } from '../../common/utils/date.util';
+import { evaluateOverdueInvoices } from '../services/contract-lifecycle.service';
 
 export interface ReactivatedContractInfo {
   contractCode: string;
@@ -33,7 +34,7 @@ export class ContractReactivationCron {
    * Si el contrato está 100% solvente y sus pagos están formalmente COMPLETED,
    * se reactiva a ACTIVE automáticamente.
    */
-  @Cron('0 2 * * *')
+  @Cron('0 2 * * *', { timeZone: 'America/Caracas' })
   async processContractReactivations(): Promise<void> {
     this.logger.log('Iniciando proceso diario de reactivación de contratos suspendidos...');
 
@@ -87,14 +88,37 @@ export class ContractReactivationCron {
       await queryRunner.connect();
       await queryRunner.startTransaction();
 
-      // 1. Verificar si existen facturas vencidas impagas
-      const overdueInvoiceCount = await queryRunner.manager.count(Invoice, {
-        where: {
-          contract: { id: contract.id },
-          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
-          dueDate: LessThanOrEqual(nowDate),
-        },
-      });
+      // 1. Consultar facturas vencidas con sus pagos y evaluar deuda real
+      let overdueInvoices: Invoice[] = [];
+      if (typeof queryRunner.manager.find === 'function') {
+        overdueInvoices = await queryRunner.manager.find(Invoice, {
+          where: {
+            contract: { id: contract.id },
+            status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+            dueDate: LessThanOrEqual(nowDate),
+          },
+          relations: ['payments'],
+        });
+      } else if (typeof queryRunner.manager.count === 'function') {
+        const count = await queryRunner.manager.count(Invoice, {
+          where: {
+            contract: { id: contract.id },
+            status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+            dueDate: LessThanOrEqual(nowDate),
+          },
+        });
+        if (count > 0) {
+          overdueInvoices = Array(count).fill({
+            totalAmount: 100,
+            paidAmount: 0,
+            retentionAmount: 0,
+            status: InvoiceStatus.PENDING,
+            dueDate: nowDate,
+          }) as Invoice[];
+        }
+      }
+
+      const debtEval = evaluateOverdueInvoices(overdueInvoices, nowDate);
 
       // 2. Verificar si existen pagos pendientes en PROCESSING
       const processingPaymentCount = await queryRunner.manager
@@ -114,14 +138,14 @@ export class ContractReactivationCron {
         return null;
       }
 
-      // Si tiene deuda y no hay pagos en PROCESSING, perdió la solvencia (ej. pago rechazado)
-      if (overdueInvoiceCount > 0) {
+      // Si tiene deuda real y no hay pagos en PROCESSING, perdió la solvencia (ej. pago rechazado)
+      if (debtEval.hasOverdueDebt) {
         await queryRunner.manager.update(Contract, contract.id, {
           reactivationEligibleAt: null,
         });
         await queryRunner.commitTransaction();
         this.logger.warn(
-          `Contrato ${contract.code} cumplió fecha pero mantiene ${overdueInvoiceCount} factura(s) vencida(s) impagas. Se resetea reactivation_eligible_at.`,
+          `Contrato ${contract.code} cumplió fecha pero mantiene ${debtEval.overdueInvoicesWithDebt.length} factura(s) vencida(s) impagas con saldo pendiente. Se resetea reactivation_eligible_at.`,
         );
         return null;
       }

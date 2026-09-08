@@ -11,11 +11,16 @@ import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
+import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
+import { EntityManager } from 'typeorm';
 import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
-import { PersonRole } from '../entities/contract-person.entity';
+import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
+import type { JwtPayload } from '../../auth/guards/auth.guard';
 
 describe('ContractsService (Facade)', () => {
   let service: ContractsService;
@@ -52,6 +57,7 @@ describe('ContractsService (Facade)', () => {
             remove: jest.fn().mockResolvedValue(undefined),
             inactivate: jest.fn().mockResolvedValue(mockContract),
             activate: jest.fn().mockResolvedValue(mockContract),
+            syncReactivationEligibility: jest.fn().mockResolvedValue(new Date('2026-09-08')),
             setAdvisor: jest.fn().mockResolvedValue(undefined),
           },
         },
@@ -59,10 +65,21 @@ describe('ContractsService (Facade)', () => {
           provide: ContractAffiliationService,
           useValue: {
             addBeneficiary: jest.fn().mockResolvedValue({ id: 'person-1' } as Person),
+            updateBeneficiary: jest
+              .fn()
+              .mockResolvedValue({ id: 'cp-1' } as unknown as ContractPerson),
+            bulkUpdateBeneficiaries: jest
+              .fn()
+              .mockResolvedValue([{ id: 'cp-1' }] as unknown as ContractPerson[]),
             removeAffiliate: jest.fn().mockResolvedValue(undefined),
             setContractTitular: jest.fn().mockResolvedValue(undefined),
             setBillingOwner: jest.fn().mockResolvedValue(undefined),
             recalculateMonthlyAmount: jest.fn().mockResolvedValue(undefined),
+            verifyPersonAffiliation: jest
+              .fn()
+              .mockResolvedValue({ exists: true, person: null, activeContracts: [] }),
+            verifyContractByCode: jest.fn().mockResolvedValue({ exists: true, contract: null }),
+            verifyUnified: jest.fn().mockResolvedValue({ type: 'contract', contract: null }),
           },
         },
         {
@@ -193,6 +210,24 @@ describe('ContractsService (Facade)', () => {
       expect(res).toEqual(mockContract);
     });
 
+    it('activate should delegate with dto and user when provided', async () => {
+      const dto: ActivateContractDto = { reason: 'Excepción autorizada' };
+      const user: JwtPayload = { roleId: 'role-1', userId: 'user-1' };
+      const res = await service.activate('contract-uuid-1', dto, user);
+      expect(lifecycleService.activate).toHaveBeenCalledWith('contract-uuid-1', dto, user);
+      expect(res).toEqual(mockContract);
+    });
+
+    it('syncReactivationEligibility should delegate to lifecycleService.syncReactivationEligibility', async () => {
+      const manager = {} as unknown as EntityManager;
+      const res = await service.syncReactivationEligibility('contract-uuid-1', manager);
+      expect(lifecycleService.syncReactivationEligibility).toHaveBeenCalledWith(
+        'contract-uuid-1',
+        manager,
+      );
+      expect(res).toEqual(new Date('2026-09-08'));
+    });
+
     it('setAdvisor should delegate to lifecycleService.setAdvisor', async () => {
       await service.setAdvisor('contract-uuid-1', 'adv-2');
       expect(lifecycleService.setAdvisor).toHaveBeenCalledWith('contract-uuid-1', 'adv-2');
@@ -213,6 +248,29 @@ describe('ContractsService (Facade)', () => {
       const res = await service.addBeneficiary('contract-uuid-1', dto);
       expect(affiliationService.addBeneficiary).toHaveBeenCalledWith('contract-uuid-1', dto);
       expect(res.id).toBe('person-1');
+    });
+
+    it('updateBeneficiary should delegate to affiliationService.updateBeneficiary', async () => {
+      const dto: UpdateBeneficiaryDto = { name: 'Maria Actualizada' };
+      const res = await service.updateBeneficiary('contract-uuid-1', 'cp-1', dto);
+      expect(affiliationService.updateBeneficiary).toHaveBeenCalledWith(
+        'contract-uuid-1',
+        'cp-1',
+        dto,
+      );
+      expect(res).toEqual({ id: 'cp-1' });
+    });
+
+    it('bulkUpdateBeneficiaries should delegate to affiliationService.bulkUpdateBeneficiaries', async () => {
+      const dto: BulkUpdateBeneficiariesDto = {
+        beneficiaries: [{ contractPersonId: 'cp-1', name: 'Maria' }],
+      };
+      const res = await service.bulkUpdateBeneficiaries('contract-uuid-1', dto);
+      expect(affiliationService.bulkUpdateBeneficiaries).toHaveBeenCalledWith(
+        'contract-uuid-1',
+        dto,
+      );
+      expect(res).toEqual([{ id: 'cp-1' }]);
     });
 
     it('removeAffiliate should delegate to affiliationService.removeAffiliate', async () => {
@@ -269,6 +327,29 @@ describe('ContractsService (Facade)', () => {
       const res = await service.getAffiliationStats(8, 2026, 'billing');
       expect(statisticsService.getAffiliationStats).toHaveBeenCalledWith(8, 2026, 'billing');
       expect(res.netChange).toBe(4);
+    });
+  });
+
+  describe('Verification delegates', () => {
+    it('verifyPersonAffiliation should delegate to affiliationService.verifyPersonAffiliation', async () => {
+      const res = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');
+      expect(affiliationService.verifyPersonAffiliation).toHaveBeenCalledWith(
+        TypeIdentityCard.V,
+        '12345678',
+      );
+      expect(res).toEqual({ exists: true, person: null, activeContracts: [] });
+    });
+
+    it('verifyContractByCode should delegate to affiliationService.verifyContractByCode', async () => {
+      const res = await service.verifyContractByCode('SIR-001-00001');
+      expect(affiliationService.verifyContractByCode).toHaveBeenCalledWith('SIR-001-00001');
+      expect(res).toEqual({ exists: true, contract: null });
+    });
+
+    it('verifyUnified should delegate to affiliationService.verifyUnified', async () => {
+      const res = await service.verifyUnified('query-test');
+      expect(affiliationService.verifyUnified).toHaveBeenCalledWith('query-test');
+      expect(res).toEqual({ type: 'contract', contract: null });
     });
   });
 });

@@ -1,14 +1,14 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsOptional, IsUUID, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsUUID, ValidateIf, ValidateNested } from 'class-validator';
 import { UpdateBeneficiaryDto } from './update-beneficiary.dto';
 
 export class BulkUpdateBeneficiaryItemDto extends UpdateBeneficiaryDto {
+  @ValidateIf((o: BulkUpdateBeneficiaryItemDto) => !o.id || o.contractPersonId !== undefined)
   @IsUUID()
-  @IsOptional()
   contractPersonId?: string;
 
+  @ValidateIf((o: BulkUpdateBeneficiaryItemDto) => !o.contractPersonId || o.id !== undefined)
   @IsUUID()
-  @IsOptional()
   id?: string;
 }
 

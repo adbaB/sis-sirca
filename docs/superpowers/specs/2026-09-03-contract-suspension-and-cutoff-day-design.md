@@ -95,7 +95,7 @@ ALTER TABLE "contracts" ADD CONSTRAINT "CHK_contracts_cutoff_day" CHECK ("cutoff
 ## 4. Cron de Suspensión y Modificación de los 16 Puntos del Sistema
 
 ### 4.1. Cron Diario de Suspensión (`ContractSuspensionCron`)
-* **Archivo**: `src/billing/crons/contract-suspension.cron.ts`
+* **Archivo**: `src/contracts/crons/contract-suspension.cron.ts`
 * **Frecuencia**: `@Cron('0 1 * * *')` (Diario a la 1:00 AM hora de Caracas).
 * **Lógica**:
   1. Consulta en lotes de 100 contratos con `status = ContractStatus.ACTIVE`.

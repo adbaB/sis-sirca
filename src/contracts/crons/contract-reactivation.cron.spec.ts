@@ -23,6 +23,7 @@ describe('ContractReactivationCron', () => {
     isTransactionActive: true,
     release: jest.fn(),
     manager: {
+      find: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue(undefined),
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
@@ -66,6 +67,7 @@ describe('ContractReactivationCron', () => {
     mockQueryRunner.isTransactionActive = true;
     mockQueryBuilder.getCount.mockResolvedValue(0);
     mockQueryRunner.manager.count.mockResolvedValue(0);
+    mockQueryRunner.manager.find.mockResolvedValue([]);
   });
 
   const createMockContract = (
@@ -122,6 +124,15 @@ describe('ContractReactivationCron', () => {
 
     mockContractRepository.find.mockResolvedValueOnce([contract]).mockResolvedValueOnce([]);
 
+    mockQueryRunner.manager.find.mockResolvedValue([
+      {
+        totalAmount: 100,
+        paidAmount: 0,
+        retentionAmount: 0,
+        status: 'PENDING',
+        dueDate: new Date(),
+      },
+    ]);
     mockQueryRunner.manager.count.mockResolvedValue(2); // 2 facturas impagas
     mockQueryBuilder.getCount.mockResolvedValue(0); // Sin pagos en processing
 
@@ -139,6 +150,7 @@ describe('ContractReactivationCron', () => {
 
     mockContractRepository.find.mockResolvedValueOnce([contract]).mockResolvedValueOnce([]);
 
+    mockQueryRunner.manager.find.mockRejectedValue(new Error('DB Connection Timeout'));
     mockQueryRunner.manager.count.mockRejectedValue(new Error('DB Connection Timeout'));
 
     await service.processContractReactivations();

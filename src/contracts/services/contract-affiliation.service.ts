@@ -23,6 +23,7 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
+import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 
@@ -696,7 +697,7 @@ export class ContractAffiliationService {
         status: contract.status,
         isSuspended: contract.status === ContractStatus.SUSPENDED,
         affiliationDate: contract.affiliationDate,
-        cutoffDay: contract.cutoffDay ?? 5,
+        cutoffDay: contract.cutoffDay ?? DEFAULT_CUTOFF_DAY,
         titular: titularPerson
           ? {
               id: titularPerson.id,
@@ -784,12 +785,41 @@ export class ContractAffiliationService {
 
     // 2c. Fallback por identityCard exacto sin importar el tipo
     // Cubre "12345678-1" (sin prefijo PN), "V-12345678-1" (prefijo V erróneo), o "12345678" (cédula pura sin prefijo)
-    const personByDoc =
-      (await this.personsService.findByIdentityCardOnly(cleanNumber)) ??
-      (cleanNumber !== query ? await this.personsService.findByIdentityCardOnly(query) : null);
+    const normalizeCandidates = (res: unknown): Person[] => {
+      if (Array.isArray(res)) return res;
+      if (res) return [res as Person];
+      return [];
+    };
 
-    if (personByDoc) {
-      return this.verifyPersonAffiliation(personByDoc.typeIdentityCard, personByDoc.identityCard);
+    let candidates = normalizeCandidates(
+      await this.personsService.findByIdentityCardOnly(cleanNumber),
+    );
+    if (candidates.length === 0 && cleanNumber !== query) {
+      candidates = normalizeCandidates(await this.personsService.findByIdentityCardOnly(query));
+    }
+
+    if (candidates.length === 1) {
+      return this.verifyPersonAffiliation(
+        candidates[0].typeIdentityCard,
+        candidates[0].identityCard,
+      );
+    } else if (candidates.length > 1) {
+      for (const candidate of candidates) {
+        try {
+          const res = await this.verifyPersonAffiliation(
+            candidate.typeIdentityCard,
+            candidate.identityCard,
+          );
+          if (res.contracts && res.contracts.length > 0) {
+            return res;
+          }
+        } catch {
+          // Siguiente candidato
+        }
+      }
+      const preferred =
+        candidates.find((c) => c.typeIdentityCard === TypeIdentityCard.V) ?? candidates[0];
+      return this.verifyPersonAffiliation(preferred.typeIdentityCard, preferred.identityCard);
     }
 
     // 2d. Fallback para cédulas sin guión que pudieran tener un PN asociado único

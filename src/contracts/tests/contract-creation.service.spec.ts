@@ -282,5 +282,79 @@ describe('ContractCreationService', () => {
       );
       expect(contractPdfService.generateAndUploadContractPdf).toHaveBeenCalledWith(mockContract.id);
     });
+
+    it('should pass cutoffDay from the DTO to the created contract', async () => {
+      const createSpy = jest.fn().mockReturnValue(mockContract);
+      const mockCounter = { key: 'contract_code', value: 1 };
+      const mockSavedPerson = {
+        id: 'p-1',
+        identityCard: '12345678',
+        typeIdentityCard: 'V',
+        name: 'Carlos Titular',
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Advisor) {
+          return { findOne: jest.fn().mockResolvedValue(mockAdvisor) };
+        }
+        if (entity === SystemCounter) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockCounter),
+            save: jest.fn().mockResolvedValue(mockCounter),
+          };
+        }
+        if (entity === Contract) {
+          return {
+            create: createSpy,
+            save: jest.fn().mockResolvedValue(mockContract),
+            findOne: jest.fn().mockResolvedValue(mockContract),
+          };
+        }
+        if (entity === Person) {
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue(mockSavedPerson),
+          };
+        }
+        if (entity === ContractPerson) {
+          return {
+            find: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockImplementation(async (val) => ({ id: 'cp-saved', ...val })),
+          };
+        }
+        if (entity === AffiliationHistory) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue(true),
+          };
+        }
+        if (entity === HealthDeclaration) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }
+        return {};
+      });
+
+      await service.createFull({
+        affiliationDate: '2026-08-01',
+        advisorId: 'adv-1',
+        cutoffDay: 15,
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Carlos Titular',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+        ],
+      });
+
+      expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ cutoffDay: 15 }));
+    });
   });
 });

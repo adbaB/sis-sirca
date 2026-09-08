@@ -8,6 +8,7 @@ import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
+import { BulkUpdateBeneficiaryItemDto } from '../dto/bulk-update-beneficiaries.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, Parentesco, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
@@ -595,6 +596,23 @@ describe('ContractAffiliationService', () => {
       expect(result).toHaveLength(2);
       expect(mockContractRepo.update).toHaveBeenCalled();
     });
+
+    it('should throw BadRequestException if an item lacks both contractPersonId and id', async () => {
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue({ id: 'contract-1' }),
+          };
+        }
+        return {};
+      });
+
+      await expect(
+        service.bulkUpdateBeneficiaries('contract-1', {
+          beneficiaries: [{ name: 'Pedro' } as unknown as BulkUpdateBeneficiaryItemDto],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('verifyPersonAffiliation', () => {
@@ -897,7 +915,7 @@ describe('ContractAffiliationService', () => {
         hasSuspendedContract: false,
       };
 
-      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce(mockPNPerson);
+      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce([mockPNPerson]);
       const spy = jest.spyOn(service, 'verifyPersonAffiliation').mockResolvedValue(mockPNResult);
 
       const result = await service.verifyUnified('19626778-1');
@@ -938,7 +956,7 @@ describe('ContractAffiliationService', () => {
         .mockRejectedValueOnce(new NotFoundException())
         .mockResolvedValueOnce(mockPNResult);
 
-      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce(mockPNPerson);
+      jest.spyOn(personsService, 'findByIdentityCardOnly').mockResolvedValueOnce([mockPNPerson]);
 
       const result = await service.verifyUnified('V-19626778-1');
 
