@@ -452,6 +452,72 @@ describe('ContractVerificationService', () => {
       expect(c1?.isTitular).toBe(true);
       expect(c1?.isBillingOwner).toBe(true);
     });
+
+    it('should filter out soft-deleted beneficiaries where person is null in ownerContracts', async () => {
+      const mockPerson = {
+        id: 'p-owner',
+        name: 'Titular Activo',
+        typeIdentityCard: TypeIdentityCard.V,
+        identityCard: '11223344',
+        status: PersonStatus.ACTIVE,
+      } as Person;
+
+      const mockOwnerAffiliations = [
+        {
+          id: 'cp-owner',
+          role: PersonRole.TITULAR,
+          isBillingOwner: true,
+          contract: { id: 'c-del-test' },
+        },
+      ] as unknown as ContractPerson[];
+
+      const mockContract = {
+        id: 'c-del-test',
+        code: 'SIR-DEL-01',
+        status: ContractStatus.ACTIVE,
+        contractPersons: [
+          {
+            id: 'cp-owner',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+            person: mockPerson,
+          },
+          // Soft-deleted person (TypeORM excluded person from join relation)
+          {
+            id: 'cp-deleted-beneficiary',
+            role: PersonRole.AFILIADO,
+            person: null,
+          },
+          // Valid active beneficiary
+          {
+            id: 'cp-valid-beneficiary',
+            role: PersonRole.AFILIADO,
+            person: {
+              id: 'p-valid',
+              name: 'Beneficiario Vivo',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '99001122',
+              status: PersonStatus.ACTIVE,
+            },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(personsService, 'findByIdentityCard').mockResolvedValue(mockPerson);
+      jest
+        .spyOn(contractPersonsRepository, 'find')
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(mockOwnerAffiliations);
+      jest.spyOn(contractsRepository, 'find').mockResolvedValueOnce([mockContract]);
+
+      const result = await service.verifyPersonAffiliation(TypeIdentityCard.V, '11223344');
+
+      expect(result.ownerContracts).toHaveLength(1);
+      const beneficiaries = result.ownerContracts[0].beneficiaries;
+      expect(beneficiaries).toHaveLength(1);
+      expect(beneficiaries[0].name).toBe('Beneficiario Vivo');
+      expect(result.ownerContracts[0].totalBeneficiaries).toBe(1);
+    });
   });
 
   describe('verifyContractByCode', () => {
@@ -540,6 +606,47 @@ describe('ContractVerificationService', () => {
 
       expect(result.contract.isSuspended).toBe(true);
       expect(result.beneficiaries[0].isEligible).toBe(false);
+    });
+
+    it('should prioritize TITULAR role over isBillingOwner when contract has both', async () => {
+      const mockContract = {
+        id: 'c-order-test',
+        code: 'SIR-ORDER-01',
+        status: ContractStatus.ACTIVE,
+        contractPersons: [
+          // isBillingOwner appears first in array
+          {
+            id: 'cp-billing-first',
+            role: PersonRole.AFILIADO,
+            isBillingOwner: true,
+            person: {
+              id: 'p-billing',
+              name: 'Pagador Empresa',
+              typeIdentityCard: TypeIdentityCard.J,
+              identityCard: '30000000',
+            },
+          },
+          // TITULAR appears second in array
+          {
+            id: 'cp-titular-second',
+            role: PersonRole.TITULAR,
+            isBillingOwner: false,
+            person: {
+              id: 'p-titular-real',
+              name: 'Titular Legítimo',
+              typeIdentityCard: TypeIdentityCard.V,
+              identityCard: '10000000',
+            },
+          },
+        ],
+      } as unknown as Contract;
+
+      jest.spyOn(contractsRepository, 'findOne').mockResolvedValue(mockContract);
+
+      const result = await service.verifyContractByCode('SIR-ORDER-01');
+
+      expect(result.contract.titular?.name).toBe('Titular Legítimo');
+      expect(result.contract.titular?.identityCard).toBe('10000000');
     });
   });
 

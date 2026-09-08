@@ -139,13 +139,15 @@ export class ContractVerificationService {
       });
 
       const rawOwnerContracts: OwnerContractItem[] = ownerContractsEntities.map((contract) => {
-        const titularCp = contract.contractPersons?.find(
-          (cp) => cp.role === PersonRole.TITULAR || cp.isBillingOwner === true,
-        );
+        const titularCp =
+          contract.contractPersons?.find((cp) => cp.role === PersonRole.TITULAR) ??
+          contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
         const titularPerson = titularCp?.person ?? null;
 
         const beneficiaryCps =
-          contract.contractPersons?.filter((cp) => cp.role === PersonRole.AFILIADO) ?? [];
+          contract.contractPersons?.filter(
+            (cp) => cp.role === PersonRole.AFILIADO && cp.person != null,
+          ) ?? [];
 
         const beneficiaries: ContractBeneficiaryItem[] = beneficiaryCps.map((bcp) => {
           const plan = bcp.plan ?? bcp.person?.plan ?? null;
@@ -232,14 +234,16 @@ export class ContractVerificationService {
       throw new NotFoundException(`No se encontró ningún contrato con el código "${trimmed}".`);
     }
 
-    const titularCp = contract.contractPersons?.find(
-      (cp) => cp.role === PersonRole.TITULAR || cp.isBillingOwner === true,
-    );
+    const titularCp =
+      contract.contractPersons?.find((cp) => cp.role === PersonRole.TITULAR) ??
+      contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
 
     const titularPerson = titularCp?.person ?? null;
 
     const beneficiaryCps =
-      contract.contractPersons?.filter((cp) => cp.role === PersonRole.AFILIADO) ?? [];
+      contract.contractPersons?.filter(
+        (cp) => cp.role === PersonRole.AFILIADO && cp.person != null,
+      ) ?? [];
 
     const beneficiaries: ContractBeneficiaryItem[] = beneficiaryCps.map((cp) => {
       const plan = cp.plan ?? cp.person?.plan ?? null;

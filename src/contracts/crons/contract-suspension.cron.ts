@@ -97,7 +97,11 @@ export class ContractSuspensionCron {
         lockedContract = found;
       }
 
-      const effectiveCutoffDay = lockedContract.cutoffDay ?? DEFAULT_CUTOFF_DAY;
+      const daysInCurrentMonth = now.daysInMonth ?? 28;
+      const effectiveCutoffDay = Math.min(
+        lockedContract.cutoffDay ?? DEFAULT_CUTOFF_DAY,
+        daysInCurrentMonth,
+      );
       const isPastCutoffThisMonth = now.day > effectiveCutoffDay;
       const nowDate = now.toJSDate();
 
