@@ -1,17 +1,23 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   NotFoundException,
   Param,
+  ParseEnumPipe,
   Patch,
   Post,
   Query,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { RequirePermissions } from '../../auth/decorators';
+import { CurrentUser, RequirePermissions } from '../../auth/decorators';
+import type { JwtPayload } from '../../auth/guards/auth.guard';
+import { TypeIdentityCard } from '../../persons/entities/person.entity';
+import { ActivateContractDto } from '../dto/activate-contract.dto';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
@@ -20,6 +26,7 @@ import { GetPipelineStatsDto } from '../dto/get-pipeline-stats.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ContractsService } from '../services/contracts.service';
 
@@ -53,6 +60,32 @@ export class ContractsController {
       query.year,
       query.mode ?? 'billing',
     );
+  }
+
+  @Get('verify')
+  @RequirePermissions('read:contracts', 'read:persons')
+  verifyUnified(@Query('q') query?: string) {
+    if (!query || !query.trim()) {
+      throw new BadRequestException(
+        'Debe proporcionar un parámetro de búsqueda "q" (cédula o código de contrato).',
+      );
+    }
+    return this.contractsService.verifyUnified(query);
+  }
+
+  @Get('verify/:query')
+  @RequirePermissions('read:contracts', 'read:persons')
+  verifyUnifiedParam(@Param('query') query: string) {
+    return this.contractsService.verifyUnified(query);
+  }
+
+  @Get('verify/:type/:number')
+  @RequirePermissions('read:contracts', 'read:persons')
+  verifyPersonAffiliation(
+    @Param('type', new ParseEnumPipe(TypeIdentityCard)) type: TypeIdentityCard,
+    @Param('number') number: string,
+  ) {
+    return this.contractsService.verifyPersonAffiliation(type, number);
   }
 
   @Get(':id')
@@ -96,8 +129,12 @@ export class ContractsController {
 
   @Patch(':id/activate')
   @RequirePermissions('update:contracts')
-  activate(@Param('id') id: string) {
-    return this.contractsService.activate(id);
+  activate(
+    @Param('id') id: string,
+    @Body() dto?: ActivateContractDto,
+    @CurrentUser() user?: JwtPayload,
+  ) {
+    return this.contractsService.activate(id, dto, user);
   }
 
   @Post(':contractId/beneficiaries')
@@ -107,6 +144,29 @@ export class ContractsController {
     @Body() createBeneficiaryDto: CreateBeneficiaryDto,
   ) {
     return this.contractsService.addBeneficiary(contractId, createBeneficiaryDto);
+  }
+
+  @Patch(':contractId/beneficiaries')
+  @RequirePermissions('update:contracts')
+  bulkUpdateBeneficiaries(
+    @Param('contractId') contractId: string,
+    @Body() bulkDto: BulkUpdateBeneficiariesDto,
+  ) {
+    return this.contractsService.bulkUpdateBeneficiaries(contractId, bulkDto);
+  }
+
+  @Patch(':contractId/beneficiaries/:contractPersonId')
+  @RequirePermissions('update:contracts')
+  updateBeneficiary(
+    @Param('contractId') contractId: string,
+    @Param('contractPersonId') contractPersonId: string,
+    @Body() updateBeneficiaryDto: UpdateBeneficiaryDto,
+  ) {
+    return this.contractsService.updateBeneficiary(
+      contractId,
+      contractPersonId,
+      updateBeneficiaryDto,
+    );
   }
 
   @Patch(':contractId/set-titular')

@@ -10,12 +10,18 @@ import { AffiliationHistory } from './entities/affiliation-history.entity';
 import { ContractPerson } from './entities/contract-person.entity';
 import { Contract } from './entities/contract.entity';
 import { HealthDeclaration } from './entities/health-declaration.entity';
+import { EmailModule } from '../email/email.module';
+import { ContractSuspensionCron } from './crons/contract-suspension.cron';
+import { ContractReactivationCron } from './crons/contract-reactivation.cron';
+import { ContractInactivationCron } from './crons/contract-inactivation.cron';
 import { ContractQueryRepository } from './repositories/contract-query.repository';
 import { ContractAffiliationService } from './services/contract-affiliation.service';
 import { ContractCreationService } from './services/contract-creation.service';
 import { ContractLifecycleService } from './services/contract-lifecycle.service';
 import { ContractPdfService } from './services/contract-pdf.service';
+import { ContractReactivationService } from './services/contract-reactivation.service';
 import { ContractStatisticsService } from './services/contract-statistics.service';
+import { ContractVerificationService } from './services/contract-verification.service';
 import { ContractsService } from './services/contracts.service';
 
 @Module({
@@ -26,16 +32,22 @@ import { ContractsService } from './services/contracts.service';
     PlansModule,
     AwsModule,
     PdfModule,
+    EmailModule,
   ],
   controllers: [ContractsController],
   providers: [
     ContractQueryRepository,
     ContractAffiliationService,
+    ContractVerificationService,
     ContractLifecycleService,
+    ContractReactivationService,
     ContractPdfService,
     ContractStatisticsService,
     ContractCreationService,
     ContractsService,
+    ContractSuspensionCron,
+    ContractReactivationCron,
+    ContractInactivationCron,
   ],
   exports: [ContractsService, TypeOrmModule],
 })

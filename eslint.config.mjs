@@ -14,36 +14,9 @@ const __dirname = dirname(__filename);
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   {
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.jest,
-      },
-    },
-  },
-  {
-    files: ['**/*.{js,mjs,cjs,ts}'],
-    plugins: {
-      '@stylistic/ts': stylisticTs,
-    },
-    languageOptions: {
-      parser: typescriptEslint,
-      parserOptions: {
-        project: 'tsconfig.json',
-        tsconfigRootDir: __dirname,
-        sourceType: 'module',
-      },
-    },
-    rules: {
-      'no-console': 'warn',
-      '@typescript-eslint/no-unused-vars': 'error',
-      '@typescript-eslint/consistent-type-assertions': 'error',
-    },
-  },
-  {
     ignores: [
+      'node_modules',
       'node_module',
-      'test',
       'pnpm-lock.yaml',
       '.prettierrc',
       '.env',
@@ -58,8 +31,31 @@ export default [
       '.agents',
     ],
   },
-  { languageOptions: { globals: globals.browser } },
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: ['**/*.{js,mjs,cjs,ts}'],
+    plugins: {
+      '@stylistic/ts': stylisticTs,
+    },
+    languageOptions: {
+      parser: typescriptEslint,
+      parserOptions: {
+        project: 'tsconfig.json',
+        tsconfigRootDir: __dirname,
+        sourceType: 'module',
+      },
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+      },
+    },
+    rules: {
+      'no-console': 'warn',
+      '@typescript-eslint/no-unused-vars': 'error',
+      '@typescript-eslint/consistent-type-assertions': 'error',
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
   prettierPluginRecommended,
 ];

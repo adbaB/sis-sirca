@@ -8,8 +8,9 @@ import { PersonsService } from '../../persons/services/persons.service';
 import { PlansService } from '../../plans/services/plans.service';
 import { Plan } from '../../plans/entities/plan.entity';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
+import { BulkUpdateBeneficiaryItemDto } from '../dto/bulk-update-beneficiaries.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
-import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
+import { ContractPerson, Parentesco, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
@@ -56,6 +57,7 @@ describe('ContractAffiliationService', () => {
           provide: getRepositoryToken(Contract),
           useValue: {
             update: jest.fn(),
+            findOne: jest.fn(),
           },
         },
         {
@@ -77,6 +79,9 @@ describe('ContractAffiliationService', () => {
           useValue: {
             create: jest.fn(),
             findByIdentityCard: jest.fn(),
+            findByIdentityCardOnly: jest.fn(),
+            findPNsByTitularIdentityCard: jest.fn(),
+            update: jest.fn(),
           },
         },
         {
@@ -84,6 +89,7 @@ describe('ContractAffiliationService', () => {
           useValue: {
             removeAffiliateLineFromActiveInvoice: jest.fn(),
             addAffiliateInclusionLineToActiveInvoice: jest.fn(),
+            updatePlanLineOnActiveInvoice: jest.fn(),
           },
         },
         {
@@ -420,6 +426,188 @@ describe('ContractAffiliationService', () => {
       expect(contractsRepository.update).toHaveBeenCalledWith('contract-1', {
         monthlyAmount: 50,
       });
+    });
+  });
+
+  describe('updateBeneficiary', () => {
+    it('should throw NotFoundException if beneficiary not found', async () => {
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+
+      await expect(
+        service.updateBeneficiary('contract-1', 'cp-invalid', { name: 'Juan' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException if planId provided for TITULAR', async () => {
+      const mockCp = {
+        id: 'cp-titular',
+        role: PersonRole.TITULAR,
+        contract: { id: 'contract-1' },
+        person: { id: 'p-1', name: 'Pedro' },
+      };
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockCp) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+
+      await expect(
+        service.updateBeneficiary('contract-1', 'cp-titular', { planId: 'plan-1' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw NotFoundException if new plan does not exist', async () => {
+      const mockCp = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        contract: { id: 'contract-1' },
+        person: { id: 'p-1', name: 'Pedro' },
+      };
+      const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockCp) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
+      plansService.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateBeneficiary('contract-1', 'cp-1', { planId: 'plan-nonexistent' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should update person, relationship, and plan, triggering invoice line update and monthly amount recalculation', async () => {
+      const mockOldPlan = { id: 'plan-old', name: 'Plan Basico', amount: 10 };
+      const mockNewPlan = { id: 'plan-new', name: 'Plan Premium', amount: 25 };
+      const mockCp = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        contract: { id: 'contract-1' },
+        person: { id: 'p-1', name: 'Pedro', plan: mockOldPlan },
+        plan: mockOldPlan,
+        relationship: undefined,
+      };
+
+      const mockPersonRepo = { update: jest.fn().mockResolvedValue(true) };
+      const mockContractRepo = { update: jest.fn().mockResolvedValue(true) };
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCp),
+        save: jest.fn().mockImplementation(async (cp) => cp),
+        find: jest.fn().mockResolvedValue([
+          {
+            role: PersonRole.AFILIADO,
+            plan: mockNewPlan,
+            person: { status: PersonStatus.ACTIVE },
+          },
+        ]),
+      };
+      const mockHdRepo = {
+        delete: jest.fn().mockResolvedValue(true),
+        create: jest.fn().mockImplementation((val) => val),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === ContractPerson) return mockCpRepo;
+        if (entity === Person) return mockPersonRepo;
+        if (entity === Contract) return mockContractRepo;
+        if (entity === HealthDeclaration) return mockHdRepo;
+        return {};
+      });
+
+      plansService.findOne.mockResolvedValue(mockNewPlan as unknown as Plan);
+      personsService.update.mockResolvedValue({
+        id: 'p-1',
+        name: 'Pedro Actualizado',
+      } as unknown as Person);
+
+      const result = await service.updateBeneficiary('contract-1', 'cp-1', {
+        name: 'Pedro Actualizado',
+        relationship: Parentesco.HIJO,
+        planId: 'plan-new',
+      });
+
+      expect(personsService.update).toHaveBeenCalledWith(
+        'p-1',
+        expect.objectContaining({ name: 'Pedro Actualizado' }),
+        mockManager,
+      );
+      expect(mockCp.relationship).toBe('HIJO');
+      expect(mockCp.plan).toEqual(mockNewPlan);
+      expect(mockPersonRepo.update).toHaveBeenCalledWith('p-1', { plan: mockNewPlan });
+      expect(invoiceService.updatePlanLineOnActiveInvoice).toHaveBeenCalledWith(
+        'contract-1',
+        'p-1',
+        'plan-new',
+        25,
+        'Plan Premium',
+      );
+      expect(mockContractRepo.update).toHaveBeenCalledWith('contract-1', { monthlyAmount: 25 });
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('bulkUpdateBeneficiaries', () => {
+    it('should throw NotFoundException if contract not found', async () => {
+      const mockContractRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      mockManager.getRepository = jest.fn().mockReturnValue(mockContractRepo);
+
+      await expect(
+        service.bulkUpdateBeneficiaries('contract-invalid', {
+          beneficiaries: [{ contractPersonId: 'cp-1', name: 'Pedro' }],
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should update multiple beneficiaries and recalculate monthly amount once', async () => {
+      const mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue({ id: 'contract-1' }),
+        update: jest.fn().mockResolvedValue(true),
+      };
+      const mockCp = {
+        id: 'cp-1',
+        role: PersonRole.AFILIADO,
+        contract: { id: 'contract-1' },
+        person: { id: 'p-1', name: 'Pedro' },
+        plan: null,
+      };
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCp),
+        save: jest.fn().mockImplementation(async (cp) => cp),
+        find: jest.fn().mockResolvedValue([]),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        return {};
+      });
+
+      const updateSpy = jest
+        .spyOn(service, 'updateBeneficiary')
+        .mockResolvedValue(mockCp as unknown as ContractPerson);
+
+      const result = await service.bulkUpdateBeneficiaries('contract-1', {
+        beneficiaries: [
+          { contractPersonId: 'cp-1', name: 'Pedro' },
+          { id: 'cp-2', name: 'Maria' },
+        ],
+      });
+
+      expect(updateSpy).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(2);
+      expect(mockContractRepo.update).toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if an item lacks both contractPersonId and id', async () => {
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue({ id: 'contract-1' }),
+          };
+        }
+        return {};
+      });
+
+      await expect(
+        service.bulkUpdateBeneficiaries('contract-1', {
+          beneficiaries: [{ name: 'Pedro' } as unknown as BulkUpdateBeneficiaryItemDto],
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

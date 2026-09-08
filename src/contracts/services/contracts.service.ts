@@ -1,14 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
-import { Person } from '../../persons/entities/person.entity';
+import { Person, TypeIdentityCard } from '../../persons/entities/person.entity';
+import {
+  ContractVerificationResult,
+  PersonVerificationResult,
+  UnifiedVerificationResult,
+} from '../interfaces/person-verification.interface';
+import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto';
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
+import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import type { JwtPayload } from '../../auth/guards/auth.guard';
+import { ContractPerson } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
 import {
   AffiliationStatsMode,
@@ -24,7 +34,9 @@ import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractCreationService } from './contract-creation.service';
 import { ContractLifecycleService } from './contract-lifecycle.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { ContractReactivationService } from './contract-reactivation.service';
 import { ContractStatisticsService } from './contract-statistics.service';
+import { ContractVerificationService } from './contract-verification.service';
 
 export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationStatsResult };
 
@@ -33,19 +45,23 @@ export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationSt
  *
  * Preserves 100% backward compatibility for all consumers (controllers, crons, PersonsService)
  * while delegating internally to specialized, single-responsibility domain services:
- * - `ContractCreationService`   → Contract creation & affiliate onboarding
- * - `ContractLifecycleService`  → Activation, inactivation, updates & soft-deletes
- * - `ContractAffiliationService`→ Beneficiaries, titular toggling, billing owners & recalculations
- * - `ContractPdfService`        → Template formatting, PDF generation & S3 storage
- * - `ContractStatisticsService` → Pipeline classification & affiliation period analytics
- * - `ContractQueryRepository`   → Query building, pagination & stage filters
+ * - `ContractCreationService`    → Contract creation & affiliate onboarding
+ * - `ContractLifecycleService`   → Activation, inactivation, updates & soft-deletes
+ * - `ContractReactivationService`→ Cooldown tracking, reactivation eligibility & exception override
+ * - `ContractAffiliationService` → Beneficiaries, titular toggling, billing owners & recalculations
+ * - `ContractVerificationService`→ Person, contract & unified identity verification
+ * - `ContractPdfService`         → Template formatting, PDF generation & S3 storage
+ * - `ContractStatisticsService`  → Pipeline classification & affiliation period analytics
+ * - `ContractQueryRepository`    → Query building, pagination & stage filters
  */
 @Injectable()
 export class ContractsService {
   constructor(
     private readonly creationService: ContractCreationService,
     private readonly lifecycleService: ContractLifecycleService,
+    private readonly reactivationService: ContractReactivationService,
     private readonly affiliationService: ContractAffiliationService,
+    private readonly verificationService: ContractVerificationService,
     private readonly pdfService: ContractPdfService,
     private readonly statisticsService: ContractStatisticsService,
     private readonly queryRepository: ContractQueryRepository,
@@ -82,8 +98,19 @@ export class ContractsService {
     return this.lifecycleService.inactivate(contractId, dto);
   }
 
-  async activate(contractId: string): Promise<Contract> {
-    return this.lifecycleService.activate(contractId);
+  async activate(
+    contractId: string,
+    dto?: ActivateContractDto,
+    user?: JwtPayload,
+  ): Promise<Contract> {
+    return this.lifecycleService.activate(contractId, dto, user);
+  }
+
+  async syncReactivationEligibility(
+    contractId: string,
+    manager?: EntityManager,
+  ): Promise<Date | null> {
+    return this.reactivationService.syncReactivationEligibility(contractId, manager);
   }
 
   async setAdvisor(contractId: string, advisorId: string | null): Promise<void> {
@@ -93,6 +120,21 @@ export class ContractsService {
   // ── 4. Affiliations & Beneficiaries ───────────────────────────────────────
   async addBeneficiary(contractId: string, dto: CreateBeneficiaryDto): Promise<Person> {
     return this.affiliationService.addBeneficiary(contractId, dto);
+  }
+
+  async updateBeneficiary(
+    contractId: string,
+    contractPersonId: string,
+    dto: UpdateBeneficiaryDto,
+  ): Promise<ContractPerson> {
+    return this.affiliationService.updateBeneficiary(contractId, contractPersonId, dto);
+  }
+
+  async bulkUpdateBeneficiaries(
+    contractId: string,
+    dto: BulkUpdateBeneficiariesDto,
+  ): Promise<ContractPerson[]> {
+    return this.affiliationService.bulkUpdateBeneficiaries(contractId, dto);
   }
 
   async removeAffiliate(contractPersonId: string, contractId?: string): Promise<void> {
@@ -135,5 +177,21 @@ export class ContractsService {
     mode: AffiliationStatsMode = 'billing',
   ): Promise<AffiliationStatsResult> {
     return this.statisticsService.getAffiliationStats(month, year, mode);
+  }
+
+  // ── 7. Verification ───────────────────────────────────────────────────────
+  async verifyPersonAffiliation(
+    typeIdentityCard: TypeIdentityCard,
+    identityCard: string,
+  ): Promise<PersonVerificationResult> {
+    return this.verificationService.verifyPersonAffiliation(typeIdentityCard, identityCard);
+  }
+
+  async verifyContractByCode(code: string): Promise<ContractVerificationResult> {
+    return this.verificationService.verifyContractByCode(code);
+  }
+
+  async verifyUnified(query: string): Promise<UnifiedVerificationResult> {
+    return this.verificationService.verifyUnified(query);
   }
 }

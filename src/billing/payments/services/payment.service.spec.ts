@@ -11,10 +11,15 @@ import { Payment } from '../entities/payment.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { InvoiceService } from '../../invoices/services/invoice.service';
 import { SurplusService } from './surplus.service';
+import { ContractsService } from '../../../contracts/services/contracts.service';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 
 describe('PaymentService & PaymentCreationService', () => {
   let service: PaymentService;
+
+  const mockContractsService = {
+    syncReactivationEligibility: jest.fn().mockResolvedValue(null),
+  };
 
   const mockQueryRunner = {
     connect: jest.fn(),
@@ -103,6 +108,10 @@ describe('PaymentService & PaymentCreationService', () => {
         {
           provide: PaymentQueryService,
           useValue: mockPaymentQueryService,
+        },
+        {
+          provide: ContractsService,
+          useValue: mockContractsService,
         },
       ],
     }).compile();

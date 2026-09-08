@@ -110,7 +110,7 @@ export class ProjectionReportService {
       LEFT JOIN plans pl ON COALESCE(cp.plan_id, p.plan_id) = pl.id AND pl.deleted_at IS NULL
       LEFT JOIN portfolios pf ON c.portfolio_id = pf.id AND pf.deleted_at IS NULL
       LEFT JOIN advisors adv ON c.advisor_id = adv.id AND adv.deleted_at IS NULL
-      WHERE c.status = 'ACTIVE'
+      WHERE c.status IN ('ACTIVE', 'SUSPENDED')
         AND c.deleted_at IS NULL
     `;
 

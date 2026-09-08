@@ -10,6 +10,7 @@ import {
   Min,
   IsArray,
   MaxLength,
+  IsInt,
 } from 'class-validator';
 
 export class CreateContractDto {
@@ -38,11 +39,18 @@ export class CreateContractDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(100)
   advisorCommission?: number;
 
   @IsOptional()
   @IsBoolean()
   excludeFromNextBilling?: boolean;
+
+  @IsOptional()
+  @IsInt({ message: 'El día de corte debe ser un número entero' })
+  @Min(1, { message: 'El día de corte no puede ser menor a 1' })
+  @Max(31, { message: 'El día de corte no puede ser mayor a 31' })
+  cutoffDay?: number;
 
   @IsOptional()
   @IsArray()

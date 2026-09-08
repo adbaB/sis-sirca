@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -19,15 +20,25 @@ import type { ContractPerson } from './contract-person.entity';
 export enum ContractStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
+  SUSPENDED = 'SUSPENDED',
 }
 
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
+import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 
 @Entity('contracts')
 @Index('IDX_contracts_status', ['status'])
+@Check('CHK_contracts_cutoff_day', '"cutoff_day" >= 1 AND "cutoff_day" <= 31')
 export class Contract {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({
+    type: 'int',
+    default: DEFAULT_CUTOFF_DAY,
+    name: 'cutoff_day',
+  })
+  cutoffDay: number;
 
   @Column({
     type: 'decimal',
@@ -98,6 +109,9 @@ export class Contract {
 
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'inactivation_reason' })
   inactivationReason: string;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'reactivation_eligible_at' })
+  reactivationEligibleAt?: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

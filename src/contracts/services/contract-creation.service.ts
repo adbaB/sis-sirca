@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import {
   getContextSafe,
@@ -125,7 +125,7 @@ export class ContractCreationService {
             where: {
               person: { id: person.id },
               role: PersonRole.AFILIADO,
-              contract: { status: ContractStatus.ACTIVE },
+              contract: { status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]) },
             },
             relations: ['contract'],
           });

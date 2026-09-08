@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
 import { InvoiceGenerationService } from '../invoices/services/invoice-generation.service';
 import { getCaracasNow } from '../../common/utils/date.util';
@@ -33,7 +33,7 @@ export class GenerateMonthlyInvoices {
 
     while (true) {
       const contracts = await this.contractRepository.find({
-        where: { status: ContractStatus.ACTIVE },
+        where: { status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]) },
         order: { id: 'ASC' },
         skip: offset,
         take: chunkSize,

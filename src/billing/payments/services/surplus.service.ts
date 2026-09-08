@@ -201,7 +201,7 @@ export class SurplusService {
     this.logger.log('Starting bulk pending surplus application...');
 
     const contracts = await this.dataSource.getRepository(Contract).find({
-      where: { status: ContractStatus.ACTIVE },
+      where: { status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]) },
     });
 
     this.logger.log(`Found ${contracts.length} active contracts to process.`);

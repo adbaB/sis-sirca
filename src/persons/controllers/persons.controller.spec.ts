@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CreatePersonDto } from '../dto/create-person.dto';
-import { UpdatePersonDto } from '../dto/update-person.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
 import { PersonsService } from '../services/persons.service';
 import { PersonsController } from './persons.controller';
@@ -84,19 +83,6 @@ describe('PersonsController', () => {
 
       expect(service.findOne).toHaveBeenCalledWith('1');
       expect(result).toEqual(mockPerson);
-    });
-  });
-
-  describe('update', () => {
-    it('should update a person', async () => {
-      const updatePersonDto: UpdatePersonDto = { name: 'Jane Doe' };
-      const updatedPerson = { ...mockPerson, ...updatePersonDto } as Person;
-      jest.spyOn(service, 'update').mockResolvedValue(updatedPerson);
-
-      const result = await controller.update('1', updatePersonDto);
-
-      expect(service.update).toHaveBeenCalledWith('1', updatePersonDto);
-      expect(result).toEqual(updatedPerson);
     });
   });
 

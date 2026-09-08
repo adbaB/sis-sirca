@@ -18,6 +18,7 @@ function makeContract(overrides: Record<string, unknown> = {}): Contract {
   return {
     id: 'contract-1',
     status: ContractStatus.ACTIVE,
+    cutoffDay: 5,
     retentionPercentage: 0,
     contractPersons: [
       {
@@ -209,6 +210,29 @@ describe('InvoiceGenerationService', () => {
 
       await expect(service.generateInvoiceForContract('contract-1')).rejects.toThrow(
         BadRequestException,
+      );
+    });
+
+    it('permite generar factura si el contrato está SUSPENDED', async () => {
+      contractRepo.findOne.mockResolvedValue(makeContract({ status: ContractStatus.SUSPENDED }));
+      invoiceRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        withContext(mockQr, () => service.generateInvoiceForContract('contract-1', '2026-09')),
+      ).resolves.toBeDefined();
+    });
+
+    it('calcula la fecha de vencimiento según el cutoffDay del contrato', async () => {
+      contractRepo.findOne.mockResolvedValue(makeContract({ cutoffDay: 15 }));
+      invoiceRepo.findOne.mockResolvedValue(null);
+
+      await withContext(mockQr, () => service.generateInvoiceForContract('contract-1', '2026-09'));
+
+      expect(invoiceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          billingMonth: '2026-09',
+          dueDate: expect.any(Date),
+        }),
       );
     });
   });

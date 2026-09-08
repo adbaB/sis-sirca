@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DateTime } from 'luxon';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Advisor } from '../../advisors/entities/advisor.entity';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
@@ -9,14 +9,19 @@ import { CARACAS_ZONE, getCaracasNow } from '../../common/utils/date.util';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractReactivationService } from './contract-reactivation.service';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
+import type { JwtPayload } from '../../auth/guards/auth.guard';
 
 @Injectable()
 export class ContractLifecycleService {
+  private readonly logger = new Logger(ContractLifecycleService.name);
+
   constructor(
     @InjectRepository(Contract)
     private readonly contractsRepository: Repository<Contract>,
@@ -25,6 +30,7 @@ export class ContractLifecycleService {
     @InjectRepository(AffiliationHistory)
     private readonly affiliationHistoryRepository: Repository<AffiliationHistory>,
     private readonly dataSource: DataSource,
+    private readonly reactivationService: ContractReactivationService,
   ) {}
 
   /**
@@ -165,11 +171,28 @@ export class ContractLifecycleService {
   }
 
   /**
-   * Reactivates an inactive contract and marks same-month disaffiliation records as reverted.
-   * Reverted records are preserved for audit trail but excluded from affiliation statistics.
+   * Sincroniza la fecha de elegibilidad de reactivación (reactivation_eligible_at)
+   * para contratos en estado SUSPENDED según sus facturas vencidas y pagos activos (COMPLETED o PROCESSING).
+   */
+  async syncReactivationEligibility(
+    contractId: string,
+    manager?: EntityManager,
+  ): Promise<Date | null> {
+    return this.reactivationService.syncReactivationEligibility(contractId, manager);
+  }
+
+  /**
+   * Reactivates an inactive or suspended contract.
+   * - If SUSPENDED: validates 7-day cooldown from operation_date and total solvency,
+   *   or verifies override permission for manual bypass with required reason.
+   * - If INACTIVE: handles disaffiliation reconciliation and audit history.
    */
   @Transactional()
-  async activate(contractId: string): Promise<Contract> {
+  async activate(
+    contractId: string,
+    dto?: ActivateContractDto,
+    user?: JwtPayload,
+  ): Promise<Contract> {
     const qr = resolveQueryRunner(undefined, this.dataSource);
     const manager = qr.manager;
 
@@ -189,63 +212,78 @@ export class ContractLifecycleService {
       throw new BadRequestException('El contrato ya se encuentra activo.');
     }
 
+    // Validar reglas si el contrato proviene de SUSPENDED (solvencia, carencia de 7 días, o bypass con motivo)
+    if (lockedContract.status === ContractStatus.SUSPENDED) {
+      await this.reactivationService.validateReactivationEligibility(
+        lockedContract,
+        dto,
+        user,
+        manager,
+      );
+    }
+
+    const previousStatus = lockedContract.status;
     lockedContract.status = ContractStatus.ACTIVE;
     lockedContract.inactivationReason = null;
+    lockedContract.reactivationEligibleAt = null;
     await contractRepo.save(lockedContract);
 
-    const disaffiliations = await historyRepo.find({
-      where: {
-        contract: { id: contractId },
-        action: AffiliationAction.DESAFILIACION,
-        isReverted: false,
-      },
-    });
-
-    const caracasNow = getCaracasNow();
-    const currentYear = caracasNow.year;
-    const currentMonth = caracasNow.month;
-
-    const sameMonthRecords = disaffiliations.filter((h) => {
-      const dateVal = h.actionDate ?? h.createdAt;
-      const dt = DateTime.fromJSDate(new Date(dateVal)).setZone(CARACAS_ZONE);
-      return dt.year === currentYear && dt.month === currentMonth;
-    });
-
-    if (sameMonthRecords.length > 0) {
-      // Reversión dentro del mismo mes: se anulan las desafiliaciones del período actual
-      for (const record of sameMonthRecords) {
-        record.isReverted = true;
-        record.revertedAt = caracasNow.toJSDate();
-      }
-      await historyRepo.save(sameMonthRecords);
-    } else {
-      // Reactivación en un mes posterior (ej. desafiliado en mes 9 y reactivado en mes 10):
-      // NO se revierte la desafiliación del mes 9 (se mantiene el histórico cerrado).
-      // En cambio, cuenta como una AFILIACION en el mes actual para cada beneficiario activo.
-      const cpRepo = manager.getRepository(ContractPerson);
-      const activePersons = await cpRepo.find({
+    // Solo si el contrato venía de INACTIVE ejecutamos la reconciliación de desafiliaciones
+    if (previousStatus === ContractStatus.INACTIVE) {
+      const disaffiliations = await historyRepo.find({
         where: {
           contract: { id: contractId },
-          role: PersonRole.AFILIADO,
-          person: { status: PersonStatus.ACTIVE },
+          action: AffiliationAction.DESAFILIACION,
+          isReverted: false,
         },
-        relations: ['person', 'person.plan', 'plan'],
       });
 
-      if (activePersons.length > 0) {
-        const newAffiliations = activePersons.map((cp) => {
-          const effectivePlan = cp.plan ?? cp.person?.plan ?? null;
-          return historyRepo.create({
-            contract: lockedContract,
-            person: cp.person,
-            plan: effectivePlan,
-            action: AffiliationAction.AFILIACION,
-            amount: Number(effectivePlan?.amount ?? 0),
-            reason: 'Reactivación de contrato',
-            actionDate: caracasNow.toJSDate(),
-          });
+      const caracasNow = getCaracasNow();
+      const currentYear = caracasNow.year;
+      const currentMonth = caracasNow.month;
+
+      const sameMonthRecords = disaffiliations.filter((h) => {
+        const dateVal = h.actionDate ?? h.createdAt;
+        const dt = DateTime.fromJSDate(new Date(dateVal)).setZone(CARACAS_ZONE);
+        return dt.year === currentYear && dt.month === currentMonth;
+      });
+
+      if (sameMonthRecords.length > 0) {
+        // Reversión dentro del mismo mes: se anulan las desafiliaciones del período actual
+        for (const record of sameMonthRecords) {
+          record.isReverted = true;
+          record.revertedAt = caracasNow.toJSDate();
+        }
+        await historyRepo.save(sameMonthRecords);
+      } else {
+        // Reactivación en un mes posterior (ej. desafiliado en mes 9 y reactivado en mes 10):
+        // NO se revierte la desafiliación del mes 9 (se mantiene el histórico cerrado).
+        // En cambio, cuenta como una AFILIACION en el mes actual para cada beneficiario activo.
+        const cpRepo = manager.getRepository(ContractPerson);
+        const activePersons = await cpRepo.find({
+          where: {
+            contract: { id: contractId },
+            role: PersonRole.AFILIADO,
+            person: { status: PersonStatus.ACTIVE },
+          },
+          relations: ['person', 'person.plan', 'plan'],
         });
-        await historyRepo.save(newAffiliations);
+
+        if (activePersons.length > 0) {
+          const newAffiliations = activePersons.map((cp) => {
+            const effectivePlan = cp.plan ?? cp.person?.plan ?? null;
+            return historyRepo.create({
+              contract: lockedContract,
+              person: cp.person,
+              plan: effectivePlan,
+              action: AffiliationAction.AFILIACION,
+              amount: Number(effectivePlan?.amount ?? 0),
+              reason: 'Reactivación de contrato',
+              actionDate: caracasNow.toJSDate(),
+            });
+          });
+          await historyRepo.save(newAffiliations);
+        }
       }
     }
 

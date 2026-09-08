@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Like, Repository } from 'typeorm';
 
 import { BulkUpdatePersonsDto } from '../dto/bulk-update-persons.dto';
 import { CreatePersonDto } from '../dto/create-person.dto';
@@ -87,6 +87,34 @@ export class PersonsService {
     const repo = manager ? manager.getRepository(Person) : this.personsRepository;
     return repo.findOne({
       where: { identityCard, typeIdentityCard },
+      ...(withDeleted ? { withDeleted: true } : {}),
+    });
+  }
+
+  async findByIdentityCardOnly(
+    identityCard: string,
+    manager?: EntityManager,
+    withDeleted = false,
+  ): Promise<Person[]> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    return repo.find({
+      where: { identityCard },
+      ...(withDeleted ? { withDeleted: true } : {}),
+    });
+  }
+
+  async findPNsByTitularIdentityCard(
+    titularIdentityCard: string,
+    manager?: EntityManager,
+    withDeleted = false,
+  ): Promise<Person[]> {
+    const repo = manager ? manager.getRepository(Person) : this.personsRepository;
+    const escaped = titularIdentityCard.replace(/[\\%_]/g, '\\$&');
+    return repo.find({
+      where: {
+        typeIdentityCard: TypeIdentityCard.PN,
+        identityCard: Like(`${escaped}-%`),
+      },
       ...(withDeleted ? { withDeleted: true } : {}),
     });
   }

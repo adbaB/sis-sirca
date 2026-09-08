@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Surplus, SurplusStatus } from '../entities/surplus.entity';
 import { InvoiceService } from '../../invoices/services/invoice.service';
+import { ContractsService } from '../../../contracts/services/contracts.service';
 import { Transactional } from '../../../common/decorators/transactional.decorator';
 import { getQueryRunner, getQueryRunnerSafe } from '../../../common/context/request-context';
 import { getCaracasTodayJSDate } from '../../../common/utils/date.util';
@@ -20,6 +21,7 @@ export class PaymentStateService {
     private readonly invoiceService: InvoiceService,
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
+    private readonly contractsService: ContractsService,
   ) {}
 
   /**
@@ -89,6 +91,13 @@ export class PaymentStateService {
       throw new NotFoundException(`Pago con ID ${id} no encontrado tras guardar`);
     }
 
+    if (reloadedPayment.invoice?.contract?.id) {
+      await this.contractsService.syncReactivationEligibility(
+        reloadedPayment.invoice.contract.id,
+        qr.manager,
+      );
+    }
+
     return reloadedPayment;
   }
 
@@ -154,6 +163,13 @@ export class PaymentStateService {
 
     if (!reloadedPayment) {
       throw new NotFoundException(`Pago con ID ${id} no encontrado tras guardar`);
+    }
+
+    if (reloadedPayment.invoice?.contract?.id) {
+      await this.contractsService.syncReactivationEligibility(
+        reloadedPayment.invoice.contract.id,
+        qr.manager,
+      );
     }
 
     return reloadedPayment;

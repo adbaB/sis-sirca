@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
-import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
+import { DataSource, In } from 'typeorm';
+import { Contract, ContractStatus } from '../entities/contract.entity';
 import { EmailService } from '../../email/email.service';
 import { ContractInactivationCron } from './contract-inactivation.cron';
 
@@ -207,18 +207,18 @@ describe('ContractInactivationCronService', () => {
 
       // First call has no cursor
       expect(mockContractRepository.find.mock.calls[0][0].where).toEqual({
-        status: ContractStatus.ACTIVE,
+        status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]),
       });
 
       // Second call uses id: MoreThan('c-1')
       expect(mockContractRepository.find.mock.calls[1][0].where).toEqual({
-        status: ContractStatus.ACTIVE,
+        status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]),
         id: expect.anything(),
       });
 
       // Third call uses id: MoreThan('c-2')
       expect(mockContractRepository.find.mock.calls[2][0].where).toEqual({
-        status: ContractStatus.ACTIVE,
+        status: In([ContractStatus.ACTIVE, ContractStatus.SUSPENDED]),
         id: expect.anything(),
       });
 

@@ -33,7 +33,7 @@ export class ContractQueryRepository {
     }
 
     if (query.stage) {
-      qb.andWhere("contract.status = 'ACTIVE'");
+      qb.andWhere("contract.status IN ('ACTIVE', 'SUSPENDED')");
     } else if (query.status) {
       qb.andWhere('contract.status = :status', { status: query.status });
     }
@@ -58,7 +58,7 @@ export class ContractQueryRepository {
       'person',
     );
 
-    qb.andWhere("contract.status = 'ACTIVE'");
+    qb.andWhere("contract.status IN ('ACTIVE', 'SUSPENDED')");
 
     if (advisorId) {
       qb.andWhere('contract.advisor_id = :advisorId', { advisorId });
