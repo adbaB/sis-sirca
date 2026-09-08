@@ -273,6 +273,23 @@ export class SipCommissionsService {
 
     for (const row of rawData) {
       const isConvenioInicial = row.legacy_code ? convenioRe.test(row.legacy_code) : false;
+      const isNew = row.line_category === 'INCLUSION' || this.checkIsNew(row);
+
+      // Inclusiones y nuevas afiliaciones van a las secciones de nuevos/inclusiones, NUNCA a cobranzas
+      if (isNew) {
+        const affDateStr = this.formatToDateString(row.affiliation_date);
+        if (affDateStr >= startOportunosStr && affDateStr <= endOportunosStr) {
+          buckets.nuevosOportunos.push(row);
+        } else if (affDateStr >= startExtempStr && affDateStr <= endExtempStr) {
+          buckets.nuevosExtemporaneos.push(row);
+        } else if (affDateStr < startExtempStr) {
+          buckets.nuevosExtemporaneos.push(row);
+        } else {
+          buckets.nuevosOportunos.push(row);
+        }
+        continue;
+      }
+
       const isBillingMonthMatch = row.billing_month === billingMonth;
 
       // Extemporaneidad de cobranza: invoice belongs to a different billing month (billing_month != M)
@@ -285,19 +302,8 @@ export class SipCommissionsService {
         continue;
       }
 
-      // billing_month = M: check if new affiliation or regular cobranza
-      const affDateStr = this.formatToDateString(row.affiliation_date);
-      const isNew = row.line_category === 'INCLUSION' || this.checkIsNew(row);
-
-      if (isNew) {
-        if (affDateStr >= startOportunosStr && affDateStr <= endOportunosStr) {
-          buckets.nuevosOportunos.push(row);
-        } else if (affDateStr >= startExtempStr && affDateStr <= endExtempStr) {
-          buckets.nuevosExtemporaneos.push(row);
-        } else {
-          buckets.nuevosOportunos.push(row);
-        }
-      } else if (isConvenioInicial) {
+      // billing_month = M: regular cobranza
+      if (isConvenioInicial) {
         buckets.cobranzasConvenioInicial.push(row);
       } else {
         buckets.cobranzasNuevoConvenio.push(row);
