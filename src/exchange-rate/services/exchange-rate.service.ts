@@ -13,6 +13,10 @@ export class ExchangeRateService {
 
   async getExchangeRateByDate(date: Date | string): Promise<ExchangeRate | null> {
     const dateStr = formatToISODateString(date);
-    return this.exchangeRateRepository.findOne({ where: { date: dateStr as unknown as Date } });
+    if (!dateStr) return null;
+
+    return this.exchangeRateRepository.findOne({
+      where: { date: dateStr as unknown as Date },
+    });
   }
 }

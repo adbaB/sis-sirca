@@ -14,11 +14,13 @@ import { Person, TypeIdentityCard } from '../../../persons/entities/person.entit
 import { InvoiceLine } from '../entities/invoice-line.entity';
 import { Plan } from '../../../plans/entities/plan.entity';
 import { Advisor } from '../../../advisors/entities/advisor.entity';
+import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 
 describe('InvoicePdfService', () => {
   let service: InvoicePdfService;
   let invoiceRepo: jest.Mocked<Repository<Invoice>>;
   let pdfService: jest.Mocked<PdfService>;
+  let exchangeRateService: { getExchangeRateByDate: jest.Mock };
 
   beforeEach(async () => {
     const mockInvoiceRepo = {
@@ -27,6 +29,10 @@ describe('InvoicePdfService', () => {
 
     const mockPdfService = {
       generatePdf: jest.fn().mockResolvedValue(Buffer.from('dummy-pdf')),
+    };
+
+    exchangeRateService = {
+      getExchangeRateByDate: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -39,6 +45,10 @@ describe('InvoicePdfService', () => {
         {
           provide: PdfService,
           useValue: mockPdfService,
+        },
+        {
+          provide: ExchangeRateService,
+          useValue: exchangeRateService,
         },
       ],
     }).compile();
@@ -105,22 +115,26 @@ describe('InvoicePdfService', () => {
       plan: plan as Plan,
     };
 
+    exchangeRateService.getExchangeRateByDate.mockResolvedValue({
+      rateUsd: 820.1,
+    });
+
     const payment: Partial<Payment> = {
       id: 'pay-1',
       status: PaymentStatus.COMPLETED,
       paymentDate,
       paymentMethod: 'PAGO_MOVIL',
       referenceNumber: 'REF123456',
-      amount: 100,
-      amountBs: 4000,
+      amount: 26.83,
+      amountBs: 22000,
       origin: PaymentOrigin.WEB,
     };
 
     const mockInvoice: Partial<Invoice> = {
       id: 'inv-1',
       billingMonth: '2026-07',
-      totalAmount: 100,
-      paidAmount: 100,
+      totalAmount: 26.83,
+      paidAmount: 26.83,
       retentionAmount: 0,
       retentionPercentage: 0,
       status: InvoiceStatus.PAID,
@@ -134,6 +148,7 @@ describe('InvoicePdfService', () => {
     const result = await service.buildInvoicePdf('inv-1');
 
     expect(result.filename).toBe('factura-CTR-001-2026-07.pdf');
+    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
       'invoice',
       expect.objectContaining({
@@ -146,9 +161,63 @@ describe('InvoicePdfService', () => {
             paymentDate: formattedPaymentDate,
             date: formattedPaymentDate,
             referenceNumber: 'REF123456',
-            amountUsd: '100,00',
-            amountBs: '4000,00',
-            exchangeRateUsdToBs: '40,00',
+            amountUsd: '26,83',
+            amountBs: '22.000,00',
+            exchangeRateUsdToBs: '820,10',
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('should fallback to exchangeRate from payment.metadata if exchangeRateService returns null', async () => {
+    const paymentDate = new Date('2026-07-22T10:00:00Z');
+
+    exchangeRateService.getExchangeRateByDate.mockResolvedValue(null);
+
+    const contract: Partial<Contract> = {
+      id: 'contract-1',
+      code: 'CTR-001',
+      legacyCode: null,
+      advisor: null,
+      contractPersons: [],
+    };
+
+    const payment: Partial<Payment> = {
+      id: 'pay-1',
+      status: PaymentStatus.COMPLETED,
+      paymentDate,
+      paymentMethod: 'PAGO_MOVIL',
+      referenceNumber: 'REF999',
+      amount: 49.99,
+      amountBs: 41000,
+      metadata: { exchangeRate: 820.1 },
+    };
+
+    const mockInvoice: Partial<Invoice> = {
+      id: 'inv-1',
+      billingMonth: '2026-07',
+      totalAmount: 49.99,
+      paidAmount: 49.99,
+      status: InvoiceStatus.PAID,
+      contract: contract as Contract,
+      lines: [],
+      payments: [payment as Payment],
+    };
+
+    invoiceRepo.findOne.mockResolvedValue(mockInvoice as Invoice);
+
+    await service.buildInvoicePdf('inv-1');
+
+    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(pdfService.generatePdf).toHaveBeenCalledWith(
+      'invoice',
+      expect.objectContaining({
+        invoices: [
+          expect.objectContaining({
+            amountUsd: '49,99',
+            amountBs: '41.000,00',
+            exchangeRateUsdToBs: '820,10',
           }),
         ],
       }),

@@ -17,6 +17,7 @@ import { fetchReceiptAsBase64 } from '../utils/image-fetcher.util';
 import { extractOcrDisplayFields } from '../utils/ocr-display.util';
 import { formatDateES, getCaracasNow } from '../../common/utils/date.util';
 import { PaymentService } from '../payments/services/payment.service';
+import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 
 @Injectable()
 export class PaymentPdfCron {
@@ -27,6 +28,7 @@ export class PaymentPdfCron {
     private readonly pdfService: PdfService,
     private readonly emailService: EmailService,
     private readonly awsService: AwsService,
+    private readonly exchangeRateService: ExchangeRateService,
     @Inject(configurations.KEY)
     private readonly configService: ConfigType<typeof configurations>,
   ) {}
@@ -115,28 +117,48 @@ export class PaymentPdfCron {
       }));
   }
 
-  private calculateFinancialInfo(payment: Payment): {
+  private async calculateFinancialInfo(payment: Payment): Promise<{
     amountUsd: string;
     amountBs: string | null;
     exchangeRateUsdToBs: string | null;
     totalAmount: string;
     amountUnpaid: string;
-  } {
+  }> {
     const amountBs = Number(payment.amountBs);
     const amountUsd = Number(payment.amount);
     const totalAmount = Number(payment.invoice?.totalAmount);
     const paidAmount = Number(payment.invoice?.paidAmount);
     const amountUnpaid = Math.max(0, totalAmount - paidAmount);
-    const exchangeRate = amountBs > 0 && amountUsd > 0 ? (amountBs / amountUsd).toFixed(4) : null;
     const formatted = new Intl.NumberFormat('es-ES', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
 
+    let exchangeRateUsdToBs: string | null = null;
+    if (amountBs > 0) {
+      if (payment?.paymentDate) {
+        const rateEntity = await this.exchangeRateService.getExchangeRateByDate(
+          payment.paymentDate,
+        );
+        if (rateEntity?.rateUsd) {
+          exchangeRateUsdToBs = formatted.format(Number(rateEntity.rateUsd));
+        }
+      }
+
+      if (!exchangeRateUsdToBs) {
+        const metaRate = Number(payment?.metadata?.exchangeRate);
+        if (Number.isFinite(metaRate) && metaRate > 0) {
+          exchangeRateUsdToBs = formatted.format(metaRate);
+        } else if (amountUsd > 0) {
+          exchangeRateUsdToBs = formatted.format(Number((amountBs / amountUsd).toFixed(2)));
+        }
+      }
+    }
+
     return {
       amountUsd: formatted.format(amountUsd),
       amountBs: amountBs > 0 ? formatted.format(amountBs) : null,
-      exchangeRateUsdToBs: exchangeRate ? formatted.format(Number(exchangeRate)) : null,
+      exchangeRateUsdToBs,
       totalAmount: formatted.format(totalAmount),
       amountUnpaid: formatted.format(amountUnpaid),
     };
@@ -160,7 +182,7 @@ export class PaymentPdfCron {
     const allLines = invoice.lines as InvoiceLine[];
     const members = this.extractMembersInfo(allLines);
     const additionalCharges = this.extractChargesInfo(allLines);
-    const financialInfo = this.calculateFinancialInfo(payment);
+    const financialInfo = await this.calculateFinancialInfo(payment);
 
     const advisor = contract.advisor?.name ?? 'Sin asesor';
     const receiptDataUri = payment.url
