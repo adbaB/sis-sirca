@@ -1,13 +1,28 @@
-// Import with `const Sentry = require("@sentry/nestjs");` if you are using CJS
+import 'dotenv/config';
 import * as Sentry from '@sentry/nestjs';
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV || 'development',
   tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-  integrations: [Sentry.consoleLoggingIntegration({ levels: ['error', 'warn', 'log'] })],
+  integrations: [
+    Sentry.postgresIntegration(),
+    Sentry.redisIntegration(),
+    Sentry.consoleLoggingIntegration({ levels: ['error', 'warn'] }),
+  ],
   enableLogs: true,
-  // To disable sending user data, uncomment the line below. For more info visit:
-  // https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/#dataCollection
-  // dataCollection: { userInfo: false },
+  beforeSend(event) {
+    // Sanitización de encabezados y tokens de autenticación
+    if (event.request) {
+      if (event.request.headers) {
+        delete event.request.headers['authorization'];
+        delete event.request.headers['cookie'];
+        delete event.request.headers['x-api-key'];
+      }
+      if (event.request.cookies) {
+        delete (event.request.cookies as Record<string, unknown>)['access_token'];
+      }
+    }
+    return event;
+  },
 });

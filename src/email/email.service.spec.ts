@@ -4,17 +4,22 @@ import { SESClient } from '@aws-sdk/client-ses';
 import configurations from '../config/configurations';
 import { SubmitPaymentDto } from '../billing/payments/dto/submit-payment.dto';
 import { ExternalServiceException } from '../common/exceptions';
+import { type Mock } from 'vitest';
 
-jest.mock('@aws-sdk/client-ses', () => {
+vi.mock('@aws-sdk/client-ses', () => {
   return {
-    SESClient: jest.fn(),
-    SendEmailCommand: jest.fn((input) => ({ input })),
+    SESClient: vi.fn(function () {}),
+    SendEmailCommand: vi.fn(function (input) {
+      return { input };
+    }),
   };
 });
 
+const MockedSESClient = vi.mocked(SESClient);
+
 describe('EmailService', () => {
   let service: EmailService;
-  let sesClientSendMock: jest.Mock;
+  let sesClientSendMock: Mock;
 
   const mockConfigService = {
     aws: {
@@ -27,10 +32,10 @@ describe('EmailService', () => {
   };
 
   beforeEach(async () => {
-    sesClientSendMock = jest.fn();
-    (SESClient as jest.Mock).mockImplementation(() => ({
-      send: sesClientSendMock,
-    }));
+    sesClientSendMock = vi.fn();
+    MockedSESClient.mockImplementation(function () {
+      return { send: sesClientSendMock } as unknown as SESClient;
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

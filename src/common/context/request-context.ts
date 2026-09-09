@@ -12,6 +12,8 @@ export interface RequestContext {
   queryRunner: QueryRunner;
   requestId: string;
   startTime: number;
+  traceId?: string;
+  user?: { userId: string; roleId: string };
   postCommitHooks?: Array<() => Promise<void> | void>;
 }
 
@@ -138,4 +140,28 @@ export function resolveQueryRunner(
  */
 export function getRequestId(): string | undefined {
   return getContextSafe()?.requestId;
+}
+
+/**
+ * Obtiene el traceId de Sentry o contexto distribuido del request actual.
+ */
+export function getTraceId(): string | undefined {
+  return getContextSafe()?.traceId;
+}
+
+/**
+ * Obtiene el usuario autenticado del contexto actual si existe.
+ */
+export function getContextUser(): { userId: string; roleId: string } | undefined {
+  return getContextSafe()?.user;
+}
+
+/**
+ * Establece o actualiza el usuario autenticado en el contexto actual.
+ */
+export function setContextUser(user: { userId: string; roleId: string }): void {
+  const ctx = getContextSafe();
+  if (ctx) {
+    ctx.user = user;
+  }
 }

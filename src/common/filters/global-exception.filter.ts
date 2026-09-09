@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { Request, Response } from 'express';
-import { getRequestId } from '../context/request-context';
+import { getRequestId, getTraceId, getContextUser } from '../context/request-context';
 import {
   DomainException,
   EntityAlreadyExistsException,
@@ -120,8 +120,32 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   private reportToSentry(exception: Error, requestId: string, request: Request): void {
     Sentry.withScope((scope) => {
       scope.setTag('requestId', requestId);
-      scope.setExtra('url', request.url);
-      scope.setExtra('method', request.method);
+
+      const traceId = getTraceId();
+      if (traceId) {
+        scope.setTag('traceId', traceId);
+      }
+
+      if (exception instanceof DomainException) {
+        scope.setTag('errorCode', exception.errorCode);
+        if (exception instanceof ExternalServiceException) {
+          scope.setTag('external_service', exception.serviceName);
+        }
+      }
+
+      const user =
+        getContextUser() ||
+        (request as unknown as { user?: { userId?: string; roleId?: string } })?.user;
+      if (user?.userId) {
+        scope.setUser({ id: user.userId, role: user.roleId });
+      }
+
+      scope.setContext('request_info', {
+        url: request.url,
+        method: request.method,
+        query: request.query,
+      });
+
       Sentry.captureException(exception);
     });
   }

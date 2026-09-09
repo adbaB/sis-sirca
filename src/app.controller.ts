@@ -12,6 +12,7 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @Public()
   @Get('debug-sentry')
   getError() {
     if (process.env.NODE_ENV === 'production') {
