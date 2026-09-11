@@ -6,17 +6,22 @@ import { EmailService } from '../../email/email.service';
 import { AwsService } from '../../aws/aws.service';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import configurations from '../../config/configurations';
+import { type MockInstance } from 'vitest';
+import { Repository } from 'typeorm';
+import { ExchangeRate } from '../../exchange-rate/entities/Exchange-rate.entity';
 import { Payment } from '../payments/entities/payment.entity';
 import { Invoice } from '../invoices/entities/invoice.entity';
 
 describe('PaymentPdfCron', () => {
   let cron: PaymentPdfCron;
-  let exchangeRateService: { getExchangeRateByDate: jest.Mock };
+  let exchangeRateService: ExchangeRateService;
+  let getExchangeRateByDateSpy: MockInstance;
 
   beforeEach(async () => {
-    exchangeRateService = {
-      getExchangeRateByDate: jest.fn(),
-    };
+    exchangeRateService = new ExchangeRateService({
+      findOne: jest.fn(),
+    } as unknown as Repository<ExchangeRate>);
+    getExchangeRateByDateSpy = jest.spyOn(exchangeRateService, 'getExchangeRateByDate');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -53,7 +58,7 @@ describe('PaymentPdfCron', () => {
 
   it('should calculate exchangeRateUsdToBs using ExchangeRateService for paymentDate', async () => {
     const paymentDate = new Date('2026-09-08T12:00:00Z');
-    exchangeRateService.getExchangeRateByDate.mockResolvedValue({
+    getExchangeRateByDateSpy.mockResolvedValue({
       rateUsd: 820.1,
     });
 
@@ -75,7 +80,7 @@ describe('PaymentPdfCron', () => {
       }
     ).calculateFinancialInfo(payment);
 
-    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(getExchangeRateByDateSpy).toHaveBeenCalledWith(paymentDate);
     // Should be '820,10', NOT corrupted to '820,13'
     expect(info.exchangeRateUsdToBs).toBe('820,10');
   });
@@ -98,7 +103,7 @@ describe('PaymentPdfCron', () => {
       }
     ).calculateFinancialInfo(payment);
 
-    expect(exchangeRateService.getExchangeRateByDate).not.toHaveBeenCalled();
+    expect(getExchangeRateByDateSpy).not.toHaveBeenCalled();
     expect(info.exchangeRateUsdToBs).toBeNull();
   });
 
@@ -122,13 +127,13 @@ describe('PaymentPdfCron', () => {
       }
     ).calculateFinancialInfo(payment);
 
-    expect(exchangeRateService.getExchangeRateByDate).not.toHaveBeenCalled();
+    expect(getExchangeRateByDateSpy).not.toHaveBeenCalled();
     expect(info.exchangeRateUsdToBs).toBe('830,00');
   });
 
   it('should catch getExchangeRateByDate errors and fallback to amountBs/amountUsd', async () => {
     const paymentDate = new Date('2026-09-08T12:00:00Z');
-    exchangeRateService.getExchangeRateByDate.mockRejectedValue(new Error('DB Timeout'));
+    getExchangeRateByDateSpy.mockRejectedValue(new Error('DB Timeout'));
 
     const payment = {
       id: 'pay-4',
@@ -147,7 +152,7 @@ describe('PaymentPdfCron', () => {
       }
     ).calculateFinancialInfo(payment);
 
-    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(getExchangeRateByDateSpy).toHaveBeenCalledWith(paymentDate);
     expect(info.exchangeRateUsdToBs).toBe('840,00');
   });
 });

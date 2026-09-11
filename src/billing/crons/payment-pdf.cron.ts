@@ -134,30 +134,8 @@ export class PaymentPdfCron {
       maximumFractionDigits: 2,
     });
 
-    let exchangeRateUsdToBs: string | null = null;
-    if (amountBs > 0) {
-      const metaRate = Number(payment?.metadata?.exchangeRate);
-      if (Number.isFinite(metaRate) && metaRate > 0) {
-        exchangeRateUsdToBs = formatted.format(metaRate);
-      } else if (payment?.paymentDate) {
-        try {
-          const rateEntity = await this.exchangeRateService.getExchangeRateByDate(
-            payment.paymentDate,
-          );
-          if (rateEntity?.rateUsd) {
-            exchangeRateUsdToBs = formatted.format(Number(rateEntity.rateUsd));
-          }
-        } catch (error: unknown) {
-          this.logger.warn(
-            `Failed to get exchange rate for payment date ${payment.paymentDate}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-
-      if (!exchangeRateUsdToBs && amountUsd > 0) {
-        exchangeRateUsdToBs = formatted.format(Number((amountBs / amountUsd).toFixed(2)));
-      }
-    }
+    const numericRate = await this.exchangeRateService.resolvePaymentExchangeRate(payment);
+    const exchangeRateUsdToBs = numericRate !== null ? formatted.format(numericRate) : null;
 
     return {
       amountUsd: formatted.format(amountUsd),

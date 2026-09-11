@@ -15,12 +15,15 @@ import { InvoiceLine } from '../entities/invoice-line.entity';
 import { Plan } from '../../../plans/entities/plan.entity';
 import { Advisor } from '../../../advisors/entities/advisor.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
+import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
+import { type MockInstance } from 'vitest';
 
 describe('InvoicePdfService', () => {
   let service: InvoicePdfService;
   let invoiceRepo: jest.Mocked<Repository<Invoice>>;
   let pdfService: jest.Mocked<PdfService>;
-  let exchangeRateService: { getExchangeRateByDate: jest.Mock };
+  let exchangeRateService: ExchangeRateService;
+  let getExchangeRateByDateSpy: MockInstance;
 
   beforeEach(async () => {
     const mockInvoiceRepo = {
@@ -31,9 +34,10 @@ describe('InvoicePdfService', () => {
       generatePdf: jest.fn().mockResolvedValue(Buffer.from('dummy-pdf')),
     };
 
-    exchangeRateService = {
-      getExchangeRateByDate: jest.fn(),
-    };
+    exchangeRateService = new ExchangeRateService({
+      findOne: jest.fn(),
+    } as unknown as Repository<ExchangeRate>);
+    getExchangeRateByDateSpy = jest.spyOn(exchangeRateService, 'getExchangeRateByDate');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -115,7 +119,7 @@ describe('InvoicePdfService', () => {
       plan: plan as Plan,
     };
 
-    exchangeRateService.getExchangeRateByDate.mockResolvedValue({
+    getExchangeRateByDateSpy.mockResolvedValue({
       rateUsd: 820.1,
     });
 
@@ -148,7 +152,7 @@ describe('InvoicePdfService', () => {
     const result = await service.buildInvoicePdf('inv-1');
 
     expect(result.filename).toBe('factura-CTR-001-2026-07.pdf');
-    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(getExchangeRateByDateSpy).toHaveBeenCalledWith(paymentDate);
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
       'invoice',
       expect.objectContaining({
@@ -173,7 +177,7 @@ describe('InvoicePdfService', () => {
   it('should fallback to calculated ratio if exchangeRateService returns null and no metadata rate', async () => {
     const paymentDate = new Date('2026-07-22T10:00:00Z');
 
-    exchangeRateService.getExchangeRateByDate.mockResolvedValue(null);
+    getExchangeRateByDateSpy.mockResolvedValue(null);
 
     const contract: Partial<Contract> = {
       id: 'contract-1',
@@ -209,7 +213,7 @@ describe('InvoicePdfService', () => {
 
     await service.buildInvoicePdf('inv-1');
 
-    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(getExchangeRateByDateSpy).toHaveBeenCalledWith(paymentDate);
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
       'invoice',
       expect.objectContaining({
@@ -303,7 +307,7 @@ describe('InvoicePdfService', () => {
 
     await service.buildInvoicePdf('inv-3');
 
-    expect(exchangeRateService.getExchangeRateByDate).not.toHaveBeenCalled();
+    expect(getExchangeRateByDateSpy).not.toHaveBeenCalled();
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
       'invoice',
       expect.objectContaining({
@@ -320,7 +324,7 @@ describe('InvoicePdfService', () => {
 
   it('should catch getExchangeRateByDate error and fallback to amount ratio without failing PDF', async () => {
     const paymentDate = new Date('2026-07-22T10:00:00Z');
-    exchangeRateService.getExchangeRateByDate.mockRejectedValue(new Error('Rate service offline'));
+    getExchangeRateByDateSpy.mockRejectedValue(new Error('Rate service offline'));
 
     const contract: Partial<Contract> = {
       id: 'contract-4',
@@ -354,7 +358,7 @@ describe('InvoicePdfService', () => {
 
     await expect(service.buildInvoicePdf('inv-4')).resolves.toBeDefined();
 
-    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(getExchangeRateByDateSpy).toHaveBeenCalledWith(paymentDate);
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
       'invoice',
       expect.objectContaining({
