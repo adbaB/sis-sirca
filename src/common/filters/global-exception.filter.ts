@@ -141,9 +141,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }
 
       scope.setContext('request_info', {
-        url: request.url,
+        path: request.path,
         method: request.method,
-        query: request.query,
+        queryKeys: Object.keys(request.query || {}),
       });
 
       Sentry.captureException(exception);

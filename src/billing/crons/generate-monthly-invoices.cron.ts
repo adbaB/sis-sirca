@@ -19,7 +19,7 @@ export class GenerateMonthlyInvoices {
     private readonly invoiceGenerationService: InvoiceGenerationService,
   ) {}
 
-  @Cron('1 0 25 * *')
+  @Cron('1 0 25 * *', { timeZone: 'America/Caracas' })
   @SentryCron('generate-monthly-invoices', {
     schedule: {
       type: 'crontab',

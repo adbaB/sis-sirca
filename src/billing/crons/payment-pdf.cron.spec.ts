@@ -66,7 +66,7 @@ describe('PaymentPdfCron', () => {
         totalAmount: 26.83,
         paidAmount: 26.83,
       } as Invoice,
-    } as Payment;
+    } as unknown as Payment;
 
     // Call private method via index signature
     const info = await (
@@ -90,7 +90,7 @@ describe('PaymentPdfCron', () => {
         totalAmount: 50.0,
         paidAmount: 50.0,
       } as Invoice,
-    } as Payment;
+    } as unknown as Payment;
 
     const info = await (
       cron as unknown as {
@@ -100,5 +100,54 @@ describe('PaymentPdfCron', () => {
 
     expect(exchangeRateService.getExchangeRateByDate).not.toHaveBeenCalled();
     expect(info.exchangeRateUsdToBs).toBeNull();
+  });
+
+  it('should prioritize payment.metadata.exchangeRate before calling getExchangeRateByDate', async () => {
+    const paymentDate = new Date('2026-09-08T12:00:00Z');
+    const payment = {
+      id: 'pay-3',
+      amount: 10.0,
+      amountBs: 8300,
+      paymentDate,
+      metadata: { exchangeRate: 830.0 },
+      invoice: {
+        totalAmount: 10.0,
+        paidAmount: 10.0,
+      } as Invoice,
+    } as unknown as Payment;
+
+    const info = await (
+      cron as unknown as {
+        calculateFinancialInfo: (p: Payment) => Promise<{ exchangeRateUsdToBs: string | null }>;
+      }
+    ).calculateFinancialInfo(payment);
+
+    expect(exchangeRateService.getExchangeRateByDate).not.toHaveBeenCalled();
+    expect(info.exchangeRateUsdToBs).toBe('830,00');
+  });
+
+  it('should catch getExchangeRateByDate errors and fallback to amountBs/amountUsd', async () => {
+    const paymentDate = new Date('2026-09-08T12:00:00Z');
+    exchangeRateService.getExchangeRateByDate.mockRejectedValue(new Error('DB Timeout'));
+
+    const payment = {
+      id: 'pay-4',
+      amount: 10.0,
+      amountBs: 8400,
+      paymentDate,
+      invoice: {
+        totalAmount: 10.0,
+        paidAmount: 10.0,
+      } as Invoice,
+    } as unknown as Payment;
+
+    const info = await (
+      cron as unknown as {
+        calculateFinancialInfo: (p: Payment) => Promise<{ exchangeRateUsdToBs: string | null }>;
+      }
+    ).calculateFinancialInfo(payment);
+
+    expect(exchangeRateService.getExchangeRateByDate).toHaveBeenCalledWith(paymentDate);
+    expect(info.exchangeRateUsdToBs).toBe('840,00');
   });
 });

@@ -101,15 +101,13 @@ export class TypeOrmExceptionFilter implements ExceptionFilter {
       }
 
       scope.setContext('request_info', {
-        url: request.url,
+        path: request.path,
         method: request.method,
-        query: request.query,
+        queryKeys: Object.keys(request.query || {}),
       });
 
       scope.setContext('db_error_details', {
-        detail: driverError?.detail,
-        query: exception.query,
-        parameters: exception.parameters,
+        parameterCount: exception.parameters?.length ?? 0,
       });
 
       Sentry.captureException(exception);

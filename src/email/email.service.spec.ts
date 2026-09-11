@@ -12,6 +12,9 @@ vi.mock('@aws-sdk/client-ses', () => {
     SendEmailCommand: vi.fn(function (input) {
       return { input };
     }),
+    SendRawEmailCommand: vi.fn(function (input) {
+      return { input };
+    }),
   };
 });
 
@@ -90,6 +93,47 @@ describe('EmailService', () => {
 
       await expect(
         service.sendPaymentConfirmation('recipient@test.com', userInfo, 'url'),
+      ).rejects.toThrow(ExternalServiceException);
+
+      expect(sesClientSendMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('sendPaymentPdf', () => {
+    it('should successfully send raw email with PDF attachment', async () => {
+      sesClientSendMock.mockResolvedValueOnce({ MessageId: '67890' });
+
+      const pdfBuffer = Buffer.from('fake-pdf-content');
+      await service.sendPaymentPdf(
+        'client@test.com',
+        'Your Payment Receipt',
+        'Please find attached your receipt.',
+        pdfBuffer,
+        'receipt-123.pdf',
+      );
+
+      expect(sesClientSendMock).toHaveBeenCalledTimes(1);
+      const commandArgs = sesClientSendMock.mock.calls[0][0].input;
+      expect(commandArgs).toBeDefined();
+      expect(commandArgs.RawMessage).toBeDefined();
+      const rawString = commandArgs.RawMessage.Data.toString();
+      expect(rawString).toContain('To: client@test.com');
+      expect(rawString).toContain('From: noreply@sirca.com');
+      expect(rawString).toContain('Subject: Your Payment Receipt');
+      expect(rawString).toContain('filename="receipt-123.pdf"');
+    });
+
+    it('should throw ExternalServiceException on sendPaymentPdf failure after retries', async () => {
+      sesClientSendMock.mockRejectedValue(new Error('SES Raw Error'));
+
+      await expect(
+        service.sendPaymentPdf(
+          'client@test.com',
+          'Receipt',
+          'Body',
+          Buffer.from('pdf'),
+          'receipt.pdf',
+        ),
       ).rejects.toThrow(ExternalServiceException);
 
       expect(sesClientSendMock).toHaveBeenCalledTimes(3);
