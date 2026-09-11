@@ -237,7 +237,14 @@ export class PaymentCreationService {
         surplusAmountBs,
       };
 
-      const savedPayment = await this.persistPayment(queryRunner, dto, invoice, split, paymentDate);
+      const savedPayment = await this.persistPayment(
+        queryRunner,
+        dto,
+        invoice,
+        split,
+        paymentDate,
+        rateUsd,
+      );
       savedPayments.push(savedPayment);
 
       if (isLastInvoice && (surplusAmountUsd || surplusAmountBs)) {
@@ -324,8 +331,14 @@ export class PaymentCreationService {
     invoice: Invoice,
     split: PaymentSplit,
     paymentDate: Date,
+    rateUsd?: number,
   ): Promise<Payment> {
     const operationDate = getCaracasTodayJSDate();
+
+    const metadata: Record<string, unknown> = {
+      ...(dto.metadata ?? {}),
+      ...(rateUsd ? { exchangeRate: rateUsd } : {}),
+    };
 
     const payment = queryRunner.manager.create(Payment, {
       paymentDate,
@@ -339,7 +352,7 @@ export class PaymentCreationService {
       amountBs: split.paymentAmountBs,
       paymentMethod: dto.paymentMethod,
       url: dto.url,
-      metadata: dto.metadata ?? null,
+      metadata: Object.keys(metadata).length > 0 ? metadata : null,
     }) as Payment;
 
     return queryRunner.manager.save(payment);

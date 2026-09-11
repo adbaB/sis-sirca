@@ -22,8 +22,8 @@ import { AwaitingManualInputStep } from '../steps/stepsImp/AwaitingManualInput.s
 import { AwaitingPaymentMethodManualStep } from '../steps/stepsImp/AwaitingPaymentMethodManual.step';
 import { IStepHandler } from '../steps/step-handler.interface';
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+vi.mock('axios');
+const mockedAxios = vi.mocked(axios);
 
 describe('ChatbotService', () => {
   let service: ChatbotService;

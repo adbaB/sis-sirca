@@ -6,7 +6,8 @@ import config from '../config/configurations';
 import { ExternalServiceException } from '../common/exceptions';
 
 // Mock the AWS SDK
-jest.mock('@aws-sdk/client-s3');
+vi.mock('@aws-sdk/client-s3');
+const MockedS3Client = vi.mocked(S3Client);
 
 describe('AwsService', () => {
   let service: AwsService;
@@ -29,6 +30,10 @@ describe('AwsService', () => {
       ],
     }).compile();
 
+    MockedS3Client.mockImplementation(function () {
+      return { send: jest.fn().mockResolvedValue({}) } as unknown as S3Client;
+    });
+
     service = module.get<AwsService>(AwsService);
     jest.clearAllMocks();
   });
@@ -46,9 +51,9 @@ describe('AwsService', () => {
 
     it('should successfully upload a file and return the URL', async () => {
       const mockSend = jest.fn().mockResolvedValue({});
-      (S3Client as jest.Mock).mockImplementation(() => ({
-        send: mockSend,
-      }));
+      MockedS3Client.mockImplementation(function () {
+        return { send: mockSend } as unknown as S3Client;
+      });
 
       service = new AwsService({
         aws: {
@@ -85,9 +90,9 @@ describe('AwsService', () => {
 
     it('should throw ExternalServiceException on S3 upload failure after retries', async () => {
       const mockSend = jest.fn().mockRejectedValue(new Error('S3 Error'));
-      (S3Client as jest.Mock).mockImplementation(() => ({
-        send: mockSend,
-      }));
+      MockedS3Client.mockImplementation(function () {
+        return { send: mockSend } as unknown as S3Client;
+      });
 
       service = new AwsService({
         aws: {

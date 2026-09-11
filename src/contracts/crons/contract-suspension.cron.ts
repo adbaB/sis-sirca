@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { SentryCron } from '@sentry/nestjs';
+import * as Sentry from '@sentry/nestjs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DateTime } from 'luxon';
 import { DataSource, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
@@ -33,6 +35,13 @@ export class ContractSuspensionCron {
    * the contract to SUSPENDED.
    */
   @Cron('0 1 * * *', { timeZone: 'America/Caracas' })
+  @SentryCron('contract-suspension', {
+    schedule: {
+      type: 'crontab',
+      value: '0 1 * * *',
+    },
+    timezone: 'America/Caracas',
+  })
   async processContractSuspensions(): Promise<void> {
     this.logger.log('Starting contract suspension check for overdue cutoff dates...');
 
@@ -187,6 +196,13 @@ export class ContractSuspensionCron {
         `Error evaluating suspension for contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
+
+      Sentry.withScope((scope) => {
+        scope.setTag('cron', 'contract-suspension');
+        scope.setTag('contractId', contract.id);
+        scope.setTag('contractCode', contract.code);
+        Sentry.captureException(error);
+      });
       return null;
     } finally {
       await queryRunner.release();
