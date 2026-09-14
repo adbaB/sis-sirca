@@ -18,16 +18,7 @@ export function validateContractAffiliates(affiliates: AffiliatePersonDto[]): vo
     throw new BadRequestException('Solo puede haber un responsable de facturación por contrato.');
   }
 
-  // 3. Validate AFILIADO planId
-  for (const affiliate of affiliates) {
-    if (affiliate.role === PersonRole.AFILIADO && !affiliate.planId) {
-      throw new BadRequestException(
-        `El afiliado ${affiliate.name} (${affiliate.typeIdentityCard}-${affiliate.identityCard}) debe tener un plan asignado.`,
-      );
-    }
-  }
-
-  // 4. Validate duplicate identity cards within the same contract request
+  // 3. Validate duplicate identity cards within the same contract request
   const seenDocuments = new Set<string>();
   for (const affiliate of affiliates) {
     const docKey = `${affiliate.typeIdentityCard}-${affiliate.identityCard}`;
@@ -37,6 +28,41 @@ export function validateContractAffiliates(affiliates: AffiliatePersonDto[]): vo
       );
     }
     seenDocuments.add(docKey);
+  }
+
+  // 4. Validate AFILIADO planId and required plan-associated fields
+  for (const affiliate of affiliates) {
+    if (affiliate.role === PersonRole.AFILIADO && !affiliate.planId) {
+      throw new BadRequestException(
+        `El afiliado ${affiliate.name} (${affiliate.typeIdentityCard}-${affiliate.identityCard}) debe tener un plan asignado.`,
+      );
+    }
+
+    if (affiliate.planId) {
+      if (!affiliate.birthDate || affiliate.birthDate.trim() === '') {
+        throw new BadRequestException(
+          `La fecha de nacimiento es obligatoria para ${affiliate.name} (${affiliate.typeIdentityCard}-${affiliate.identityCard}) porque tiene un plan asociado.`,
+        );
+      }
+      if (
+        affiliate.weight === undefined ||
+        affiliate.weight === null ||
+        Number(affiliate.weight) <= 0
+      ) {
+        throw new BadRequestException(
+          `El peso es obligatorio y debe ser mayor a 0 para ${affiliate.name} (${affiliate.typeIdentityCard}-${affiliate.identityCard}) porque tiene un plan asociado.`,
+        );
+      }
+      if (
+        affiliate.height === undefined ||
+        affiliate.height === null ||
+        Number(affiliate.height) <= 0
+      ) {
+        throw new BadRequestException(
+          `La talla es obligatoria y debe ser mayor a 0 para ${affiliate.name} (${affiliate.typeIdentityCard}-${affiliate.identityCard}) porque tiene un plan asociado.`,
+        );
+      }
+    }
   }
 }
 

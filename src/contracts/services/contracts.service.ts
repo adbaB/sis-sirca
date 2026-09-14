@@ -11,15 +11,18 @@ import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { FindRenewalsDto } from '../dto/find-renewals.dto';
 import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { RenewContractDto } from '../dto/renew-contract.dto';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 import { ContractPerson } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
+import { RenewalsResult } from '../interfaces/renewals-result.interface';
 import {
   AffiliationStatsMode,
   AffiliationStatsResult,
@@ -77,6 +80,10 @@ export class ContractsService {
     return this.queryRepository.findAllPaginated(query);
   }
 
+  async findRenewals(dto: FindRenewalsDto, userAdvisorId?: string): Promise<RenewalsResult> {
+    return this.queryRepository.findRenewalsPaginated(dto, userAdvisorId);
+  }
+
   async findOne(id: string): Promise<Contract> {
     return this.lifecycleService.findOne(id);
   }
@@ -96,6 +103,10 @@ export class ContractsService {
 
   async inactivate(contractId: string, dto: InactivateContractDto): Promise<Contract> {
     return this.lifecycleService.inactivate(contractId, dto);
+  }
+
+  async renew(contractId: string, dto: RenewContractDto): Promise<Contract> {
+    return this.lifecycleService.renew(contractId, dto);
   }
 
   async activate(

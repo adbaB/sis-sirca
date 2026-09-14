@@ -202,6 +202,7 @@ describe('ContractVerificationService', () => {
             id: 'cp-ben-1',
             role: PersonRole.AFILIADO,
             relationship: Parentesco.HIJA,
+            affiliationDate: new Date('2026-05-10'),
             person: {
               id: 'p-ben-1',
               name: 'Hija Activa',
@@ -236,6 +237,7 @@ describe('ContractVerificationService', () => {
       expect(ownerContract.beneficiaries[0].name).toBe('Hija Activa');
       expect(ownerContract.beneficiaries[0].isEligible).toBe(true);
       expect(ownerContract.beneficiaries[0].relationship).toBe(Parentesco.HIJA);
+      expect(ownerContract.beneficiaries[0].affiliationDate).toEqual(new Date('2026-05-10'));
     });
 
     it('should return ownerContracts when person is isBillingOwner = true (e.g. corporate RIF)', async () => {

@@ -4,8 +4,10 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
 import { paginateQueryBuilder } from '../../common/utils/pagination.util';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { FindRenewalsDto, RenewalPhase } from '../dto/find-renewals.dto';
 import { Contract } from '../entities/contract.entity';
 import { ContractStage } from '../enums/contract-stage.enum';
+import { RenewalsResult } from '../interfaces/renewals-result.interface';
 
 @Injectable()
 export class ContractQueryRepository {
@@ -289,5 +291,83 @@ export class ContractQueryRepository {
         )`,
       );
     }
+  }
+
+  /**
+   * Executes a paginated query for contracts in renewal phases ("expiring_soon" and "pending_renewal")
+   * with realtime counters for each phase.
+   */
+  async findRenewalsPaginated(
+    dto: FindRenewalsDto,
+    defaultAdvisorId?: string,
+  ): Promise<RenewalsResult> {
+    const effectiveAdvisorId = dto.advisorId || defaultAdvisorId;
+    const effectiveExpSql =
+      "COALESCE(contract.expiration_date, (contract.affiliation_date + INTERVAL '1 year')::date)";
+
+    // 1. Calculate count totals for both renewal phases
+    const countQb = this.contractsRepository
+      .createQueryBuilder('contract')
+      .leftJoin('contract.contractPersons', 'countCp')
+      .leftJoin('countCp.person', 'countPerson')
+      .where("contract.status IN ('ACTIVE', 'SUSPENDED')");
+
+    if (effectiveAdvisorId) {
+      countQb.andWhere('contract.advisor_id = :advisorId', { advisorId: effectiveAdvisorId });
+    }
+
+    if (dto.search) {
+      countQb.andWhere(
+        "(contract.code ILIKE :search OR contract.legacy_code ILIKE :search OR countPerson.name ILIKE :search OR countPerson.identity_card ILIKE :search OR CONCAT(countPerson.type_identity_card, '-', countPerson.identity_card) ILIKE :search OR CONCAT(countPerson.type_identity_card, countPerson.identity_card) ILIKE :search)",
+        { search: `%${dto.search}%` },
+      );
+    }
+
+    countQb.select([
+      `COUNT(DISTINCT CASE WHEN ${effectiveExpSql} >= CURRENT_DATE AND ${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days') THEN contract.id END) as "expiringSoon"`,
+      `COUNT(DISTINCT CASE WHEN ${effectiveExpSql} < CURRENT_DATE THEN contract.id END) as "pendingRenewal"`,
+    ]);
+
+    const rawCounts = await countQb.getRawOne();
+    const expiringSoon = parseInt(rawCounts?.expiringSoon || '0', 10);
+    const pendingRenewal = parseInt(rawCounts?.pendingRenewal || '0', 10);
+
+    // 2. Fetch paginated contract list with relations
+    const qb = this.contractsRepository.createQueryBuilder('contract');
+    this.applyRelations(qb);
+    qb.where("contract.status IN ('ACTIVE', 'SUSPENDED')");
+
+    if (effectiveAdvisorId) {
+      qb.andWhere('contract.advisor_id = :advisorId', { advisorId: effectiveAdvisorId });
+    }
+
+    this.applySearchFilter(qb, dto.search);
+
+    if (dto.phase === RenewalPhase.EXPIRING_SOON) {
+      qb.andWhere(
+        `${effectiveExpSql} >= CURRENT_DATE AND ${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days')`,
+      );
+      qb.orderBy('contract.expirationDate', 'ASC', 'NULLS LAST');
+      qb.addOrderBy('contract.affiliationDate', 'ASC');
+    } else if (dto.phase === RenewalPhase.PENDING_RENEWAL) {
+      qb.andWhere(`${effectiveExpSql} < CURRENT_DATE`);
+      qb.orderBy('contract.expirationDate', 'DESC', 'NULLS LAST');
+      qb.addOrderBy('contract.affiliationDate', 'DESC');
+    } else {
+      qb.andWhere(`${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days')`);
+      qb.orderBy('contract.expirationDate', 'ASC', 'NULLS LAST');
+      qb.addOrderBy('contract.affiliationDate', 'ASC');
+    }
+
+    const paginated = await paginateQueryBuilder(qb, dto);
+
+    return {
+      data: paginated.data,
+      counts: {
+        expiringSoon,
+        pendingRenewal,
+      },
+      meta: paginated.meta,
+    };
   }
 }
