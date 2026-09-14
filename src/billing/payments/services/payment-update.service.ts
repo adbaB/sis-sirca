@@ -110,6 +110,12 @@ export class PaymentUpdateService {
     payment.paymentDate = newDate;
     payment.amount = split.paymentAmountUsd;
     payment.amountBs = split.paymentAmountBs;
+    if (!isZelle && rateUsd > 0) {
+      payment.metadata = {
+        ...(payment.metadata ?? {}),
+        exchangeRate: rateUsd,
+      };
+    }
 
     const savedPayment = await paymentRepo.save(payment);
 

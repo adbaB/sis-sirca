@@ -1,33 +1,15 @@
 import { PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
-import { Parentesco, PersonRole } from '../entities/contract-person.entity';
+import { Parentesco } from '../entities/contract-person.entity';
 import { ContractStatus } from '../entities/contract.entity';
 
-export interface VerifiedPersonContract {
-  id: string;
-  code: string;
-  status: ContractStatus;
-  affiliationDate: Date;
-  role: PersonRole;
-  planName: string | null;
-  isSuspended: boolean;
+export enum VerificationMode {
+  BY_CONTRACT = 'BY_CONTRACT',
+  BY_PERSON = 'BY_PERSON',
 }
 
-export interface BeneficiaryVerificationResult {
-  mode: 'BY_BENEFICIARY';
-  person: {
-    id: string;
-    name: string;
-    typeIdentityCard: TypeIdentityCard;
-    identityCard: string;
-    phone?: string;
-    birthDate?: Date;
-    status: PersonStatus;
-  };
-  contracts: VerifiedPersonContract[];
-  hasActiveContract: boolean;
-  hasSuspendedContract: boolean;
-}
-
+/**
+ * Detalle de un beneficiario asociado a un contrato.
+ */
 export interface ContractBeneficiaryItem {
   contractPersonId: string;
   personId: string;
@@ -42,8 +24,66 @@ export interface ContractBeneficiaryItem {
   isEligible: boolean;
 }
 
+/**
+ * Contrato donde la persona consultada figura como beneficiaria directa (Lista 1).
+ */
+export interface BeneficiaryContractItem {
+  id: string;
+  code: string;
+  status: ContractStatus;
+  isSuspended: boolean;
+  isEligible: boolean;
+  affiliationDate: Date;
+  planName: string | null;
+}
+
+/**
+ * Contrato donde la persona consultada es Titular o Pagadora (isBillingOwner),
+ * con su lista de beneficiarios afiliados (Lista 2).
+ */
+export interface OwnerContractItem {
+  id: string;
+  code: string;
+  status: ContractStatus;
+  isSuspended: boolean;
+  affiliationDate: Date;
+  cutoffDay: number;
+  isTitular: boolean;
+  isBillingOwner: boolean;
+  titular: {
+    id: string;
+    name: string;
+    typeIdentityCard: TypeIdentityCard;
+    identityCard: string;
+    phone?: string;
+  } | null;
+  beneficiaries: ContractBeneficiaryItem[];
+  totalBeneficiaries: number;
+}
+
+/**
+ * Resultado de verificación cuando se busca por Cédula o RIF.
+ */
+export interface PersonVerificationResult {
+  mode: VerificationMode.BY_PERSON;
+  person: {
+    id: string;
+    name: string;
+    typeIdentityCard: TypeIdentityCard;
+    identityCard: string;
+    phone?: string;
+    birthDate?: Date;
+    status: PersonStatus;
+  };
+  beneficiaryContracts: BeneficiaryContractItem[];
+  ownerContracts: OwnerContractItem[];
+}
+
+/**
+ * Resultado de verificación cuando se busca directamente por código de contrato.
+ */
 export interface ContractVerificationResult {
-  mode: 'BY_CONTRACT';
+  mode: VerificationMode.BY_CONTRACT;
   contract: {
     id: string;
     code: string;
@@ -63,7 +103,4 @@ export interface ContractVerificationResult {
   totalBeneficiaries: number;
 }
 
-export type UnifiedVerificationResult = ContractVerificationResult | BeneficiaryVerificationResult;
-
-// Backward-compatible alias
-export type PersonVerificationResult = BeneficiaryVerificationResult;
+export type UnifiedVerificationResult = ContractVerificationResult | PersonVerificationResult;

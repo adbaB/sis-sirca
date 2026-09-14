@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
@@ -5,7 +6,10 @@ import { ContextInterceptor } from './common/interceptors/context.interceptor';
 import { GlobalExceptionFilter, TypeOrmExceptionFilter } from './common/filters';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
-import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
+import { SentryModule } from '@sentry/nestjs/setup';
+import * as Sentry from '@sentry/nestjs';
+import { LoggerModule } from 'nestjs-pino';
+import { getRequestId, getTraceId, getContextUser } from './common/context/request-context';
 import { AdvisorsModule } from './advisors/advisors.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -30,6 +34,10 @@ import { StatisticsModule } from './statistics/statistics.module';
 import { UsersModule } from './users/users.module';
 import { PortfoliosModule } from './portfolios/portfolios.module';
 
+interface RequestWithUser extends IncomingMessage {
+  user?: { userId?: string; roleId?: string };
+}
+
 @Module({
   imports: [
     SentryModule.forRoot(),
@@ -52,6 +60,7 @@ import { PortfoliosModule } from './portfolios/portfolios.module';
     ExchangeRateModule,
     PdfModule,
     RedisModule.forRootAsync({
+      imports: [],
       inject: [config.KEY],
       useFactory: (configService: ReturnType<typeof config>) => ({
         type: 'single',
@@ -62,6 +71,58 @@ import { PortfoliosModule } from './portfolios/portfolios.module';
     StatisticsModule,
     ReportsModule,
     PortfoliosModule,
+    LoggerModule.forRootAsync({
+      inject: [config.KEY],
+      useFactory: (configService: ReturnType<typeof config>) => {
+        const isProduction = configService.env === 'production';
+        return {
+          pinoHttp: {
+            level: isProduction ? 'info' : 'debug',
+            transport: isProduction
+              ? undefined
+              : {
+                  target: 'pino-pretty',
+                  options: {
+                    colorize: true,
+                    singleLine: true,
+                    translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l',
+                  },
+                },
+            genReqId: (req: IncomingMessage) => {
+              const headerReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
+              return (headerReqId as string) || req.id;
+            },
+            customProps: (req: RequestWithUser) => {
+              const alsTraceId = getTraceId();
+              const activeSpan = Sentry.getActiveSpan();
+              const spanJson = activeSpan ? Sentry.spanToJSON(activeSpan) : null;
+              const traceId = alsTraceId || spanJson?.trace_id;
+              const user = getContextUser() || req.user;
+              return {
+                requestId: getRequestId() || req.id,
+                traceId,
+                spanId: spanJson?.span_id,
+                userId: user?.userId,
+                roleId: user?.roleId,
+              };
+            },
+            redact: {
+              paths: [
+                'req.headers.authorization',
+                'req.headers.cookie',
+                'req.headers["x-api-key"]',
+                'res.headers["set-cookie"]',
+                '*.password',
+                '*.token',
+                '*.accessToken',
+                '*.secret',
+              ],
+              censor: '[REDACTED]',
+            },
+          },
+        };
+      },
+    }),
   ],
   controllers: [AppController],
   providers: [
@@ -73,10 +134,6 @@ import { PortfoliosModule } from './portfolios/portfolios.module';
     {
       provide: APP_FILTER,
       useClass: TypeOrmExceptionFilter,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: SentryGlobalFilter,
     },
     {
       provide: APP_INTERCEPTOR,

@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../../contracts/entities/contract.entity';
+import { DEFAULT_CUTOFF_DAY } from '../../../contracts/constants/contract.constants';
 import { PersonStatus } from '../../../persons/entities/person.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { InvoiceLine } from '../entities/invoice-line.entity';
@@ -143,7 +144,7 @@ export class InvoiceGenerationService {
       { zone: CARACAS_ZONE },
     );
     const daysInMonth = dtMonth.daysInMonth ?? 28;
-    const effectiveDay = Math.min(preContract.cutoffDay ?? 5, daysInMonth);
+    const effectiveDay = Math.min(preContract.cutoffDay ?? DEFAULT_CUTOFF_DAY, daysInMonth);
     let calculatedDueDate = DateTime.fromObject(
       {
         year: billingYear,

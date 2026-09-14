@@ -15,8 +15,9 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
 import {
-  BeneficiaryVerificationResult,
   ContractVerificationResult,
+  PersonVerificationResult,
+  VerificationMode,
 } from '../interfaces/person-verification.interface';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
@@ -297,8 +298,8 @@ describe('ContractsController', () => {
 
   describe('verifyPersonAffiliation', () => {
     it('should delegate to service.verifyPersonAffiliation', async () => {
-      const mockResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-1',
           name: 'Carlos Ruiz',
@@ -306,9 +307,8 @@ describe('ContractsController', () => {
           identityCard: '12345678',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: false,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
       jest.spyOn(service, 'verifyPersonAffiliation').mockResolvedValue(mockResult);
@@ -329,7 +329,7 @@ describe('ContractsController', () => {
 
     it('should delegate to service.verifyUnified when valid query is provided', async () => {
       const mockResult: ContractVerificationResult = {
-        mode: 'BY_CONTRACT',
+        mode: VerificationMode.BY_CONTRACT,
         contract: {
           id: 'c-1',
           code: 'SIR-001-00001',
@@ -354,8 +354,8 @@ describe('ContractsController', () => {
 
   describe('verifyUnifiedParam', () => {
     it('should delegate to service.verifyUnified with path param', async () => {
-      const mockResult: BeneficiaryVerificationResult = {
-        mode: 'BY_BENEFICIARY',
+      const mockResult: PersonVerificationResult = {
+        mode: VerificationMode.BY_PERSON,
         person: {
           id: 'p-1',
           name: 'Carlos Ruiz',
@@ -363,9 +363,8 @@ describe('ContractsController', () => {
           identityCard: '12345678',
           status: PersonStatus.ACTIVE,
         },
-        contracts: [],
-        hasActiveContract: false,
-        hasSuspendedContract: false,
+        beneficiaryContracts: [],
+        ownerContracts: [],
       };
 
       jest.spyOn(service, 'verifyUnified').mockResolvedValue(mockResult);

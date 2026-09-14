@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus, Logger } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { QueryFailedError } from 'typeorm';
+import * as Sentry from '@sentry/nestjs';
 import { ErrorCode } from '../exceptions/error-codes.enum';
 import { getRequestId } from '../context/request-context';
 
@@ -61,6 +62,7 @@ export class TypeOrmExceptionFilter implements ExceptionFilter {
 
     if (statusCode >= 500) {
       this.logger.error(`[${requestId}] DB Error [${pgCode ?? 'UNKNOWN'}]: ${exception.message}`);
+      this.reportToSentry(exception, requestId, request, driverError);
     } else {
       this.logger.warn(`[${requestId}] DB Warning [${pgCode ?? 'UNKNOWN'}]: ${message}`);
     }
@@ -74,6 +76,41 @@ export class TypeOrmExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       requestId,
+    });
+  }
+
+  private reportToSentry(
+    exception: QueryFailedError,
+    requestId: string,
+    request: Request,
+    driverError?: PostgresDriverError,
+  ): void {
+    Sentry.withScope((scope) => {
+      scope.setTag('requestId', requestId);
+      scope.setTag('typeorm_pg_code', driverError?.code ?? 'UNKNOWN');
+      if (driverError?.table) {
+        scope.setTag('db_table', driverError.table);
+      }
+      if (driverError?.constraint) {
+        scope.setTag('db_constraint', driverError.constraint);
+      }
+
+      const user = (request as unknown as { user?: { userId?: string; roleId?: string } })?.user;
+      if (user?.userId) {
+        scope.setUser({ id: user.userId, role: user.roleId });
+      }
+
+      scope.setContext('request_info', {
+        path: request.path,
+        method: request.method,
+        queryKeys: Object.keys(request.query || {}),
+      });
+
+      scope.setContext('db_error_details', {
+        parameterCount: exception.parameters?.length ?? 0,
+      });
+
+      Sentry.captureException(exception);
     });
   }
 }

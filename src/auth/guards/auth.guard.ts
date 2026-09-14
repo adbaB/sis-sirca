@@ -2,7 +2,9 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import * as Sentry from '@sentry/nestjs';
 import { IS_PUBLIC_KEY } from '../decorators';
+import { setContextUser } from '../../common/context/request-context';
 
 export interface JwtPayload {
   userId: string;
@@ -40,6 +42,9 @@ export class AuthGuard implements CanActivate {
       const payload: JwtPayload = await this.jwtService.verifyAsync(token);
       // Inyectar el payload en request.user
       request['user'] = payload;
+      // Propagar al contexto de ALS y a Sentry
+      setContextUser(payload);
+      Sentry.setUser({ id: payload.userId, role: payload.roleId });
     } catch {
       throw new UnauthorizedException('Token de autenticación inválido o expirado.');
     }

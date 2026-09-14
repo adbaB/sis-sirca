@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DateTime } from 'luxon';
-import { DataSource, EntityManager, In, LessThanOrEqual, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Advisor } from '../../advisors/entities/advisor.entity';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
-import { CARACAS_ZONE, formatDateES, getCaracasNow } from '../../common/utils/date.util';
+import { CARACAS_ZONE, getCaracasNow } from '../../common/utils/date.util';
 import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
@@ -13,11 +13,9 @@ import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractReactivationService } from './contract-reactivation.service';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
-import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
-import { PaymentStatus } from '../../billing/payments/entities/payment.entity';
-import { Role } from '../../roles/entities/role.entity';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 
 @Injectable()
@@ -32,6 +30,7 @@ export class ContractLifecycleService {
     @InjectRepository(AffiliationHistory)
     private readonly affiliationHistoryRepository: Repository<AffiliationHistory>,
     private readonly dataSource: DataSource,
+    private readonly reactivationService: ContractReactivationService,
   ) {}
 
   /**
@@ -179,104 +178,7 @@ export class ContractLifecycleService {
     contractId: string,
     manager?: EntityManager,
   ): Promise<Date | null> {
-    const em = manager ?? this.dataSource.manager;
-    const contractRepo = em.getRepository(Contract);
-
-    const contract = await contractRepo.findOne({
-      where: { id: contractId },
-    });
-
-    if (!contract || contract.status !== ContractStatus.SUSPENDED) {
-      return null;
-    }
-
-    const now = getCaracasNow();
-    const nowDate = now.toJSDate();
-
-    // 1. Obtener todas las facturas del contrato ordenadas por fecha de vencimiento
-    const invoices = await em.find(Invoice, {
-      where: { contract: { id: contractId } },
-      relations: ['payments'],
-      order: { dueDate: 'DESC' },
-    });
-
-    if (!invoices || invoices.length === 0) {
-      contract.reactivationEligibleAt = null;
-      await contractRepo.save(contract);
-      return null;
-    }
-
-    // Facturas vencidas que no están completamente pagadas (PENDING o PARTIAL con dueDate <= nowDate)
-    const overdueInvoices = invoices.filter(
-      (inv) =>
-        (inv.status === InvoiceStatus.PENDING || inv.status === InvoiceStatus.PARTIAL) &&
-        inv.dueDate &&
-        new Date(inv.dueDate) <= nowDate,
-    );
-
-    // Calcular deuda vencida pendiente vs pagos en PROCESSING
-    let totalOverdueRemaining = 0;
-    let totalProcessingOnOverdue = 0;
-
-    for (const inv of overdueInvoices) {
-      const totalAmount = Number(inv.totalAmount);
-      const retentionAmount = Number(inv.retentionAmount || 0);
-      const paidAmount = Number(inv.paidAmount || 0);
-      const amountDue = Math.max(0, totalAmount - retentionAmount - paidAmount);
-      totalOverdueRemaining += amountDue;
-
-      const processingPayments = (inv.payments || []).filter(
-        (p) => p.status === PaymentStatus.PROCESSING && !p.deletedAt,
-      );
-      for (const p of processingPayments) {
-        totalProcessingOnOverdue += Number(p.amount);
-      }
-    }
-
-    // ¿La deuda vencida está cubierta por pagos COMPLETED o PROCESSING?
-    const isCovered =
-      overdueInvoices.length === 0 || totalProcessingOnOverdue >= totalOverdueRemaining;
-
-    if (!isCovered) {
-      contract.reactivationEligibleAt = null;
-      await contractRepo.save(contract);
-      return null;
-    }
-
-    // Buscar el operationDate más reciente entre los pagos activos (COMPLETED o PROCESSING)
-    let latestOperationDate: Date | null = null;
-    for (const inv of invoices) {
-      for (const p of inv.payments || []) {
-        if (
-          (p.status === PaymentStatus.COMPLETED || p.status === PaymentStatus.PROCESSING) &&
-          !p.deletedAt
-        ) {
-          const dateVal = p.operationDate ?? p.paymentDate;
-          if (dateVal) {
-            const d = new Date(dateVal);
-            if (!latestOperationDate || d > latestOperationDate) {
-              latestOperationDate = d;
-            }
-          }
-        }
-      }
-    }
-
-    if (!latestOperationDate) {
-      contract.reactivationEligibleAt = null;
-      await contractRepo.save(contract);
-      return null;
-    }
-
-    // 7 días corridos a partir del operation_date
-    const eligibleAt = DateTime.fromJSDate(latestOperationDate)
-      .setZone(CARACAS_ZONE)
-      .plus({ days: 7 })
-      .toJSDate();
-
-    contract.reactivationEligibleAt = eligibleAt;
-    await contractRepo.save(contract);
-    return eligibleAt;
+    return this.reactivationService.syncReactivationEligibility(contractId, manager);
   }
 
   /**
@@ -310,76 +212,14 @@ export class ContractLifecycleService {
       throw new BadRequestException('El contrato ya se encuentra activo.');
     }
 
-    // Verificar si el usuario cuenta con el permiso de excepción override:contract-reactivation
-    let hasOverridePermission = false;
-    if (user?.roleId) {
-      const roleRepo = manager.getRepository(Role);
-      const role = await roleRepo.findOne({
-        where: { id: user.roleId },
-        relations: ['permissions'],
-      });
-      if (role && role.permissions) {
-        hasOverridePermission = role.permissions.some(
-          (p) => p.name === 'override:contract-reactivation',
-        );
-      }
-    }
-
-    // Validar reglas si el contrato proviene de SUSPENDED
+    // Validar reglas si el contrato proviene de SUSPENDED (solvencia, carencia de 7 días, o bypass con motivo)
     if (lockedContract.status === ContractStatus.SUSPENDED) {
-      const now = getCaracasNow();
-      const nowDate = now.toJSDate();
-
-      // Verificar facturas vencidas impagas (status PENDING o PARTIAL con dueDate <= nowDate)
-      const invoiceRepo = manager.getRepository(Invoice);
-      const overdueUnpaidCount = await invoiceRepo.count({
-        where: {
-          contract: { id: contractId },
-          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
-          dueDate: LessThanOrEqual(nowDate),
-        },
-      });
-
-      const hasDebt = overdueUnpaidCount > 0;
-      const isCooldownActive =
-        !lockedContract.reactivationEligibleAt ||
-        new Date(lockedContract.reactivationEligibleAt) > nowDate;
-
-      const isBypassNeeded = hasDebt || isCooldownActive;
-
-      if (isBypassNeeded) {
-        if (!hasOverridePermission) {
-          if (hasDebt) {
-            throw new BadRequestException(
-              `El contrato tiene ${overdueUnpaidCount} factura(s) vencida(s) pendiente(s). Debe estar solvente para ser reactivado.`,
-            );
-          }
-          if (isCooldownActive) {
-            const formattedDate = lockedContract.reactivationEligibleAt
-              ? formatDateES(
-                  DateTime.fromJSDate(new Date(lockedContract.reactivationEligibleAt)).setZone(
-                    CARACAS_ZONE,
-                  ),
-                  'dd/MM/yyyy',
-                )
-              : 'fecha por definir tras reporte de pago';
-            throw new BadRequestException(
-              `El contrato se encuentra en período de carencia post-suspensión. Podrá ser reactivado a partir del ${formattedDate}.`,
-            );
-          }
-        }
-
-        // Si tiene permiso de override (Bypass), el motivo (reason) es estrictamente OBLIGATORIO
-        if (!dto?.reason || !dto.reason.trim()) {
-          throw new BadRequestException(
-            'Se requiere especificar un motivo (reason) para ejecutar la reactivación por excepción médica/administrativa.',
-          );
-        }
-
-        this.logger.warn(
-          `Bypass de reactivación ejecutado para contrato ${lockedContract.code} por usuario ${user?.userId ?? 'sistema'}. Motivo: ${dto.reason.trim()}`,
-        );
-      }
+      await this.reactivationService.validateReactivationEligibility(
+        lockedContract,
+        dto,
+        user,
+        manager,
+      );
     }
 
     const previousStatus = lockedContract.status;

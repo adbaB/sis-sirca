@@ -8,6 +8,7 @@ import { Contract } from '../contracts/entities/contract.entity';
 import { EmailModule } from '../email/email.module';
 import { PdfModule } from '../pdf/pdf.module';
 import { AwsModule } from '../aws/aws.module';
+import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AwsModule } from '../aws/aws.module';
     EmailModule,
     AwsModule,
     PdfModule,
+    ExchangeRateModule,
   ],
   providers: [PaymentPdfCron, GenerateMonthlyInvoices],
   exports: [],

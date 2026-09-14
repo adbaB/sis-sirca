@@ -6,12 +6,15 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractLifecycleService } from '../services/contract-lifecycle.service';
+import { ContractReactivationService } from '../services/contract-reactivation.service';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { Role } from '../../roles/entities/role.entity';
+import { DateTime } from 'luxon';
+import { CARACAS_ZONE } from '../../common/utils/date.util';
 
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
@@ -61,6 +64,7 @@ describe('ContractLifecycleService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractLifecycleService,
+        ContractReactivationService,
         {
           provide: getRepositoryToken(Contract),
           useValue: {
@@ -588,6 +592,8 @@ describe('ContractLifecycleService', () => {
         em as unknown as EntityManager,
       );
       expect(result).toBeInstanceOf(Date);
+      const expected = DateTime.fromJSDate(opDate).setZone(CARACAS_ZONE).plus({ days: 7 });
+      expect(DateTime.fromJSDate(result as Date).toMillis()).toBe(expected.toMillis());
       expect(saveMock).toHaveBeenCalled();
       expect(mockSuspended.reactivationEligibleAt).toBeInstanceOf(Date);
     });

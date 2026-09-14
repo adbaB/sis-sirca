@@ -1,7 +1,13 @@
 import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import { Observable, finalize } from 'rxjs';
 import { DataSource } from 'typeorm';
-import { generateRequestId, requestContextStorage } from '../context/request-context';
+import { Request, Response } from 'express';
+import * as Sentry from '@sentry/nestjs';
+import {
+  generateRequestId,
+  requestContextStorage,
+  RequestContext,
+} from '../context/request-context';
 
 const TIMEOUT_WARNING_MS = 30_000;
 
@@ -27,7 +33,28 @@ export class ContextInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const requestId = generateRequestId();
+    const httpCtx = executionContext.switchToHttp();
+    const req = httpCtx.getRequest<Request>();
+    const res = httpCtx.getResponse<Response>();
+
+    // Priorizar requestId de cabecera entrante (API Gateway, Cloudflare, etc.)
+    const headerReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
+    const requestId =
+      typeof headerReqId === 'string' && headerReqId.trim().length > 0
+        ? headerReqId
+        : generateRequestId();
+
+    // Establecer cabecera de respuesta para correlación por parte del cliente
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('X-Request-Id', requestId);
+    }
+
+    // Capturar traceId de Sentry/OpenTelemetry si hay un span activo
+    const activeSpan = Sentry.getActiveSpan();
+    const spanJson = activeSpan ? Sentry.spanToJSON(activeSpan) : null;
+    const traceId = spanJson?.trace_id;
+
+    const user = (req as unknown as { user?: { userId: string; roleId: string } })?.user;
     const startTime = Date.now();
 
     // Crear y conectar el QueryRunner dedicado para este request.
@@ -41,10 +68,12 @@ export class ContextInterceptor implements NestInterceptor {
       );
     }, TIMEOUT_WARNING_MS);
 
-    const ctx = {
+    const ctx: RequestContext = {
       queryRunner,
       requestId,
       startTime,
+      traceId,
+      user,
     };
 
     return new Observable((subscriber) => {

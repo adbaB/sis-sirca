@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { SentryCron } from '@sentry/nestjs';
+import * as Sentry from '@sentry/nestjs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../../contracts/entities/contract.entity';
@@ -17,7 +19,14 @@ export class GenerateMonthlyInvoices {
     private readonly invoiceGenerationService: InvoiceGenerationService,
   ) {}
 
-  @Cron('1 0 25 * *')
+  @Cron('1 0 25 * *', { timeZone: 'America/Caracas' })
+  @SentryCron('generate-monthly-invoices', {
+    schedule: {
+      type: 'crontab',
+      value: '1 0 25 * *',
+    },
+    timezone: 'America/Caracas',
+  })
   async generateMonthlyInvoices() {
     this.logger.log('Starting monthly invoice generation...');
 
@@ -116,6 +125,14 @@ export class GenerateMonthlyInvoices {
         `Error processing contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
       );
+
+      Sentry.withScope((scope) => {
+        scope.setTag('cron', 'generate-monthly-invoices');
+        scope.setTag('contractId', contract.id);
+        scope.setTag('contractCode', contract.code);
+        scope.setExtra('billingMonth', billingMonth);
+        Sentry.captureException(error);
+      });
     }
   }
 }

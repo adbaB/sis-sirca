@@ -34,12 +34,14 @@ import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractCreationService } from './contract-creation.service';
 import { ContractLifecycleService } from './contract-lifecycle.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { ContractReactivationService } from './contract-reactivation.service';
 import { ContractStatisticsService } from './contract-statistics.service';
 import { HealthExclusionsService } from './health-exclusions.service';
 import {
   EvaluateHealthExclusionsDto,
   HealthExclusionEvaluationResult,
 } from '../dto/evaluate-health-exclusions.dto';
+import { ContractVerificationService } from './contract-verification.service';
 
 export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationStatsResult };
 
@@ -48,20 +50,25 @@ export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationSt
  *
  * Preserves 100% backward compatibility for all consumers (controllers, crons, PersonsService)
  * while delegating internally to specialized, single-responsibility domain services:
- * - `ContractCreationService`   → Contract creation & affiliate onboarding
- * - `ContractLifecycleService`  → Activation, inactivation, updates & soft-deletes
- * - `ContractAffiliationService`→ Beneficiaries, titular toggling, billing owners & recalculations
- * - `ContractPdfService`        → Template formatting, PDF generation & S3 storage
- * - `ContractStatisticsService` → Pipeline classification & affiliation period analytics
- * - `ContractQueryRepository`   → Query building, pagination & stage filters
+ * - `ContractCreationService`    → Contract creation & affiliate onboarding
+ * - `ContractLifecycleService`   → Activation, inactivation, updates & soft-deletes
+ * - `ContractReactivationService`→ Cooldown tracking, reactivation eligibility & exception override
+ * - `ContractAffiliationService` → Beneficiaries, titular toggling, billing owners & recalculations
+ * - `ContractVerificationService`→ Person, contract & unified identity verification
+ * - `ContractPdfService`         → Template formatting, PDF generation & S3 storage
+ * - `ContractStatisticsService`  → Pipeline classification & affiliation period analytics
+ * - `ContractQueryRepository`    → Query building, pagination & stage filters
  * - `HealthExclusionsService`   → Pre-evaluation & health exclusions persistence
+>>>>>>> 46842703045da2579f92f0bc17fe53bb3743035c
  */
 @Injectable()
 export class ContractsService {
   constructor(
     private readonly creationService: ContractCreationService,
     private readonly lifecycleService: ContractLifecycleService,
+    private readonly reactivationService: ContractReactivationService,
     private readonly affiliationService: ContractAffiliationService,
+    private readonly verificationService: ContractVerificationService,
     private readonly pdfService: ContractPdfService,
     private readonly statisticsService: ContractStatisticsService,
     private readonly queryRepository: ContractQueryRepository,
@@ -117,7 +124,7 @@ export class ContractsService {
     contractId: string,
     manager?: EntityManager,
   ): Promise<Date | null> {
-    return this.lifecycleService.syncReactivationEligibility(contractId, manager);
+    return this.reactivationService.syncReactivationEligibility(contractId, manager);
   }
 
   async setAdvisor(contractId: string, advisorId: string | null): Promise<void> {
@@ -191,14 +198,14 @@ export class ContractsService {
     typeIdentityCard: TypeIdentityCard,
     identityCard: string,
   ): Promise<PersonVerificationResult> {
-    return this.affiliationService.verifyPersonAffiliation(typeIdentityCard, identityCard);
+    return this.verificationService.verifyPersonAffiliation(typeIdentityCard, identityCard);
   }
 
   async verifyContractByCode(code: string): Promise<ContractVerificationResult> {
-    return this.affiliationService.verifyContractByCode(code);
+    return this.verificationService.verifyContractByCode(code);
   }
 
   async verifyUnified(query: string): Promise<UnifiedVerificationResult> {
-    return this.affiliationService.verifyUnified(query);
+    return this.verificationService.verifyUnified(query);
   }
 }

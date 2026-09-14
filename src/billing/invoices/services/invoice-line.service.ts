@@ -174,7 +174,7 @@ export class InvoiceLineService {
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
     const activeManager = manager ?? qr?.manager;
-    if (!activeManager) {
+    if (!activeManager?.queryRunner?.isTransactionActive) {
       throw new Error('Transaction required for removeAffiliateLineFromActiveInvoice');
     }
     const invoiceRepo = activeManager.getRepository(Invoice);
@@ -358,6 +358,7 @@ export class InvoiceLineService {
    * agrega una línea INCLUSION para el afiliado incorporado recientemente,
    * siempre que no cuente ya con una línea MENSUALIDAD.
    */
+  @Transactional()
   async addAffiliateInclusionLineToActiveInvoice(
     contractId: string,
     person: Person,
@@ -365,7 +366,10 @@ export class InvoiceLineService {
     manager?: EntityManager,
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
-    const activeManager = manager ?? qr?.manager ?? this.dataSource.manager;
+    const activeManager = manager ?? qr?.manager;
+    if (!activeManager?.queryRunner?.isTransactionActive) {
+      throw new Error('Transaction required for addAffiliateInclusionLineToActiveInvoice');
+    }
     const invoiceRepo = activeManager.getRepository(Invoice);
     const invoiceLineRepo = activeManager.getRepository(InvoiceLine);
 

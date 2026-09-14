@@ -5,12 +5,13 @@ import { Invoice } from '../entities/invoice.entity';
 import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 import { PaymentStatus } from '../../payments/entities/payment.entity';
 import { PdfService } from '../../../pdf/services/pdf.service';
+import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { formatDateES, getCaracasDateTime, getCaracasNow } from '../../../common/utils/date.util';
 import { fetchReceiptAsBase64 } from '../../utils/image-fetcher.util';
 import { extractOcrDisplayFields } from '../../utils/ocr-display.util';
 
 /**
- * Servicio responsable de la generación del PDF de una factura.
+ * Servicio dedicado a la generación y construcción del PDF de facturas.
  *
  * Al extraer esta responsabilidad fuera de `InvoiceService`, se elimina
  * el antipatrón de pasar `PdfService` como parámetro de método para evitar
@@ -32,6 +33,7 @@ export class InvoicePdfService {
     @InjectRepository(Invoice)
     private readonly invoiceRepository: Repository<Invoice>,
     private readonly pdfService: PdfService,
+    private readonly exchangeRateService: ExchangeRateService,
   ) {}
 
   /**
@@ -131,8 +133,10 @@ export class InvoicePdfService {
         const amountDue = Math.max(0, totalAmount - retentionAmount);
         const amountUnpaid = Math.max(0, amountDue - Number(invoice.paidAmount));
 
-        const exchangeRate =
-          amountBsRaw > 0 && amountUsd > 0 ? (amountBsRaw / amountUsd).toFixed(4) : null;
+        const numericRate = payment
+          ? await this.exchangeRateService.resolvePaymentExchangeRate(payment)
+          : null;
+        const exchangeRateUsdToBs = numericRate !== null ? formatted.format(numericRate) : null;
 
         // Descargar imagen del recibo como base64 para Puppeteer
         const receiptUrl = payment?.url
@@ -161,7 +165,7 @@ export class InvoicePdfService {
           referenceNumber: payment?.referenceNumber ?? '',
           amountUsd: formatted.format(amountUsd),
           amountBs: amountBsRaw > 0 ? formatted.format(amountBsRaw) : null,
-          exchangeRateUsdToBs: exchangeRate ? formatted.format(Number(exchangeRate)) : null,
+          exchangeRateUsdToBs,
           totalAmount: formatted.format(totalAmount),
           retentionPercentage: invoice.retentionPercentage
             ? formatted.format(Number(invoice.retentionPercentage))

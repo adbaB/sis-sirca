@@ -7,7 +7,7 @@ import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { InvoiceQueryRepository } from '../repositories/invoice-query.repository';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
-import { Contract } from 'src/contracts/entities/contract.entity';
+import { Contract } from '../../../contracts/entities/contract.entity';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 

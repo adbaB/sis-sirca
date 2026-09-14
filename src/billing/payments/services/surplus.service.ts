@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import * as Sentry from '@sentry/nestjs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, QueryRunner, Repository } from 'typeorm';
 import { getCaracasTodayJSDate } from '../../../common/utils/date.util';
@@ -189,6 +190,13 @@ export class SurplusService {
         this.logger.error(
           `[surplus] Error aplicando excedentes para factura ${event.invoiceId}: ${err instanceof Error ? err.message : String(err)}`,
         );
+
+        Sentry.withScope((scope) => {
+          scope.setTag('event', INVOICE_CREATED);
+          scope.setTag('contractId', event.contractId);
+          scope.setTag('invoiceId', event.invoiceId);
+          Sentry.captureException(err);
+        });
       });
     });
   }

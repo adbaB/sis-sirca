@@ -100,7 +100,7 @@ Un método auxiliar (ej. `syncContractReactivationEligibility(contractId, manage
 3. **Rechazo de Pago (`PaymentStateService.rejectPayment`):** Si el rechazo genera un descubierto en las facturas vencidas, anula `reactivation_eligible_at = null`.
 
 ### 3.3 Cron de Reactivación (`ContractReactivationCron`)
-* **Ubicación:** `src/billing/crons/contract-reactivation.cron.ts`
+* **Ubicación:** `src/contracts/crons/contract-reactivation.cron.ts`
 * **Programación:** `@Cron('0 2 * * *')` (2:00 AM America/Caracas).
 * **Comportamiento:**
   1. Busca en bloques (`take: 100`) contratos `status = 'SUSPENDED'` con `reactivation_eligible_at <= NOW()`.

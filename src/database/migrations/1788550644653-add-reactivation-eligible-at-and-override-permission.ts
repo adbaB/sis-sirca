@@ -38,14 +38,23 @@ export class AddReactivationEligibleAtAndOverridePermission1788550644653 impleme
   public async down(queryRunner: QueryRunner): Promise<void> {
     const permissionName = 'override:contract-reactivation';
 
-    // 1. Eliminar asignación a roles
+    // 1. Eliminar asignación únicamente para el rol admin
     await queryRunner.query(
-      `DELETE FROM "role_permissions" WHERE permission_id = (SELECT id FROM "permissions" WHERE name = $1)`,
+      `DELETE FROM "role_permissions"
+       WHERE role_id = (SELECT id FROM "roles" WHERE name = 'admin')
+         AND permission_id = (SELECT id FROM "permissions" WHERE name = $1)`,
       [permissionName],
     );
 
-    // 2. Eliminar permiso
-    await queryRunner.query(`DELETE FROM "permissions" WHERE name = $1`, [permissionName]);
+    // 2. Eliminar permiso únicamente si ya no está asignado a ningún otro rol
+    await queryRunner.query(
+      `DELETE FROM "permissions"
+       WHERE name = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM "role_permissions" rp WHERE rp.permission_id = "permissions".id
+         )`,
+      [permissionName],
+    );
 
     // 3. Eliminar índice
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_contracts_status_reactivation_eligible_at"`);
