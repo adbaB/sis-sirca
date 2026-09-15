@@ -211,6 +211,9 @@ describe('ContractCreationService', () => {
             name: 'Maria Beneficiaria',
             role: PersonRole.AFILIADO,
             planId: 'plan-1',
+            birthDate: '1995-05-15',
+            weight: 65,
+            height: 1.65,
           },
         ],
       };
@@ -373,6 +376,102 @@ describe('ContractCreationService', () => {
       });
 
       expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ cutoffDay: 15 }));
+    });
+
+    it('should assign contract affiliationDate or affiliate specific affiliationDate to contract persons', async () => {
+      const mockCounter = { key: 'contract_code', value: 1 };
+      const mockSavedPerson1 = {
+        id: 'p-1',
+        identityCard: '12345678',
+        typeIdentityCard: 'V',
+        name: 'Carlos Titular',
+      };
+      const mockSavedPerson2 = {
+        id: 'p-2',
+        identityCard: '87654321',
+        typeIdentityCard: 'V',
+        name: 'Maria Beneficiaria',
+      };
+
+      const createdContractPersons: Partial<ContractPerson>[] = [];
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Advisor) return { findOne: jest.fn().mockResolvedValue(mockAdvisor) };
+        if (entity === SystemCounter) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockCounter),
+            save: jest.fn().mockResolvedValue(mockCounter),
+          };
+        }
+        if (entity === Contract) {
+          return {
+            create: jest.fn().mockReturnValue(mockContract),
+            save: jest.fn().mockResolvedValue(mockContract),
+            findOne: jest.fn().mockResolvedValue(mockContract),
+          };
+        }
+        if (entity === Person) {
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockImplementation(async (p) => {
+              if (p.identityCard === '12345678') return mockSavedPerson1;
+              return mockSavedPerson2;
+            }),
+          };
+        }
+        if (entity === ContractPerson) {
+          return {
+            find: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockImplementation((val) => {
+              createdContractPersons.push(val);
+              return val;
+            }),
+            save: jest.fn().mockImplementation(async (val) => ({ id: 'cp-saved', ...val })),
+          };
+        }
+        if (entity === AffiliationHistory) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue(true),
+          };
+        }
+        if (entity === HealthDeclaration) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }
+        return {};
+      });
+
+      await service.createFull({
+        affiliationDate: '2026-08-01',
+        advisorId: 'adv-1',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Carlos Titular',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '87654321',
+            name: 'Maria Beneficiaria',
+            role: PersonRole.AFILIADO,
+            planId: 'plan-1',
+            affiliationDate: '2026-08-15',
+            birthDate: '1995-05-15',
+            weight: 65,
+            height: 1.65,
+          },
+        ],
+      });
+
+      expect(createdContractPersons).toHaveLength(2);
+      expect(createdContractPersons[0].affiliationDate).toBe(mockContract.affiliationDate);
+      expect(createdContractPersons[1].affiliationDate).toBe('2026-08-15');
     });
   });
 });

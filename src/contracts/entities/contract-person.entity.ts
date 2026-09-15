@@ -49,6 +49,7 @@ export enum Parentesco {
 @Index('IDX_contract_persons_contract_id', ['contract'])
 @Index('IDX_contract_persons_person_id', ['person'])
 @Index('IDX_contract_persons_plan_id', ['plan'])
+@Index('IDX_contract_persons_affiliation_date', ['affiliationDate'])
 export class ContractPerson {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -73,6 +74,9 @@ export class ContractPerson {
 
   @Column({ type: 'boolean', default: false, name: 'is_billing_owner' })
   isBillingOwner: boolean;
+
+  @Column({ type: 'date', name: 'affiliation_date' })
+  affiliationDate: Date;
 
   @OneToMany('HealthDeclaration', (hd: HealthDeclaration) => hd.contractPerson)
   healthDeclarations?: HealthDeclaration[];

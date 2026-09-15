@@ -88,13 +88,24 @@ describe('ContractPdfService', () => {
       expect(res).toBeNull();
     });
 
-    it('should generate PDF buffer successfully', async () => {
-      contractsRepository.findOne.mockResolvedValue(mockContract);
+    it('should generate PDF buffer successfully with formatted start, expiration dates and advisor details', async () => {
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        startDate: new Date('2026-06-28'),
+        expirationDate: new Date('2027-05-31'),
+        advisor: { id: 'adv-1', code: 'ADV-001', name: 'Asesor Carlos' },
+      } as unknown as Contract);
       const res = await service.generateContractPdfBuffer('contract-1');
       expect(res).toBeInstanceOf(Buffer);
       expect(pdfService.generatePdf).toHaveBeenCalledWith(
         'contract-affiliation',
-        expect.any(Object),
+        expect.objectContaining({
+          contractCode: 'SIR-001-00001',
+          startDateFormatted: '28-06-2026',
+          expirationDateFormatted: '31-05-2027',
+          advisorCode: 'ADV-001',
+          advisorName: 'Asesor Carlos',
+        }),
       );
     });
   });

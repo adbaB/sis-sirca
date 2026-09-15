@@ -87,6 +87,13 @@ export class UpdateBeneficiaryDto {
   @IsOptional()
   planId?: string;
 
+  @IsDateString(
+    {},
+    { message: 'La fecha de afiliación debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  @IsOptional()
+  affiliationDate?: string;
+
   @IsEnum(Parentesco)
   @IsOptional()
   relationship?: Parentesco;

@@ -77,12 +77,15 @@ export interface ContractPdfTemplateData {
   [key: string]: unknown;
   contractCode: string;
   affiliationDateFormatted: string;
+  startDateFormatted?: string;
+  expirationDateFormatted?: string;
   logoBase64: string;
   titular: TitularPdfData;
   planName: string;
   beneficiaries: BeneficiaryPdfRow[];
   emptyRows: string[];
   healthQuestions: HealthQuestionPdfItem[];
+  advisorCode?: string;
   advisorName: string;
   dayText: string;
   dayNumber: number;

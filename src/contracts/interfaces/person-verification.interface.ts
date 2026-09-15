@@ -17,6 +17,7 @@ export interface ContractBeneficiaryItem {
   typeIdentityCard: TypeIdentityCard;
   identityCard: string;
   birthDate?: Date;
+  affiliationDate?: Date;
   phone?: string;
   relationship?: Parentesco;
   planName: string | null;

@@ -11,6 +11,7 @@ import {
   IsString,
   IsUUID,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PersonRole, Parentesco } from '../entities/contract-person.entity';
@@ -31,8 +32,9 @@ export class AffiliatePersonDto {
   @IsNotEmpty()
   name: string;
 
-  @IsDateString()
-  @IsOptional()
+  @ValidateIf((o: AffiliatePersonDto) => !!o.planId || o.birthDate !== undefined)
+  @IsNotEmpty({ message: 'La fecha de nacimiento es requerida si tiene un plan asociado.' })
+  @IsDateString({}, { message: 'La fecha de nacimiento debe tener un formato de fecha válido.' })
   birthDate?: string;
 
   @IsBoolean()
@@ -47,6 +49,13 @@ export class AffiliatePersonDto {
   @IsEnum(PersonRole)
   @IsNotEmpty()
   role: PersonRole;
+
+  @IsDateString(
+    {},
+    { message: 'La fecha de afiliación debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  @IsOptional()
+  affiliationDate?: string;
 
   @IsBoolean()
   @IsOptional()
@@ -84,14 +93,16 @@ export class AffiliatePersonDto {
   @IsOptional()
   postalCode?: string;
 
-  @IsNumber()
-  @Min(0.01)
-  @IsOptional()
+  @ValidateIf((o: AffiliatePersonDto) => !!o.planId || o.weight !== undefined)
+  @IsNotEmpty({ message: 'El peso es requerido si tiene un plan asociado.' })
+  @IsNumber({}, { message: 'El peso debe ser un número válido.' })
+  @Min(0.01, { message: 'El peso debe ser mayor a 0.' })
   weight?: number;
 
-  @IsNumber()
-  @Min(0.01)
-  @IsOptional()
+  @ValidateIf((o: AffiliatePersonDto) => !!o.planId || o.height !== undefined)
+  @IsNotEmpty({ message: 'La talla es requerida si tiene un plan asociado.' })
+  @IsNumber({}, { message: 'La talla debe ser un número válido.' })
+  @Min(0.01, { message: 'La talla debe ser mayor a 0.' })
   height?: number;
 
   @IsString()

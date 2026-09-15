@@ -93,7 +93,7 @@ export class ContractVerificationService {
         status: cp.contract.status,
         isSuspended: cp.contract.status === ContractStatus.SUSPENDED,
         isEligible,
-        affiliationDate: cp.contract.affiliationDate,
+        affiliationDate: cp.affiliationDate ?? cp.contract.affiliationDate,
         planName: cp.plan?.name ?? cp.person?.plan?.name ?? null,
       });
     }
@@ -162,6 +162,7 @@ export class ContractVerificationService {
             typeIdentityCard: bPerson?.typeIdentityCard,
             identityCard: bPerson?.identityCard,
             birthDate: bPerson?.birthDate,
+            affiliationDate: bcp.affiliationDate ?? contract.affiliationDate,
             phone: bPerson?.phone,
             relationship: bcp.relationship,
             planName: plan?.name ?? null,
@@ -258,6 +259,7 @@ export class ContractVerificationService {
         typeIdentityCard: person?.typeIdentityCard,
         identityCard: person?.identityCard,
         birthDate: person?.birthDate,
+        affiliationDate: cp.affiliationDate ?? contract.affiliationDate,
         phone: person?.phone,
         relationship: cp.relationship,
         planName: plan?.name ?? null,

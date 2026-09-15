@@ -4,6 +4,7 @@ import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
+import { getCaracasNow } from '../../common/utils/date.util';
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
@@ -59,7 +60,7 @@ export class ContractAffiliationService {
       throw new NotFoundException(`Contract with ID "${contractId}" not found`);
     }
 
-    const { planId, role, isBillingOwner, relationship, healthDeclarations } = dto;
+    const { planId, role, isBillingOwner, relationship, healthDeclarations, affiliationDate } = dto;
     const personFields = {
       name: dto.name,
       typeIdentityCard: dto.typeIdentityCard,
@@ -141,6 +142,9 @@ export class ContractAffiliationService {
       contract.code,
     );
 
+    const resolvedAffiliationDate =
+      affiliationDate ?? contract.affiliationDate ?? getCaracasNow().toISODate()!;
+
     // 7. Crear y guardar ContractPerson
     const contractPerson = cpRepo.create({
       contract,
@@ -149,6 +153,7 @@ export class ContractAffiliationService {
       isBillingOwner: isBillingOwner ?? false,
       relationship,
       plan: resolvedRole === PersonRole.AFILIADO ? plan : null,
+      affiliationDate: resolvedAffiliationDate,
     });
     const savedCp = await cpRepo.save(contractPerson);
 
@@ -453,6 +458,11 @@ export class ContractAffiliationService {
     // 4. Update relationship if provided
     if (dto.relationship !== undefined) {
       contractPerson.relationship = dto.relationship;
+    }
+
+    // Update affiliationDate if provided
+    if (dto.affiliationDate !== undefined) {
+      contractPerson.affiliationDate = dto.affiliationDate as unknown as Date;
     }
 
     // 5. Update plan if provided

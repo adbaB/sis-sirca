@@ -53,10 +53,12 @@ describe('ContractsController', () => {
             create: jest.fn(),
             createFull: jest.fn(),
             findAll: jest.fn(),
+            findRenewals: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
             remove: jest.fn(),
             inactivate: jest.fn(),
+            renew: jest.fn(),
             activate: jest.fn(),
             addBeneficiary: jest.fn(),
             updateBeneficiary: jest.fn(),
@@ -170,6 +172,29 @@ describe('ContractsController', () => {
     });
   });
 
+  describe('findRenewals', () => {
+    it('should return a paginated result with counts for renewals', async () => {
+      const renewalsResult = {
+        data: [mockContract],
+        counts: { expiringSoon: 1, pendingRenewal: 0 },
+        meta: {
+          totalItems: 1,
+          itemCount: 1,
+          itemsPerPage: 10,
+          totalPages: 1,
+          currentPage: 1,
+        },
+      };
+
+      jest.spyOn(service, 'findRenewals').mockResolvedValue(renewalsResult);
+
+      const result = await controller.findRenewals({});
+
+      expect(service.findRenewals).toHaveBeenCalledWith({});
+      expect(result).toEqual(renewalsResult);
+    });
+  });
+
   describe('findOne', () => {
     it('should return a single contract', async () => {
       jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
@@ -205,6 +230,18 @@ describe('ContractsController', () => {
       await controller.remove('1');
 
       expect(service.remove).toHaveBeenCalledWith('1');
+    });
+  });
+
+  describe('renew', () => {
+    it('should delegate renewing a contract to service.renew', async () => {
+      const dto = { startDate: '2026-09-01', expirationDate: '2027-09-01' };
+      jest.spyOn(service, 'renew').mockResolvedValue(mockContract);
+
+      const result = await controller.renew('1', dto);
+
+      expect(service.renew).toHaveBeenCalledWith('1', dto);
+      expect(result).toEqual(mockContract);
     });
   });
 

@@ -19,6 +19,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { generateContractCode } from '../helpers/contract-code-generator.helper';
+import { calculateContractExpirationDate } from '../helpers/contract-date-formatter.helper';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 import { validateContractAffiliates } from '../helpers/contract-validator.helper';
 import { ContractAffiliationService } from './contract-affiliation.service';
@@ -65,8 +66,21 @@ export class ContractCreationService {
     // 2. Generate code and create contract entity
     const { generatedCode, advisor } = await generateContractCode(manager, advisorId);
 
+    const effectiveStartDate = dto.startDate ? dto.startDate : dto.affiliationDate;
+    const effectiveExpirationDate = dto.expirationDate
+      ? dto.expirationDate
+      : calculateContractExpirationDate(effectiveStartDate);
+
+    if (effectiveExpirationDate < effectiveStartDate) {
+      throw new BadRequestException(
+        'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
+      );
+    }
+
     const contract = contractRepo.create({
       ...contractData,
+      startDate: effectiveStartDate ? new Date(effectiveStartDate) : undefined,
+      expirationDate: effectiveExpirationDate ? new Date(effectiveExpirationDate) : undefined,
       code: generatedCode,
       advisor,
       ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
@@ -97,6 +111,7 @@ export class ContractCreationService {
         occupation,
         legalRepresentative,
         healthDeclarations,
+        affiliationDate,
       } = affiliate;
 
       // Check if person exists (lock row for updates to prevent race conditions)
@@ -202,6 +217,9 @@ export class ContractCreationService {
         ? (isBillingOwner ?? false)
         : role === PersonRole.TITULAR;
 
+      const resolvedAffiliationDate =
+        affiliationDate || savedContract.affiliationDate || contractData.affiliationDate;
+
       const contractPerson = cpRepo.create({
         contract: savedContract,
         person,
@@ -209,6 +227,7 @@ export class ContractCreationService {
         role,
         isBillingOwner: resolvedIsBillingOwner,
         relationship,
+        affiliationDate: resolvedAffiliationDate,
       });
       const savedCp = await cpRepo.save(contractPerson);
 

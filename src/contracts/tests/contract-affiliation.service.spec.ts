@@ -264,6 +264,45 @@ describe('ContractAffiliationService', () => {
         }),
       );
     });
+
+    it('should assign provided affiliationDate to the new contract person', async () => {
+      const mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue({ ...mockContract, affiliationDate: '2025-01-01' }),
+        update: jest.fn().mockResolvedValue(true),
+      };
+      let capturedCp: Partial<ContractPerson>;
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        find: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((val) => {
+          capturedCp = val;
+          return { id: 'cp-new', ...val };
+        }),
+        save: jest.fn().mockImplementation(async (val) => val),
+      };
+      const mockHistoryRepo = {
+        create: jest.fn().mockImplementation((val) => val),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        if (entity === AffiliationHistory) return mockHistoryRepo;
+        return {};
+      });
+
+      plansService.findOne.mockResolvedValue(mockPlan as unknown as Plan);
+      personsService.findByIdentityCard.mockResolvedValue(null);
+      personsService.create.mockResolvedValue(mockCreated);
+
+      await service.addBeneficiary('contract-1', {
+        ...dto,
+        affiliationDate: '2026-09-01',
+      });
+
+      expect(capturedCp.affiliationDate).toBe('2026-09-01');
+    });
   });
 
   describe('removeAffiliate', () => {
@@ -500,6 +539,7 @@ describe('ContractAffiliationService', () => {
         person: { id: 'p-1', name: 'Pedro', plan: mockOldPlan },
         plan: mockOldPlan,
         relationship: undefined,
+        affiliationDate: undefined as unknown as Date,
       };
 
       const mockPersonRepo = { update: jest.fn().mockResolvedValue(true) };
@@ -539,6 +579,7 @@ describe('ContractAffiliationService', () => {
         name: 'Pedro Actualizado',
         relationship: Parentesco.HIJO,
         planId: 'plan-new',
+        affiliationDate: '2026-09-05',
       });
 
       expect(personsService.update).toHaveBeenCalledWith(
@@ -547,6 +588,7 @@ describe('ContractAffiliationService', () => {
         mockManager,
       );
       expect(mockCp.relationship).toBe('HIJO');
+      expect(mockCp.affiliationDate).toBe('2026-09-05');
       expect(mockCp.plan).toEqual(mockNewPlan);
       expect(mockPersonRepo.update).toHaveBeenCalledWith('p-1', { plan: mockNewPlan });
       expect(invoiceService.updatePlanLineOnActiveInvoice).toHaveBeenCalledWith(

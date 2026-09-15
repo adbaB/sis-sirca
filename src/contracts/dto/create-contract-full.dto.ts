@@ -29,6 +29,20 @@ export class CreateContractFullDto {
   @IsNotEmpty()
   affiliationDate: string;
 
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de inicio debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de vencimiento debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  expirationDate?: string;
+
   @IsNotEmpty()
   @IsUUID()
   advisorId: string;

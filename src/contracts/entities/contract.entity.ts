@@ -28,6 +28,9 @@ import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 
 @Entity('contracts')
 @Index('IDX_contracts_status', ['status'])
+@Index('IDX_contracts_status_reactivation_eligible_at', ['status', 'reactivationEligibleAt'], {
+  where: `"status" = 'SUSPENDED'`,
+})
 @Check('CHK_contracts_cutoff_day', '"cutoff_day" >= 1 AND "cutoff_day" <= 31')
 export class Contract {
   @PrimaryGeneratedColumn('uuid')
@@ -70,6 +73,12 @@ export class Contract {
   @Column({ type: 'date', name: 'affiliation_date' })
   affiliationDate: Date;
 
+  @Column({ type: 'date', name: 'start_date', nullable: true })
+  startDate?: Date | null;
+
+  @Column({ type: 'date', name: 'expiration_date', nullable: true })
+  expirationDate?: Date | null;
+
   @Column({
     type: 'decimal',
     precision: 10,
@@ -108,7 +117,7 @@ export class Contract {
   status: ContractStatus;
 
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'inactivation_reason' })
-  inactivationReason: string;
+  inactivationReason?: string | null;
 
   @Column({ type: 'timestamptz', nullable: true, name: 'reactivation_eligible_at' })
   reactivationEligibleAt?: Date | null;
