@@ -9,6 +9,7 @@ import { setContextUser } from '../../common/context/request-context';
 export interface JwtPayload {
   userId: string;
   roleId: string;
+  advisorId?: string | null;
 }
 
 @Injectable()

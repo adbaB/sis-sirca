@@ -302,8 +302,7 @@ export class ContractQueryRepository {
     defaultAdvisorId?: string,
   ): Promise<RenewalsResult> {
     const effectiveAdvisorId = dto.advisorId || defaultAdvisorId;
-    const effectiveExpSql =
-      "COALESCE(contract.expiration_date, (contract.affiliation_date + INTERVAL '1 year')::date)";
+    const effectiveExpSql = `COALESCE(contract.expiration_date, (DATE_TRUNC('month', contract.affiliation_date + INTERVAL '1 year') - INTERVAL '1 day')::date)`;
 
     // 1. Calculate count totals for both renewal phases
     const countQb = this.contractsRepository
@@ -347,15 +346,15 @@ export class ContractQueryRepository {
       qb.andWhere(
         `${effectiveExpSql} >= CURRENT_DATE AND ${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days')`,
       );
-      qb.orderBy('contract.expirationDate', 'ASC', 'NULLS LAST');
+      qb.orderBy(effectiveExpSql, 'ASC');
       qb.addOrderBy('contract.affiliationDate', 'ASC');
     } else if (dto.phase === RenewalPhase.PENDING_RENEWAL) {
       qb.andWhere(`${effectiveExpSql} < CURRENT_DATE`);
-      qb.orderBy('contract.expirationDate', 'DESC', 'NULLS LAST');
+      qb.orderBy(effectiveExpSql, 'DESC');
       qb.addOrderBy('contract.affiliationDate', 'DESC');
     } else {
       qb.andWhere(`${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days')`);
-      qb.orderBy('contract.expirationDate', 'ASC', 'NULLS LAST');
+      qb.orderBy(effectiveExpSql, 'ASC');
       qb.addOrderBy('contract.affiliationDate', 'ASC');
     }
 

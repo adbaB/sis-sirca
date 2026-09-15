@@ -21,6 +21,8 @@ import {
 } from '../interfaces/person-verification.interface';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
+import { FindRenewalsDto } from '../dto/find-renewals.dto';
+import { JwtPayload } from '../../auth/guards';
 
 describe('ContractsController', () => {
   let controller: ContractsController;
@@ -188,9 +190,13 @@ describe('ContractsController', () => {
 
       jest.spyOn(service, 'findRenewals').mockResolvedValue(renewalsResult);
 
-      const result = await controller.findRenewals({});
+      const mockUser = { userId: 'user-1', roleId: 'role-1', advisorId: null };
+      const result = await controller.findRenewals(
+        {} as unknown as FindRenewalsDto,
+        mockUser as unknown as JwtPayload,
+      );
 
-      expect(service.findRenewals).toHaveBeenCalledWith({});
+      expect(service.findRenewals).toHaveBeenCalledWith({}, null);
       expect(result).toEqual(renewalsResult);
     });
   });

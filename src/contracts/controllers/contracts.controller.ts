@@ -57,8 +57,8 @@ export class ContractsController {
 
   @Get('renewals')
   @RequirePermissions('read:contracts')
-  findRenewals(@Query() query: FindRenewalsDto) {
-    return this.contractsService.findRenewals(query);
+  findRenewals(@Query() query: FindRenewalsDto, @CurrentUser() user: JwtPayload) {
+    return this.contractsService.findRenewals(query, user?.advisorId);
   }
 
   @Get('pipeline-stats')

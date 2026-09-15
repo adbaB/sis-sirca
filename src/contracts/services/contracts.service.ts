@@ -62,7 +62,6 @@ export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationSt
  * - `ContractStatisticsService`  → Pipeline classification & affiliation period analytics
  * - `ContractQueryRepository`    → Query building, pagination & stage filters
  * - `HealthExclusionsService`   → Pre-evaluation & health exclusions persistence
->>>>>>> 46842703045da2579f92f0bc17fe53bb3743035c
  */
 @Injectable()
 export class ContractsService {

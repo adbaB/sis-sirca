@@ -71,7 +71,7 @@ export class ContractCreationService {
       ? dto.expirationDate
       : calculateContractExpirationDate(effectiveStartDate);
 
-    if (effectiveExpirationDate < effectiveStartDate) {
+    if (new Date(effectiveExpirationDate) < new Date(effectiveStartDate)) {
       throw new BadRequestException(
         'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
       );

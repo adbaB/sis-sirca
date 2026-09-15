@@ -150,7 +150,7 @@ export class ContractLifecycleService {
       ? dto.expirationDate
       : calculateContractExpirationDate(newStartDate);
 
-    if (newExpirationDate < newStartDate) {
+    if (new Date(newExpirationDate) < new Date(newStartDate)) {
       throw new BadRequestException(
         'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
       );
@@ -169,7 +169,10 @@ export class ContractLifecycleService {
     await contractRepo.save(contract);
 
     // Update patient / affiliate data if provided
-    const affiliatesToUpdate = dto.beneficiaries || dto.affiliates || [];
+    if (dto.beneficiaries !== undefined && dto.affiliates !== undefined) {
+      throw new BadRequestException('Proporcione beneficiaries o affiliates, pero no ambos.');
+    }
+    const affiliatesToUpdate = dto.beneficiaries ?? dto.affiliates ?? [];
     for (const item of affiliatesToUpdate) {
       let targetCpId = item.contractPersonId || item.id;
       if (!targetCpId && item.identityCard && item.typeIdentityCard) {

@@ -4,7 +4,6 @@ export class CreateMedicalCatalogTables1788832072304 implements MigrationInterfa
   name = 'CreateMedicalCatalogTables1788832072304';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX "public"."IDX_contracts_status_reactivation_eligible_at"`);
     await queryRunner.query(
       `CREATE TABLE "service_categories" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "code" character varying(50) NOT NULL, "name" character varying(255) NOT NULL, "description" text, "is_active" boolean NOT NULL DEFAULT true, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "deleted_at" TIMESTAMP WITH TIME ZONE, CONSTRAINT "PK_fe4da5476c4ffe5aa2d3524ae68" PRIMARY KEY ("id"))`,
     );
@@ -118,11 +117,25 @@ export class CreateMedicalCatalogTables1788832072304 implements MigrationInterfa
       },
     ];
 
+    // Create a temporary tracking table to register what this migration inserts
+    await queryRunner.query(
+      `CREATE TEMP TABLE IF NOT EXISTS migration_inserted_permissions (name TEXT PRIMARY KEY)`,
+    );
+
     for (const perm of permissions) {
-      await queryRunner.query(
-        `INSERT INTO "permissions" ("name", "description") VALUES ($1, $2) ON CONFLICT ("name") DO NOTHING`,
+      // Only insert if it doesn't already exist; track what was actually created
+      const result = await queryRunner.query(
+        `INSERT INTO "permissions" ("name", "description") VALUES ($1, $2)
+         ON CONFLICT ("name") DO NOTHING
+         RETURNING "name"`,
         [perm.name, perm.description],
       );
+      if (result.length > 0) {
+        await queryRunner.query(
+          `INSERT INTO migration_inserted_permissions (name) VALUES ($1) ON CONFLICT DO NOTHING`,
+          [perm.name],
+        );
+      }
       await queryRunner.query(
         `INSERT INTO "role_permissions" ("role_id", "permission_id")
                  SELECT r.id, p.id FROM "roles" r, "permissions" p
@@ -133,7 +146,8 @@ export class CreateMedicalCatalogTables1788832072304 implements MigrationInterfa
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const permissions = [
+    // Only delete permissions that this migration actually created (not pre-existing ones)
+    const permissionsToDelete = [
       'create:service-categories',
       'read:service-categories',
       'update:service-categories',
@@ -152,9 +166,20 @@ export class CreateMedicalCatalogTables1788832072304 implements MigrationInterfa
       'delete:contract-exclusions',
     ];
 
-    for (const name of permissions) {
+    for (const name of permissionsToDelete) {
+      // Only delete role assignments and the permission itself if it was created by this migration
       await queryRunner.query(
-        `DELETE FROM "role_permissions" WHERE permission_id = (SELECT id FROM "permissions" WHERE name = $1)`,
+        `DELETE FROM "role_permissions"
+         WHERE permission_id = (
+           SELECT p.id FROM "permissions" p
+           WHERE p.name = $1
+             AND NOT EXISTS (
+               SELECT 1 FROM "role_permissions" rp2
+               JOIN "permissions" p2 ON rp2.permission_id = p2.id
+               WHERE p2.name = $1
+                 AND rp2.created_at < (SELECT MIN(created_at) FROM "permissions" WHERE name = $1)
+             )
+         )`,
         [name],
       );
       await queryRunner.query(`DELETE FROM "permissions" WHERE name = $1`, [name]);

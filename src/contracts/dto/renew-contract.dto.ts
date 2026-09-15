@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -21,6 +22,9 @@ export class RenewContractDto {
     {},
     { message: 'La fecha de inicio debe tener un formato de fecha válido (YYYY-MM-DD).' },
   )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de inicio debe tener formato YYYY-MM-DD.',
+  })
   @IsNotEmpty({ message: 'La fecha de inicio de la renovación es obligatoria.' })
   startDate: string;
 
@@ -29,6 +33,9 @@ export class RenewContractDto {
     {},
     { message: 'La fecha de vencimiento debe tener un formato de fecha válido (YYYY-MM-DD).' },
   )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de vencimiento debe tener formato YYYY-MM-DD.',
+  })
   expirationDate?: string;
 
   @IsOptional()

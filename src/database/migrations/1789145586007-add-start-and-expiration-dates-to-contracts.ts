@@ -7,7 +7,7 @@ export class AddStartAndExpirationDatesToContracts1789145586007 implements Migra
     await queryRunner.query(`ALTER TABLE "contracts" ADD "start_date" date`);
     await queryRunner.query(`ALTER TABLE "contracts" ADD "expiration_date" date`);
     await queryRunner.query(
-      `UPDATE "contracts" SET "start_date" = "affiliation_date", "expiration_date" = "affiliation_date" WHERE "start_date" IS NULL AND "affiliation_date" IS NOT NULL`,
+      `UPDATE "contracts" SET "start_date" = "affiliation_date" WHERE "start_date" IS NULL AND "affiliation_date" IS NOT NULL`,
     );
   }
 
