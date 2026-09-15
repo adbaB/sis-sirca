@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { RequirePermissions } from '../../auth/decorators';
 import { BatchCreatePlanServicesDto } from '../dto/batch-create-plan-services.dto';
 import { CreatePlanServiceDto } from '../dto/create-plan-service.dto';
@@ -7,6 +8,7 @@ import { QueryPlanServicesDto } from '../dto/query-plan-services.dto';
 import { UpdatePlanServiceDto } from '../dto/update-plan-service.dto';
 import { UpdatePlanDto } from '../dto/update-plan.dto';
 import { PlanCloningService } from '../services/plan-cloning.service';
+import { PlanPdfService } from '../services/plan-pdf.service';
 import { PlanServicesService } from '../services/plan-services.service';
 import { PlansService } from '../services/plans.service';
 
@@ -16,6 +18,7 @@ export class PlansController {
     private readonly plansService: PlansService,
     private readonly planServicesService: PlanServicesService,
     private readonly planCloningService: PlanCloningService,
+    private readonly planPdfService: PlanPdfService,
   ) {}
 
   @Post()
@@ -34,6 +37,18 @@ export class PlansController {
   @RequirePermissions('read:plans', 'create:contracts')
   findOne(@Param('id') id: string) {
     return this.plansService.findOne(id);
+  }
+
+  @Get(':id/pdf')
+  @RequirePermissions('read:plans', 'create:contracts')
+  async downloadPdf(@Param('id') id: string, @Res() res: Response): Promise<void> {
+    const { pdfBuffer, filename } = await this.planPdfService.generatePlanPdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
   }
 
   @Patch(':id')

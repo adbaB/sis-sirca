@@ -75,9 +75,10 @@ export class MedicalServicesService {
   ): Promise<MedicalService> {
     const service = await this.findOne(id);
 
+    const currentCategoryId = service.categoryId ?? service.category?.id;
     if (
       updateMedicalServiceDto.categoryId &&
-      updateMedicalServiceDto.categoryId !== service.categoryId
+      updateMedicalServiceDto.categoryId !== currentCategoryId
     ) {
       const category = await this.categoryRepository.findOne({
         where: { id: updateMedicalServiceDto.categoryId },
@@ -86,6 +87,9 @@ export class MedicalServicesService {
       if (!category) {
         throw new EntityNotFoundException('ServiceCategory', updateMedicalServiceDto.categoryId);
       }
+
+      service.category = category;
+      service.categoryId = category.id;
     }
 
     if (updateMedicalServiceDto.code && updateMedicalServiceDto.code !== service.code) {

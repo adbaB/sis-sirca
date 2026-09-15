@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import type { Response } from 'express';
 import { PlansController } from './plans.controller';
 import { PlansService } from '../services/plans.service';
 import { CreatePlanDto } from '../dto/create-plan.dto';
@@ -6,11 +7,13 @@ import { UpdatePlanDto } from '../dto/update-plan.dto';
 import { Plan, PlanStatus } from '../entities/plan.entity';
 import { PlanService, PlanServiceLimitType } from '../entities/plan-service.entity';
 import { PlanCloningService } from '../services/plan-cloning.service';
+import { PlanPdfService } from '../services/plan-pdf.service';
 import { PlanServicesService } from '../services/plan-services.service';
 
 describe('PlansController', () => {
   let controller: PlansController;
   let service: PlansService;
+  let planPdfService: PlanPdfService;
 
   const mockPlan: Plan = {
     id: '1',
@@ -59,11 +62,18 @@ describe('PlansController', () => {
             cloneServices: jest.fn(),
           },
         },
+        {
+          provide: PlanPdfService,
+          useValue: {
+            generatePlanPdf: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     controller = module.get<PlansController>(PlansController);
     service = module.get<PlansService>(PlansService);
+    planPdfService = module.get<PlanPdfService>(PlanPdfService);
   });
 
   it('should be defined', () => {
@@ -108,6 +118,33 @@ describe('PlansController', () => {
 
       expect(service.findOne).toHaveBeenCalledWith('1');
       expect(result).toEqual(mockPlan);
+    });
+  });
+
+  describe('downloadPdf', () => {
+    it('should generate and stream plan pdf with correct headers', async () => {
+      const mockPdfBuffer = Buffer.from('mock-plan-pdf');
+      const mockFilename = 'plan-basic-plan.pdf';
+
+      jest.spyOn(planPdfService, 'generatePlanPdf').mockResolvedValue({
+        pdfBuffer: mockPdfBuffer,
+        filename: mockFilename,
+      });
+
+      const res = {
+        set: jest.fn(),
+        end: jest.fn(),
+      } as unknown as Response;
+
+      await controller.downloadPdf('1', res);
+
+      expect(planPdfService.generatePlanPdf).toHaveBeenCalledWith('1');
+      expect(res.set).toHaveBeenCalledWith({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${mockFilename}"`,
+        'Content-Length': mockPdfBuffer.length,
+      });
+      expect(res.end).toHaveBeenCalledWith(mockPdfBuffer);
     });
   });
 

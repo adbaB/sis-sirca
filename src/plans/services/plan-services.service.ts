@@ -278,7 +278,7 @@ export class PlanServicesService {
     }
 
     if (dto.medicalServiceId && dto.medicalServiceId !== planService.medicalServiceId) {
-      await this.verifyMedicalServiceExists(dto.medicalServiceId);
+      const ms = await this.verifyMedicalServiceExists(dto.medicalServiceId);
       const existing = await this.getPlanServiceRepo().findOne({
         where: { planId, medicalServiceId: dto.medicalServiceId },
       });
@@ -289,6 +289,7 @@ export class PlanServicesService {
         );
       }
       planService.medicalServiceId = dto.medicalServiceId;
+      planService.medicalService = ms;
     }
 
     if (dto.limitType !== undefined) {

@@ -216,6 +216,38 @@ describe('MedicalServicesService', () => {
       await expect(service.update('med-uuid-1', dto)).rejects.toThrow(EntityNotFoundException);
     });
 
+    it('should update category and categoryId when categoryId is updated', async () => {
+      const newCategory: ServiceCategory = {
+        id: 'new-cat-uuid',
+        code: 'CAT-02',
+        name: 'Laboratorio',
+        description: 'Exámenes de laboratorio',
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+      };
+      const dto: UpdateMedicalServiceDto = { categoryId: 'new-cat-uuid' };
+
+      medicalServiceRepo.findOne.mockResolvedValue({ ...mockMedicalService });
+      categoryRepo.findOne.mockResolvedValue(newCategory);
+      medicalServiceRepo.save.mockImplementation(async (entity) => entity as MedicalService);
+
+      const result = await service.update('med-uuid-1', dto);
+
+      expect(categoryRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'new-cat-uuid' },
+      });
+      expect(medicalServiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryId: 'new-cat-uuid',
+          category: newCategory,
+        }),
+      );
+      expect(result.categoryId).toBe('new-cat-uuid');
+      expect(result.category).toEqual(newCategory);
+    });
+
     it('should validate code uniqueness when code is updated', async () => {
       const dto: UpdateMedicalServiceDto = { code: 'MED-DUPLICATE' };
       const anotherService = { ...mockMedicalService, id: 'med-uuid-2' };
