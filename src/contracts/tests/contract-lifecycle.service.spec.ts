@@ -711,8 +711,10 @@ describe('ContractLifecycleService', () => {
         'contract-1',
         em as unknown as EntityManager,
       );
-      expect(result).toBeInstanceOf(Date);
-      const expected = DateTime.fromJSDate(opDate).setZone(CARACAS_ZONE).plus({ days: 7 });
+      const expected = DateTime.fromJSDate(opDate)
+        .setZone(CARACAS_ZONE)
+        .plus({ days: 7 })
+        .startOf('day');
       expect(DateTime.fromJSDate(result as Date).toMillis()).toBe(expected.toMillis());
       expect(saveMock).toHaveBeenCalled();
       expect(mockSuspended.reactivationEligibleAt).toBeInstanceOf(Date);

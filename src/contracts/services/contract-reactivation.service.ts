@@ -83,10 +83,12 @@ export class ContractReactivationService {
     // la carencia de 7 días cuenta a partir de la fecha actual en que se regularizó la deuda.
     const baselineDate = latestOperationDate ?? nowDate;
 
-    // 7 días corridos a partir de la fecha base
+    // 7 días corridos a partir de la fecha base normalizados a medianoche (00:00:00) en zona Caracas,
+    // para que la reactivación no dependa de la hora del pago y aplique desde el inicio del día.
     const eligibleAt = DateTime.fromJSDate(baselineDate)
       .setZone(CARACAS_ZONE)
       .plus({ days: 7 })
+      .startOf('day')
       .toJSDate();
 
     contract.reactivationEligibleAt = eligibleAt;
@@ -151,8 +153,13 @@ export class ContractReactivationService {
 
     const debtEval = evaluateOverdueInvoices(overdueInvoices, nowDate);
     const hasDebt = debtEval.hasOverdueDebt;
-    const isCooldownActive =
-      !contract.reactivationEligibleAt || new Date(contract.reactivationEligibleAt) > nowDate;
+
+    const eligibleDt = contract.reactivationEligibleAt
+      ? DateTime.fromJSDate(new Date(contract.reactivationEligibleAt))
+          .setZone(CARACAS_ZONE)
+          .startOf('day')
+      : null;
+    const isCooldownActive = !eligibleDt || eligibleDt > now.startOf('day');
 
     const isBypassNeeded = hasDebt || isCooldownActive;
 
