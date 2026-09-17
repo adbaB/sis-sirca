@@ -39,9 +39,8 @@ describe('Tier 1: Feature Coverage (Category-Partition Testing)', () => {
         commissionAmount: 5.0,
       });
 
-    if (sourcePlanRes.status === 201) {
-      sourcePlanId = sourcePlanRes.body.id;
-    }
+    expect(sourcePlanRes.status).toBe(201);
+    sourcePlanId = sourcePlanRes.body.id;
 
     const targetPlanRes = await request(httpServer)
       .post('/plans')
@@ -55,9 +54,8 @@ describe('Tier 1: Feature Coverage (Category-Partition Testing)', () => {
         commissionAmount: 6.0,
       });
 
-    if (targetPlanRes.status === 201) {
-      targetPlanId = targetPlanRes.body.id;
-    }
+    expect(targetPlanRes.status).toBe(201);
+    targetPlanId = targetPlanRes.body.id;
   }, 60000);
 
   afterAll(async () => {
@@ -383,12 +381,11 @@ describe('Tier 1: Feature Coverage (Category-Partition Testing)', () => {
           mobilePhone: '+584121234567',
         });
 
-      if (personRes.status === 201) {
-        const personId = personRes.body.id;
-        const res = await request(httpServer).get(`/persons/${personId}/benefits`);
-        expect(res.status).toBe(400);
-        expect(res.body.message).toContain('contrato activo');
-      }
+      expect(personRes.status).toBe(201);
+      const personId = personRes.body.id;
+      const res = await request(httpServer).get(`/persons/${personId}/benefits`);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('contrato activo');
     });
   });
 });

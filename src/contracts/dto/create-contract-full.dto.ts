@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -26,6 +27,9 @@ export class CreateContractFullDto {
   legacyCode?: string;
 
   @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de afiliación debe tener formato YYYY-MM-DD.',
+  })
   @IsNotEmpty()
   affiliationDate: string;
 
@@ -34,6 +38,9 @@ export class CreateContractFullDto {
     {},
     { message: 'La fecha de inicio debe tener un formato de fecha válido (YYYY-MM-DD).' },
   )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de inicio debe tener formato YYYY-MM-DD.',
+  })
   startDate?: string;
 
   @IsOptional()
@@ -41,6 +48,9 @@ export class CreateContractFullDto {
     {},
     { message: 'La fecha de vencimiento debe tener un formato de fecha válido (YYYY-MM-DD).' },
   )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de vencimiento debe tener formato YYYY-MM-DD.',
+  })
   expirationDate?: string;
 
   @IsNotEmpty()

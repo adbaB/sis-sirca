@@ -167,22 +167,23 @@ export class CreateMedicalCatalogTables1788832072304 implements MigrationInterfa
     ];
 
     for (const name of permissionsToDelete) {
-      // Only delete role assignments and the permission itself if it was created by this migration
+      // 1. Eliminar asignación únicamente para el rol admin
       await queryRunner.query(
         `DELETE FROM "role_permissions"
-         WHERE permission_id = (
-           SELECT p.id FROM "permissions" p
-           WHERE p.name = $1
-             AND NOT EXISTS (
-               SELECT 1 FROM "role_permissions" rp2
-               JOIN "permissions" p2 ON rp2.permission_id = p2.id
-               WHERE p2.name = $1
-                 AND rp2.created_at < (SELECT MIN(created_at) FROM "permissions" WHERE name = $1)
-             )
-         )`,
+         WHERE role_id = (SELECT id FROM "roles" WHERE name = 'admin')
+           AND permission_id = (SELECT id FROM "permissions" WHERE name = $1)`,
         [name],
       );
-      await queryRunner.query(`DELETE FROM "permissions" WHERE name = $1`, [name]);
+
+      // 2. Eliminar permiso únicamente si no está asignado a ningún otro rol
+      await queryRunner.query(
+        `DELETE FROM "permissions"
+         WHERE name = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM "role_permissions" rp WHERE rp.permission_id = "permissions".id
+           )`,
+        [name],
+      );
     }
 
     await queryRunner.query(
@@ -220,8 +221,5 @@ export class CreateMedicalCatalogTables1788832072304 implements MigrationInterfa
     await queryRunner.query(`DROP TABLE "plan_services"`);
     await queryRunner.query(`DROP INDEX "public"."UQ_service_categories_code_active"`);
     await queryRunner.query(`DROP TABLE "service_categories"`);
-    await queryRunner.query(
-      `CREATE INDEX "IDX_contracts_status_reactivation_eligible_at" ON "contracts" ("reactivation_eligible_at", "status") WHERE (status = 'SUSPENDED'::contracts_status_enum)`,
-    );
   }
 }

@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -7,8 +8,8 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   ValidateNested,
-  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
@@ -91,6 +92,9 @@ export class UpdateBeneficiaryDto {
     {},
     { message: 'La fecha de afiliación debe tener un formato de fecha válido (YYYY-MM-DD).' },
   )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de afiliación debe tener formato YYYY-MM-DD.',
+  })
   @IsOptional()
   affiliationDate?: string;
 

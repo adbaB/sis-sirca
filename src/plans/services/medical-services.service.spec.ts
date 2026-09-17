@@ -10,6 +10,7 @@ import { HealthCategory } from '../../contracts/entities/health-declaration.enti
 import { CreateMedicalServiceDto } from '../dto/create-medical-service.dto';
 import { UpdateMedicalServiceDto } from '../dto/update-medical-service.dto';
 import { MedicalService } from '../entities/medical-service.entity';
+import { PlanStatus } from '../entities/plan.entity';
 import { PlanService } from '../entities/plan-service.entity';
 import { ServiceCategory } from '../entities/service-category.entity';
 import { MedicalServicesService } from './medical-services.service';
@@ -272,7 +273,10 @@ describe('MedicalServicesService', () => {
       const result = await service.remove('med-uuid-1');
 
       expect(planServiceRepo.count).toHaveBeenCalledWith({
-        where: { medicalServiceId: 'med-uuid-1' },
+        where: {
+          medicalServiceId: 'med-uuid-1',
+          plan: { status: PlanStatus.ACTIVE },
+        },
       });
       expect(medicalServiceRepo.softRemove).toHaveBeenCalledWith(mockMedicalService);
       expect(result.deletedAt).toBeDefined();

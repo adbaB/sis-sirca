@@ -32,18 +32,18 @@ export class CreatePlanServiceDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  waitingPeriodDays?: number = 0;
+  waitingPeriodDays?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  copayAmount?: number = 0;
+  copayAmount?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(100)
-  copayPercentage?: number = 0;
+  copayPercentage?: number;
 }

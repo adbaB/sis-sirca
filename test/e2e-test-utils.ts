@@ -11,19 +11,10 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module';
 import { AuthGuard, PermissionsGuard } from '../src/auth/guards';
 import { HealthCategory } from '../src/contracts/entities/health-declaration.entity';
+import { PlanServiceLimitType } from '../src/plans/entities/plan-service.entity';
+import { ExclusionSource } from '../src/contracts/entities/exclusion-source.enum';
 
-export { HealthCategory };
-
-export enum PlanServiceLimitType {
-  UNLIMITED = 'UNLIMITED',
-  MONTHLY = 'MONTHLY',
-  ANNUAL = 'ANNUAL',
-}
-
-export enum ExclusionSource {
-  AUTOMATIC = 'AUTOMATIC',
-  MANUAL = 'MANUAL',
-}
+export { HealthCategory, PlanServiceLimitType, ExclusionSource };
 
 export interface E2eTestContext {
   app: INestApplication;

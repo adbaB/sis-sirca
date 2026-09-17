@@ -10,6 +10,7 @@ import { HealthCategory } from '../../contracts/entities/health-declaration.enti
 import { CreateMedicalServiceDto } from '../dto/create-medical-service.dto';
 import { UpdateMedicalServiceDto } from '../dto/update-medical-service.dto';
 import { MedicalService } from '../entities/medical-service.entity';
+import { PlanStatus } from '../entities/plan.entity';
 import { PlanService } from '../entities/plan-service.entity';
 import { ServiceCategory } from '../entities/service-category.entity';
 
@@ -110,7 +111,10 @@ export class MedicalServicesService {
     const service = await this.findOne(id);
 
     const activePlanCount = await this.planServiceRepository.count({
-      where: { medicalServiceId: id },
+      where: {
+        medicalServiceId: id,
+        plan: { status: PlanStatus.ACTIVE },
+      },
     });
 
     if (activePlanCount > 0) {

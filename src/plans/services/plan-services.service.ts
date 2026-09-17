@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { resolveQueryRunner } from '../../common/context/request-context';
+import { getQueryRunnerSafe } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
 import {
   EntityAlreadyExistsException,
@@ -38,37 +38,25 @@ export class PlanServicesService {
   ) {}
 
   private getPlanServiceRepo(): Repository<PlanService> {
-    try {
-      const qr = resolveQueryRunner(undefined, this.dataSource);
-      if (qr?.manager) {
-        return qr.manager.getRepository(PlanService);
-      }
-    } catch {
-      // fallback to injected repository
+    const qr = getQueryRunnerSafe();
+    if (qr?.manager) {
+      return qr.manager.getRepository(PlanService);
     }
     return this.planServicesRepository;
   }
 
   private getPlanRepo(): Repository<Plan> {
-    try {
-      const qr = resolveQueryRunner(undefined, this.dataSource);
-      if (qr?.manager) {
-        return qr.manager.getRepository(Plan);
-      }
-    } catch {
-      // fallback to injected repository
+    const qr = getQueryRunnerSafe();
+    if (qr?.manager) {
+      return qr.manager.getRepository(Plan);
     }
     return this.plansRepository;
   }
 
   private getMedicalServiceRepo(): Repository<MedicalService> {
-    try {
-      const qr = resolveQueryRunner(undefined, this.dataSource);
-      if (qr?.manager) {
-        return qr.manager.getRepository(MedicalService);
-      }
-    } catch {
-      // fallback to injected repository
+    const qr = getQueryRunnerSafe();
+    if (qr?.manager) {
+      return qr.manager.getRepository(MedicalService);
     }
     return this.medicalServicesRepository;
   }

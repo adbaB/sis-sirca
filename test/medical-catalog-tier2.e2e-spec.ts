@@ -31,9 +31,8 @@ describe('Tier 2: Boundary Value Analysis & Corner Cases', () => {
         code: generateUniqueCode('CAT_T2'),
         name: 'Categoría Tier 2 Boundary Tests',
       });
-    if (catRes.status === 201) {
-      testCategoryId = catRes.body.id;
-    }
+    expect(catRes.status).toBe(201);
+    testCategoryId = catRes.body.id;
 
     // Create medical services
     const srv1Res = await request(httpServer)
@@ -44,9 +43,8 @@ describe('Tier 2: Boundary Value Analysis & Corner Cases', () => {
         categoryId: testCategoryId,
         linkedHealthCategories: [HealthCategory.CARDIOVASCULAR],
       });
-    if (srv1Res.status === 201) {
-      testMedicalServiceId1 = srv1Res.body.id;
-    }
+    expect(srv1Res.status).toBe(201);
+    testMedicalServiceId1 = srv1Res.body.id;
 
     const srv2Res = await request(httpServer)
       .post('/plans/medical-services')
@@ -55,9 +53,8 @@ describe('Tier 2: Boundary Value Analysis & Corner Cases', () => {
         name: 'Servicio Boundary 2',
         categoryId: testCategoryId,
       });
-    if (srv2Res.status === 201) {
-      testMedicalServiceId2 = srv2Res.body.id;
-    }
+    expect(srv2Res.status).toBe(201);
+    testMedicalServiceId2 = srv2Res.body.id;
 
     // Create test plans
     const planARes = await request(httpServer)
@@ -71,9 +68,8 @@ describe('Tier 2: Boundary Value Analysis & Corner Cases', () => {
         minMonths: 12,
         commissionAmount: 5.0,
       });
-    if (planARes.status === 201) {
-      testPlanAId = planARes.body.id;
-    }
+    expect(planARes.status).toBe(201);
+    testPlanAId = planARes.body.id;
 
     const planBRes = await request(httpServer)
       .post('/plans')
@@ -86,9 +82,8 @@ describe('Tier 2: Boundary Value Analysis & Corner Cases', () => {
         minMonths: 12,
         commissionAmount: 5.0,
       });
-    if (planBRes.status === 201) {
-      testPlanBId = planBRes.body.id;
-    }
+    expect(planBRes.status).toBe(201);
+    testPlanBId = planBRes.body.id;
   }, 60000);
 
   afterAll(async () => {
@@ -201,16 +196,15 @@ describe('Tier 2: Boundary Value Analysis & Corner Cases', () => {
           commissionAmount: 5.0,
         });
 
-      if (freshPlanRes.status === 201) {
-        const resHundred = await request(httpServer)
-          .post(`/plans/${freshPlanRes.body.id}/services`)
-          .send({
-            medicalServiceId: testMedicalServiceId1,
-            limitType: PlanServiceLimitType.UNLIMITED,
-            copayPercentage: 100,
-          });
-        expect(resHundred.status).toBe(201);
-      }
+      expect(freshPlanRes.status).toBe(201);
+      const resHundred = await request(httpServer)
+        .post(`/plans/${freshPlanRes.body.id}/services`)
+        .send({
+          medicalServiceId: testMedicalServiceId1,
+          limitType: PlanServiceLimitType.UNLIMITED,
+          copayPercentage: 100,
+        });
+      expect(resHundred.status).toBe(201);
     });
 
     it('T2.2.4: copayPercentage > 100 or < 0 should return 400 Bad Request', async () => {

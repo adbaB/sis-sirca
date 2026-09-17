@@ -29,7 +29,10 @@ export class ServiceCategoriesService {
       throw new EntityAlreadyExistsException('ServiceCategory', createCategoryDto.code);
     }
 
-    const category = this.categoryRepository.create(createCategoryDto);
+    const category = this.categoryRepository.create({
+      ...createCategoryDto,
+      isActive: createCategoryDto.isActive ?? true,
+    });
     return this.categoryRepository.save(category);
   }
 

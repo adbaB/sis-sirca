@@ -77,12 +77,13 @@ export class PersonBenefitsService {
       );
     }
 
-    // 4. Calculate elapsed days from contract.affiliationDate
+    // 4. Calculate elapsed days from activeCp.affiliationDate (fallback to contract.affiliationDate)
     const now = new Date();
     const nowDateOnly = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
-    const affDate = new Date(activeContract.affiliationDate);
+    const rawAffDate = activeCp.affiliationDate ?? activeContract.affiliationDate;
+    const affDate = new Date(rawAffDate);
     const affDateOnly = new Date(
       Date.UTC(affDate.getUTCFullYear(), affDate.getUTCMonth(), affDate.getUTCDate()),
     );

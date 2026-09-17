@@ -649,5 +649,39 @@ describe('PersonBenefitsService', () => {
       expect(result.services[0].copayPercentage).toBe(0);
       expect(result.services[0].status).toBe('COVERED');
     });
+
+    it('should prioritize activeCp.affiliationDate over contract.affiliationDate for waiting periods', async () => {
+      personRepo.findOne.mockResolvedValue(mockPerson);
+      // Contract is 100 days old, but CP was affiliated yesterday
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      contractPersonRepo.find.mockResolvedValue([
+        {
+          ...mockContractPerson,
+          affiliationDate: yesterday,
+          contract: {
+            ...mockContract,
+            affiliationDate: new Date('2024-01-01'),
+          },
+        } as unknown as ContractPerson,
+      ]);
+
+      planServiceRepo.find.mockResolvedValue([
+        {
+          id: 'ps-waiting-cp',
+          planId: mockPlanId,
+          medicalServiceId: 'srv-wait',
+          waitingPeriodDays: 30,
+          medicalService: { id: 'srv-wait', code: 'W30', name: 'Wait 30' },
+        } as unknown as PlanService,
+      ]);
+      exclusionRepo.find.mockResolvedValue([]);
+
+      const result = await service.getPersonBenefits(mockPersonId);
+      expect(result.services[0].status).toBe('WAITING_PERIOD');
+      expect(result.services[0].isCovered).toBe(false);
+      expect(result.services[0].remainingWaitingPeriodDays).toBeGreaterThan(0);
+    });
   });
 });
