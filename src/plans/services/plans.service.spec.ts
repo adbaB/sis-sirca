@@ -21,6 +21,7 @@ describe('PlansService', () => {
     commissionAmount: 0,
     coverage: 5000,
     minMonths: 2,
+    profitFactor: null,
     status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),

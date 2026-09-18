@@ -40,6 +40,8 @@ describe('MedicalServicesService', () => {
     categoryId: 'cat-uuid-1',
     category: mockCategory,
     linkedHealthCategories: [HealthCategory.CARDIOVASCULAR],
+    cost: 10,
+    salePrice: 20,
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -122,6 +124,8 @@ describe('MedicalServicesService', () => {
       });
       expect(medicalServiceRepo.create).toHaveBeenCalledWith({
         ...dto,
+        cost: 0,
+        salePrice: null,
         linkedHealthCategories: [HealthCategory.CARDIOVASCULAR],
       });
       expect(medicalServiceRepo.save).toHaveBeenCalledWith(mockMedicalService);

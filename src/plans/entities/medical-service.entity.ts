@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -20,6 +21,8 @@ import type { PlanService } from './plan-service.entity';
   where: '"deleted_at" IS NULL',
 })
 @Index('IDX_medical_services_category_id', ['categoryId'])
+@Check('CHK_medical_services_cost', '"cost" >= 0')
+@Check('CHK_medical_services_sale_price', '"sale_price" IS NULL OR "sale_price" >= 0')
 export class MedicalService {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -50,6 +53,24 @@ export class MedicalService {
     name: 'linked_health_categories',
   })
   linkedHealthCategories: HealthCategory[];
+
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    name: 'cost',
+  })
+  cost: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    name: 'sale_price',
+  })
+  salePrice: number | null;
 
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;

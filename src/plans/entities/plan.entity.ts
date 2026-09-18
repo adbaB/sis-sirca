@@ -24,6 +24,7 @@ export enum PlanStatus {
 @Check('CHK_plans_min_months', '"min_months" >= 2')
 @Check('CHK_plans_min_age', '"min_age" >= 0')
 @Check('CHK_plans_age_range', '"max_age" >= "min_age"')
+@Check('CHK_plans_profit_factor', '"profit_factor" IS NULL OR "profit_factor" > 0')
 export class Plan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -48,6 +49,15 @@ export class Plan {
 
   @Column({ type: 'int', name: 'min_months', default: 2 })
   minMonths: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: 'profit_factor',
+  })
+  profitFactor: number | null;
 
   @Column({
     type: 'varchar',

@@ -102,6 +102,8 @@ export class PlanCloningService {
         waitingPeriodDays: src.waitingPeriodDays,
         copayAmount: src.copayAmount,
         copayPercentage: src.copayPercentage,
+        cost: src.cost,
+        salePrice: src.salePrice,
       });
 
       toCreate.push(newPlanService);

@@ -37,6 +37,8 @@ export enum PlanServiceLimitType {
   'CHK_plan_services_copay_percentage',
   '"copay_percentage" >= 0 AND "copay_percentage" <= 100',
 )
+@Check('CHK_plan_services_cost', '"cost" IS NULL OR "cost" >= 0')
+@Check('CHK_plan_services_sale_price', '"sale_price" IS NULL OR "sale_price" >= 0')
 export class PlanService {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -92,6 +94,24 @@ export class PlanService {
     name: 'copay_percentage',
   })
   copayPercentage: number;
+
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    name: 'cost',
+  })
+  cost: number | null;
+
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    name: 'sale_price',
+  })
+  salePrice: number | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

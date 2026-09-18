@@ -44,6 +44,8 @@ export class MedicalServicesService {
 
     const medicalService = this.medicalServiceRepository.create({
       ...createMedicalServiceDto,
+      cost: createMedicalServiceDto.cost ?? 0,
+      salePrice: createMedicalServiceDto.salePrice ?? null,
       linkedHealthCategories: createMedicalServiceDto.linkedHealthCategories ?? [],
     });
 

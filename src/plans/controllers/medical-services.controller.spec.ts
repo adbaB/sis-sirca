@@ -26,6 +26,8 @@ describe('MedicalServicesController', () => {
       deletedAt: null,
     },
     linkedHealthCategories: [HealthCategory.CARDIOVASCULAR],
+    cost: 0,
+    salePrice: null,
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),

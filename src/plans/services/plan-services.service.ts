@@ -8,6 +8,7 @@ import {
   EntityNotFoundException,
   InvalidDomainOperationException,
 } from '../../common/exceptions';
+import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { BatchCreatePlanServicesDto } from '../dto/batch-create-plan-services.dto';
 import { CreatePlanServiceDto } from '../dto/create-plan-service.dto';
 import { UpdatePlanServiceDto } from '../dto/update-plan-service.dto';
@@ -34,6 +35,7 @@ export class PlanServicesService {
     private readonly plansRepository: Repository<Plan>,
     @InjectRepository(MedicalService)
     private readonly medicalServicesRepository: Repository<MedicalService>,
+    private readonly systemSettingsService: SystemSettingsService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -104,9 +106,49 @@ export class PlanServicesService {
     return ms;
   }
 
+  private resolveServicePricing<T extends PlanService>(
+    ps: T,
+    plan: Plan,
+    globalFactor: number,
+  ): T & {
+    cost: number;
+    salePrice: number;
+    isCostOverridden: boolean;
+    isPriceOverridden: boolean;
+  } {
+    const isCostOverridden = ps.cost !== null && ps.cost !== undefined;
+    const effectiveCost = isCostOverridden ? Number(ps.cost) : Number(ps.medicalService?.cost ?? 0);
+
+    const effectiveFactor =
+      plan.profitFactor !== null && plan.profitFactor !== undefined
+        ? Number(plan.profitFactor)
+        : globalFactor;
+
+    const isPriceOverridden = ps.salePrice !== null && ps.salePrice !== undefined;
+    let effectiveSalePrice: number;
+
+    if (isPriceOverridden) {
+      effectiveSalePrice = Number(ps.salePrice);
+    } else if (
+      ps.medicalService?.salePrice !== null &&
+      ps.medicalService?.salePrice !== undefined
+    ) {
+      effectiveSalePrice = Number(ps.medicalService.salePrice);
+    } else {
+      effectiveSalePrice = Math.round(effectiveCost * effectiveFactor * 100) / 100;
+    }
+
+    return Object.assign(ps, {
+      cost: effectiveCost,
+      salePrice: effectiveSalePrice,
+      isCostOverridden,
+      isPriceOverridden,
+    });
+  }
+
   async create(planId: string, dto: CreatePlanServiceDto): Promise<PlanService> {
-    await this.verifyPlanExists(planId);
-    await this.verifyMedicalServiceExists(dto.medicalServiceId);
+    const plan = await this.verifyPlanExists(planId);
+    const ms = await this.verifyMedicalServiceExists(dto.medicalServiceId);
 
     const limitQuantity = this.validateLimits(dto.limitType, dto.limitQuantity);
 
@@ -126,14 +168,22 @@ export class PlanServicesService {
       waitingPeriodDays: dto.waitingPeriodDays ?? 0,
       copayAmount: dto.copayAmount ?? 0,
       copayPercentage: dto.copayPercentage ?? 0,
+      cost: dto.cost !== undefined ? dto.cost : null,
+      salePrice: dto.salePrice !== undefined ? dto.salePrice : null,
     });
 
-    return await this.getPlanServiceRepo().save(planService);
+    const saved = await this.getPlanServiceRepo().save(planService);
+    saved.medicalService = ms;
+    const globalFactor = await this.systemSettingsService.getNumeric(
+      'DEFAULT_SERVICE_PRICE_FACTOR',
+      2.0,
+    );
+    return this.resolveServicePricing(saved, plan, globalFactor);
   }
 
   @Transactional()
   async createBatch(planId: string, dto: BatchCreatePlanServicesDto): Promise<PlanService[]> {
-    await this.verifyPlanExists(planId);
+    const plan = await this.verifyPlanExists(planId);
 
     // Check duplicate services within the incoming batch
     const seenServiceIds = new Set<string>();
@@ -161,9 +211,11 @@ export class PlanServicesService {
       }
     }
 
-    // Verify all medical services exist
+    // Verify all medical services exist and index by ID
+    const msMap = new Map<string, MedicalService>();
     for (const item of dto.services) {
-      await this.verifyMedicalServiceExists(item.medicalServiceId);
+      const ms = await this.verifyMedicalServiceExists(item.medicalServiceId);
+      msMap.set(item.medicalServiceId, ms);
     }
 
     // Create and save entities
@@ -177,17 +229,27 @@ export class PlanServicesService {
         waitingPeriodDays: item.waitingPeriodDays ?? 0,
         copayAmount: item.copayAmount ?? 0,
         copayPercentage: item.copayPercentage ?? 0,
+        cost: item.cost !== undefined ? item.cost : null,
+        salePrice: item.salePrice !== undefined ? item.salePrice : null,
       });
     });
 
-    return await this.getPlanServiceRepo().save(entities);
+    const saved = await this.getPlanServiceRepo().save(entities);
+    const globalFactor = await this.systemSettingsService.getNumeric(
+      'DEFAULT_SERVICE_PRICE_FACTOR',
+      2.0,
+    );
+    return saved.map((ps) => {
+      ps.medicalService = msMap.get(ps.medicalServiceId)!;
+      return this.resolveServicePricing(ps, plan, globalFactor);
+    });
   }
 
   async findByPlan(
     planId: string,
     grouped = false,
   ): Promise<PlanService[] | GroupedCategoryServices[]> {
-    await this.verifyPlanExists(planId);
+    const plan = await this.verifyPlanExists(planId);
 
     const planServices = await this.getPlanServiceRepo().find({
       where: { planId },
@@ -201,13 +263,21 @@ export class PlanServicesService {
       },
     });
 
+    const globalFactor = await this.systemSettingsService.getNumeric(
+      'DEFAULT_SERVICE_PRICE_FACTOR',
+      2.0,
+    );
+    const resolvedServices = planServices.map((ps) =>
+      this.resolveServicePricing(ps, plan, globalFactor),
+    );
+
     if (!grouped) {
-      return planServices;
+      return resolvedServices;
     }
 
     const categoryMap = new Map<string, GroupedCategoryServices>();
 
-    for (const ps of planServices) {
+    for (const ps of resolvedServices) {
       const category = ps.medicalService?.category;
       if (!category) {
         continue;
@@ -232,7 +302,7 @@ export class PlanServicesService {
   }
 
   async findOne(planId: string, planServiceId: string): Promise<PlanService> {
-    await this.verifyPlanExists(planId);
+    const plan = await this.verifyPlanExists(planId);
 
     const planService = await this.getPlanServiceRepo().findOne({
       where: { id: planServiceId, planId },
@@ -247,7 +317,11 @@ export class PlanServicesService {
       throw new EntityNotFoundException('PlanService', planServiceId);
     }
 
-    return planService;
+    const globalFactor = await this.systemSettingsService.getNumeric(
+      'DEFAULT_SERVICE_PRICE_FACTOR',
+      2.0,
+    );
+    return this.resolveServicePricing(planService, plan, globalFactor);
   }
 
   async update(
@@ -255,7 +329,20 @@ export class PlanServicesService {
     planServiceId: string,
     dto: UpdatePlanServiceDto,
   ): Promise<PlanService> {
-    const planService = await this.findOne(planId, planServiceId);
+    const plan = await this.verifyPlanExists(planId);
+
+    const planService = await this.getPlanServiceRepo().findOne({
+      where: { id: planServiceId, planId },
+      relations: {
+        medicalService: {
+          category: true,
+        },
+      },
+    });
+
+    if (!planService) {
+      throw new EntityNotFoundException('PlanService', planServiceId);
+    }
 
     const newLimitType = dto.limitType ?? planService.limitType;
     let newLimitQuantity =
@@ -295,8 +382,19 @@ export class PlanServicesService {
     if (dto.copayPercentage !== undefined) {
       planService.copayPercentage = dto.copayPercentage;
     }
+    if (dto.cost !== undefined) {
+      planService.cost = dto.cost;
+    }
+    if (dto.salePrice !== undefined) {
+      planService.salePrice = dto.salePrice;
+    }
 
-    return await this.getPlanServiceRepo().save(planService);
+    const saved = await this.getPlanServiceRepo().save(planService);
+    const globalFactor = await this.systemSettingsService.getNumeric(
+      'DEFAULT_SERVICE_PRICE_FACTOR',
+      2.0,
+    );
+    return this.resolveServicePricing(saved, plan, globalFactor);
   }
 
   async remove(planId: string, planServiceId: string): Promise<PlanService> {

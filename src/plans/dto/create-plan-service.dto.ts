@@ -46,4 +46,18 @@ export class CreatePlanServiceDto {
   @Min(0)
   @Max(100)
   copayPercentage?: number;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  cost?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  salePrice?: number | null;
 }

@@ -33,6 +33,7 @@ import { RolesModule } from './roles/roles.module';
 import { StatisticsModule } from './statistics/statistics.module';
 import { UsersModule } from './users/users.module';
 import { PortfoliosModule } from './portfolios/portfolios.module';
+import { SystemSettingsModule } from './system-settings/system-settings.module';
 
 interface RequestWithUser extends IncomingMessage {
   user?: { userId?: string; roleId?: string };
@@ -71,6 +72,7 @@ interface RequestWithUser extends IncomingMessage {
     StatisticsModule,
     ReportsModule,
     PortfoliosModule,
+    SystemSettingsModule,
     LoggerModule.forRootAsync({
       inject: [config.KEY],
       useFactory: (configService: ReturnType<typeof config>) => {
@@ -88,6 +90,14 @@ interface RequestWithUser extends IncomingMessage {
                     translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l',
                   },
                 },
+            autoLogging: {
+              ignore: (req) => {
+                // Ignora healthchecks y métodos de solo lectura en producción
+                if (req.url === '/health' || req.url === '/api/health') return true;
+                if (isProduction && req.method === 'GET') return true;
+                return false;
+              },
+            },
             genReqId: (req: IncomingMessage) => {
               const headerReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
               return (headerReqId as string) || req.id;

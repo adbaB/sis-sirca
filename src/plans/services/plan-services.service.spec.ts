@@ -6,6 +6,7 @@ import {
   EntityNotFoundException,
   InvalidDomainOperationException,
 } from '../../common/exceptions';
+import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { BatchCreatePlanServicesDto } from '../dto/batch-create-plan-services.dto';
 import { CreatePlanServiceDto } from '../dto/create-plan-service.dto';
 import { UpdatePlanServiceDto } from '../dto/update-plan-service.dto';
@@ -21,6 +22,11 @@ describe('PlanServicesService', () => {
   let planRepo: jest.Mocked<Repository<Plan>>;
   let medicalServiceRepo: jest.Mocked<Repository<MedicalService>>;
 
+  interface ResolvedPlanServiceResult extends PlanService {
+    isCostOverridden: boolean;
+    isPriceOverridden: boolean;
+  }
+
   const mockPlan: Plan = {
     id: 'plan-uuid-1',
     name: 'Plan Oro',
@@ -30,6 +36,7 @@ describe('PlanServicesService', () => {
     maxAge: 70,
     minMonths: 12,
     commissionAmount: 10,
+    profitFactor: null,
     status: PlanStatus.ACTIVE,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -55,6 +62,8 @@ describe('PlanServicesService', () => {
     categoryId: 'cat-uuid-1',
     category: mockCategory,
     linkedHealthCategories: [],
+    cost: 50,
+    salePrice: null,
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -72,6 +81,8 @@ describe('PlanServicesService', () => {
     waitingPeriodDays: 0,
     copayAmount: 10,
     copayPercentage: 0,
+    cost: null,
+    salePrice: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -132,6 +143,13 @@ describe('PlanServicesService', () => {
           provide: getRepositoryToken(MedicalService),
           useValue: {
             findOne: jest.fn(),
+          },
+        },
+        {
+          provide: SystemSettingsService,
+          useValue: {
+            getNumeric: jest.fn().mockResolvedValue(2.0),
+            get: jest.fn().mockResolvedValue('2.00'),
           },
         },
         {
@@ -281,8 +299,17 @@ describe('PlanServicesService', () => {
         waitingPeriodDays: 30,
         copayAmount: 15,
         copayPercentage: 10,
+        cost: null,
+        salePrice: null,
       });
-      expect(result).toEqual(mockPlanService);
+      expect(result).toEqual(
+        expect.objectContaining({
+          cost: 50,
+          salePrice: 100,
+          isCostOverridden: false,
+          isPriceOverridden: false,
+        }),
+      );
     });
 
     it('should create plan service successfully with MONTHLY limitQuantity >= 1', async () => {
@@ -528,6 +555,100 @@ describe('PlanServicesService', () => {
       await expect(service.update('plan-uuid-1', 'ps-uuid-1', updateDto)).rejects.toThrow(
         EntityAlreadyExistsException,
       );
+    });
+
+    it('should allow overriding cost and salePrice on update', async () => {
+      planRepo.findOne.mockResolvedValue(mockPlan);
+      planServiceRepo.findOne.mockResolvedValue({ ...mockPlanService });
+      planServiceRepo.save.mockImplementation(async (entity) => entity as PlanService);
+
+      const updateDto: UpdatePlanServiceDto = {
+        cost: 65,
+        salePrice: 150,
+      };
+
+      const result = await service.update('plan-uuid-1', 'ps-uuid-1', updateDto);
+
+      expect(result.cost).toBe(65);
+      expect(result.salePrice).toBe(150);
+      expect((result as ResolvedPlanServiceResult).isCostOverridden).toBe(true);
+      expect((result as ResolvedPlanServiceResult).isPriceOverridden).toBe(true);
+    });
+
+    it('should allow resetting cost and salePrice to null to restore dynamic resolution', async () => {
+      planRepo.findOne.mockResolvedValue(mockPlan);
+      planServiceRepo.findOne.mockResolvedValue({
+        ...mockPlanService,
+        cost: 65,
+        salePrice: 150,
+      });
+      planServiceRepo.save.mockImplementation(async (entity) => entity as PlanService);
+
+      const updateDto: UpdatePlanServiceDto = {
+        cost: null,
+        salePrice: null,
+      };
+
+      const result = await service.update('plan-uuid-1', 'ps-uuid-1', updateDto);
+
+      expect(result.cost).toBe(50); // inherited from mockMedicalService.cost
+      expect(result.salePrice).toBe(100); // 50 * 2.0
+      expect((result as ResolvedPlanServiceResult).isCostOverridden).toBe(false);
+      expect((result as ResolvedPlanServiceResult).isPriceOverridden).toBe(false);
+    });
+  });
+
+  describe('pricing cascade and factor calculations', () => {
+    it('should use plan.profitFactor when defined on plan', async () => {
+      const planWithFactor: Plan = {
+        ...mockPlan,
+        profitFactor: 1.5,
+      };
+      planRepo.findOne.mockResolvedValue(planWithFactor);
+      planServiceRepo.findOne.mockResolvedValue({
+        ...mockPlanService,
+        cost: null,
+        salePrice: null,
+        medicalService: { ...mockMedicalService, cost: 40, salePrice: null },
+      });
+
+      const result = await service.findOne('plan-uuid-1', 'ps-uuid-1');
+
+      expect(result.cost).toBe(40);
+      expect(result.salePrice).toBe(60); // 40 * 1.5
+      expect((result as ResolvedPlanServiceResult).isPriceOverridden).toBe(false);
+    });
+
+    it('should use medicalService.salePrice when assigned in catalog and not overridden in plan', async () => {
+      planRepo.findOne.mockResolvedValue(mockPlan);
+      planServiceRepo.findOne.mockResolvedValue({
+        ...mockPlanService,
+        cost: null,
+        salePrice: null,
+        medicalService: { ...mockMedicalService, cost: 40, salePrice: 75 },
+      });
+
+      const result = await service.findOne('plan-uuid-1', 'ps-uuid-1');
+
+      expect(result.cost).toBe(40);
+      expect(result.salePrice).toBe(75);
+      expect((result as ResolvedPlanServiceResult).isPriceOverridden).toBe(false);
+    });
+
+    it('should prioritize planService.salePrice over medicalService.salePrice', async () => {
+      planRepo.findOne.mockResolvedValue(mockPlan);
+      planServiceRepo.findOne.mockResolvedValue({
+        ...mockPlanService,
+        cost: null,
+        salePrice: 90,
+        medicalService: { ...mockMedicalService, cost: 40, salePrice: 75 },
+      });
+
+      const result = await service.findOne('plan-uuid-1', 'ps-uuid-1');
+
+      expect(result.cost).toBe(40);
+      expect(result.salePrice).toBe(90);
+      expect((result as ResolvedPlanServiceResult).isPriceOverridden).toBe(true);
     });
   });
 

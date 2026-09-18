@@ -3,11 +3,14 @@ import {
   IsBoolean,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { HealthCategory } from '../../contracts/entities/health-declaration.entity';
 
 export class CreateMedicalServiceDto {
@@ -33,6 +36,18 @@ export class CreateMedicalServiceDto {
   @IsEnum(HealthCategory, { each: true })
   @IsOptional()
   linkedHealthCategories?: HealthCategory[] = [];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  cost?: number = 0;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  salePrice?: number | null;
 
   @IsBoolean()
   @IsOptional()

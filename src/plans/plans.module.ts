@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PdfModule } from '../pdf/pdf.module';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { MedicalServicesController } from './controllers/medical-services.controller';
 import { PlansController } from './controllers/plans.controller';
 import { ServiceCategoriesController } from './controllers/service-categories.controller';
@@ -19,6 +20,7 @@ import { ServiceCategoriesService } from './services/service-categories.service'
   imports: [
     TypeOrmModule.forFeature([Plan, ServiceCategory, MedicalService, PlanService]),
     PdfModule,
+    SystemSettingsModule,
   ],
   controllers: [ServiceCategoriesController, MedicalServicesController, PlansController],
   providers: [

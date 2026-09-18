@@ -47,6 +47,12 @@ export class CreatePlanDto {
   @Type(() => Number)
   minAge?: number = 0;
 
+  @IsNumber()
+  @Min(0.01)
+  @IsOptional()
+  @Type(() => Number)
+  profitFactor?: number | null;
+
   @IsEnum(PlanStatus)
   @IsOptional()
   status?: PlanStatus;
