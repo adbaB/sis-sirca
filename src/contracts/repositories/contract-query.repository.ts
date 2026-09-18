@@ -342,19 +342,21 @@ export class ContractQueryRepository {
 
     this.applySearchFilter(qb, dto.search);
 
+    qb.addSelect(effectiveExpSql, 'effective_expiration');
+
     if (dto.phase === RenewalPhase.EXPIRING_SOON) {
       qb.andWhere(
         `${effectiveExpSql} >= CURRENT_DATE AND ${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days')`,
       );
-      qb.orderBy(effectiveExpSql, 'ASC');
+      qb.orderBy('effective_expiration', 'ASC');
       qb.addOrderBy('contract.affiliationDate', 'ASC');
     } else if (dto.phase === RenewalPhase.PENDING_RENEWAL) {
       qb.andWhere(`${effectiveExpSql} < CURRENT_DATE`);
-      qb.orderBy(effectiveExpSql, 'DESC');
+      qb.orderBy('effective_expiration', 'DESC');
       qb.addOrderBy('contract.affiliationDate', 'DESC');
     } else {
       qb.andWhere(`${effectiveExpSql} <= (CURRENT_DATE + INTERVAL '30 days')`);
-      qb.orderBy(effectiveExpSql, 'ASC');
+      qb.orderBy('effective_expiration', 'ASC');
       qb.addOrderBy('contract.affiliationDate', 'ASC');
     }
 
