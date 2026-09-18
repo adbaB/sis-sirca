@@ -10,10 +10,13 @@ import { Portfolio } from '../../portfolios/entities/portfolio.entity';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { ActivateContractDto } from '../dto/activate-contract.dto';
+import { RenewContractDto } from '../dto/renew-contract.dto';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractReactivationService } from './contract-reactivation.service';
+import { calculateContractExpirationDate } from '../helpers/contract-date-formatter.helper';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
@@ -31,6 +34,7 @@ export class ContractLifecycleService {
     private readonly affiliationHistoryRepository: Repository<AffiliationHistory>,
     private readonly dataSource: DataSource,
     private readonly reactivationService: ContractReactivationService,
+    private readonly affiliationService: ContractAffiliationService,
   ) {}
 
   /**
@@ -83,13 +87,31 @@ export class ContractLifecycleService {
   }
 
   /**
-   * Updates basic contract properties (retention percentage, advisor, portfolio).
+   * Updates basic contract properties (retention percentage, advisor, portfolio, dates).
    */
   async update(id: string, updateContractDto: UpdateContractDto): Promise<Contract> {
     const contract = await this.findOne(id);
-    const { advisorId, portfolioId, ...rest } = updateContractDto;
+    const { advisorId, portfolioId, startDate, expirationDate, ...rest } = updateContractDto;
 
     Object.assign(contract, rest);
+
+    if (startDate !== undefined) {
+      contract.startDate = startDate ? new Date(startDate) : null;
+    }
+
+    if (expirationDate !== undefined) {
+      contract.expirationDate = expirationDate ? new Date(expirationDate) : null;
+    }
+
+    if (
+      contract.startDate &&
+      contract.expirationDate &&
+      contract.expirationDate < contract.startDate
+    ) {
+      throw new BadRequestException(
+        'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
+      );
+    }
 
     if (advisorId !== undefined) {
       contract.advisor = advisorId ? ({ id: advisorId } as Advisor) : null;
@@ -100,6 +122,97 @@ export class ContractLifecycleService {
     }
 
     return this.contractsRepository.save(contract);
+  }
+
+  /**
+   * Renews a contract with a new start date and expiration date without modifying affiliationDate (original creation date).
+   */
+  @Transactional()
+  async renew(id: string, dto: RenewContractDto): Promise<Contract> {
+    const qr = resolveQueryRunner(undefined, this.dataSource);
+    const manager = qr.manager;
+    const contractRepo = manager.getRepository(Contract);
+    const cpRepo = manager.getRepository(ContractPerson);
+
+    // 1. Lock contract row for update without relations to prevent:
+    // "ERROR: FOR UPDATE cannot be applied to the nullable side of an outer join" in PostgreSQL
+    const contract = await contractRepo.findOne({
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`El contrato con ID "${id}" no fue encontrado.`);
+    }
+
+    const newStartDate = dto.startDate;
+    const newExpirationDate = dto.expirationDate
+      ? dto.expirationDate
+      : calculateContractExpirationDate(newStartDate);
+
+    if (new Date(newExpirationDate) < new Date(newStartDate)) {
+      throw new BadRequestException(
+        'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
+      );
+    }
+
+    contract.startDate = new Date(newStartDate);
+    contract.expirationDate = new Date(newExpirationDate);
+
+    // If contract was INACTIVE or SUSPENDED, reactivate to ACTIVE upon renewal
+    if (contract.status !== ContractStatus.ACTIVE) {
+      contract.status = ContractStatus.ACTIVE;
+      contract.inactivationReason = null;
+      contract.reactivationEligibleAt = null;
+    }
+
+    await contractRepo.save(contract);
+
+    // Update patient / affiliate data if provided
+    if (dto.beneficiaries !== undefined && dto.affiliates !== undefined) {
+      throw new BadRequestException('Proporcione beneficiaries o affiliates, pero no ambos.');
+    }
+    const affiliatesToUpdate = dto.beneficiaries ?? dto.affiliates ?? [];
+    for (const item of affiliatesToUpdate) {
+      let targetCpId = item.contractPersonId || item.id;
+      if (!targetCpId && item.identityCard && item.typeIdentityCard) {
+        const foundCp = await cpRepo.findOne({
+          where: {
+            contract: { id },
+            person: { identityCard: item.identityCard, typeIdentityCard: item.typeIdentityCard },
+          },
+          relations: ['person'],
+        });
+        if (foundCp) {
+          targetCpId = foundCp.id;
+        }
+      }
+
+      if (targetCpId) {
+        await this.affiliationService.updateBeneficiary(id, targetCpId, item, manager);
+      }
+    }
+
+    if (affiliatesToUpdate.length > 0) {
+      await this.affiliationService.recalculateMonthlyAmount(id, manager);
+    }
+
+    this.logger.log(
+      `Contract ${contract.code} renewed: startDate=${newStartDate}, expirationDate=${newExpirationDate}`,
+    );
+
+    return (await contractRepo.findOne({
+      where: { id },
+      relations: [
+        'contractPersons',
+        'contractPersons.plan',
+        'contractPersons.person',
+        'contractPersons.person.plan',
+        'contractPersons.healthDeclarations',
+        'advisor',
+        'portfolio',
+      ],
+    })) as Contract;
   }
 
   /**

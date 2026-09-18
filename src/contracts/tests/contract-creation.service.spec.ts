@@ -12,15 +12,18 @@ import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
+import { ContractPersonExclusion } from '../entities/contract-person-exclusion.entity';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
 import { ContractCreationService } from '../services/contract-creation.service';
 import { ContractPdfService } from '../services/contract-pdf.service';
+import { HealthExclusionsService } from '../services/health-exclusions.service';
 
 describe('ContractCreationService', () => {
   let service: ContractCreationService;
   let invoiceService: jest.Mocked<InvoiceService>;
   let affiliationService: jest.Mocked<ContractAffiliationService>;
   let contractPdfService: jest.Mocked<ContractPdfService>;
+  let healthExclusionsService: jest.Mocked<HealthExclusionsService>;
   let mockManager: Record<string, unknown>;
   let mockQr: Record<string, unknown>;
 
@@ -103,6 +106,12 @@ describe('ContractCreationService', () => {
             generateAndUploadContractPdf: jest.fn().mockResolvedValue('https://s3/contract.pdf'),
           },
         },
+        {
+          provide: HealthExclusionsService,
+          useValue: {
+            detectAndPersistExclusions: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
@@ -110,6 +119,7 @@ describe('ContractCreationService', () => {
     invoiceService = module.get(InvoiceService);
     affiliationService = module.get(ContractAffiliationService);
     contractPdfService = module.get(ContractPdfService);
+    healthExclusionsService = module.get(HealthExclusionsService);
   });
 
   it('should be defined', () => {
@@ -201,6 +211,9 @@ describe('ContractCreationService', () => {
             name: 'Maria Beneficiaria',
             role: PersonRole.AFILIADO,
             planId: 'plan-1',
+            birthDate: '1995-05-15',
+            weight: 65,
+            height: 1.65,
           },
         ],
       };
@@ -265,16 +278,24 @@ describe('ContractCreationService', () => {
             save: jest.fn().mockResolvedValue([]),
           };
         }
+        if (entity === ContractPersonExclusion) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }
         return {};
       });
 
       const res = await service.createFull(dto);
 
       expect(res).toEqual(mockContract);
+      expect(healthExclusionsService.detectAndPersistExclusions).toHaveBeenCalled();
       expect(affiliationService.recalculateMonthlyAmount).toHaveBeenCalledWith(
         mockContract.id,
         mockManager,
       );
+
       expect(invoiceService.generateInvoiceForContract).toHaveBeenCalledWith(
         mockContract.id,
         undefined,
@@ -355,6 +376,102 @@ describe('ContractCreationService', () => {
       });
 
       expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ cutoffDay: 15 }));
+    });
+
+    it('should assign contract affiliationDate or affiliate specific affiliationDate to contract persons', async () => {
+      const mockCounter = { key: 'contract_code', value: 1 };
+      const mockSavedPerson1 = {
+        id: 'p-1',
+        identityCard: '12345678',
+        typeIdentityCard: 'V',
+        name: 'Carlos Titular',
+      };
+      const mockSavedPerson2 = {
+        id: 'p-2',
+        identityCard: '87654321',
+        typeIdentityCard: 'V',
+        name: 'Maria Beneficiaria',
+      };
+
+      const createdContractPersons: Partial<ContractPerson>[] = [];
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Advisor) return { findOne: jest.fn().mockResolvedValue(mockAdvisor) };
+        if (entity === SystemCounter) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockCounter),
+            save: jest.fn().mockResolvedValue(mockCounter),
+          };
+        }
+        if (entity === Contract) {
+          return {
+            create: jest.fn().mockReturnValue(mockContract),
+            save: jest.fn().mockResolvedValue(mockContract),
+            findOne: jest.fn().mockResolvedValue(mockContract),
+          };
+        }
+        if (entity === Person) {
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockImplementation(async (p) => {
+              if (p.identityCard === '12345678') return mockSavedPerson1;
+              return mockSavedPerson2;
+            }),
+          };
+        }
+        if (entity === ContractPerson) {
+          return {
+            find: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockImplementation((val) => {
+              createdContractPersons.push(val);
+              return val;
+            }),
+            save: jest.fn().mockImplementation(async (val) => ({ id: 'cp-saved', ...val })),
+          };
+        }
+        if (entity === AffiliationHistory) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue(true),
+          };
+        }
+        if (entity === HealthDeclaration) {
+          return {
+            create: jest.fn().mockImplementation((val) => val),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }
+        return {};
+      });
+
+      await service.createFull({
+        affiliationDate: '2026-08-01',
+        advisorId: 'adv-1',
+        affiliates: [
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '12345678',
+            name: 'Carlos Titular',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+          },
+          {
+            typeIdentityCard: TypeIdentityCard.V,
+            identityCard: '87654321',
+            name: 'Maria Beneficiaria',
+            role: PersonRole.AFILIADO,
+            planId: 'plan-1',
+            affiliationDate: '2026-08-15',
+            birthDate: '1995-05-15',
+            weight: 65,
+            height: 1.65,
+          },
+        ],
+      });
+
+      expect(createdContractPersons).toHaveLength(2);
+      expect(createdContractPersons[0].affiliationDate).toBe(mockContract.affiliationDate);
+      expect(createdContractPersons[1].affiliationDate).toBe('2026-08-15');
     });
   });
 });

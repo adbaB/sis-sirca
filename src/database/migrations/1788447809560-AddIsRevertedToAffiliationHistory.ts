@@ -11,7 +11,7 @@ export class AddIsRevertedToAffiliationHistory1788447809560 implements Migration
       `ALTER TABLE "affiliation_history" ADD "reverted_at" TIMESTAMP WITH TIME ZONE`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_ah_is_reverted" ON "affiliation_history" ("is_reverted") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_ah_is_reverted" ON "affiliation_history" ("is_reverted") `,
     );
     await queryRunner.query(
       `UPDATE "affiliation_history" SET "is_reverted" = true WHERE "reason" LIKE 'REVERTIDO:%'`,

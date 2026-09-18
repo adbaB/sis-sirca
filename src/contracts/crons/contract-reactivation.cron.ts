@@ -45,13 +45,15 @@ export class ContractReactivationCron {
     const now = getCaracasNow();
     const nowDate = now.toJSDate();
     const todayStr = now.toFormat('dd/MM/yyyy');
+    const todayEnd = now.endOf('day').toJSDate();
 
     while (true) {
       // Búsqueda en lotes aprovechando el índice condicional (status, reactivation_eligible_at)
+      // Se evalúan contratos elegibles hasta el final del día de hoy para incluir todo el día calendario
       const contracts = await this.contractRepository.find({
         where: {
           status: ContractStatus.SUSPENDED,
-          reactivationEligibleAt: LessThanOrEqual(nowDate),
+          reactivationEligibleAt: LessThanOrEqual(todayEnd),
           ...(lastId ? { id: MoreThan(lastId) } : {}),
         },
         relations: ['contractPersons', 'contractPersons.person'],

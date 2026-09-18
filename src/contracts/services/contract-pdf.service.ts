@@ -13,6 +13,7 @@ import { Plan } from '../../plans/entities/plan.entity';
 import { Contract } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import {
+  calculateContractExpirationDate,
   formatContractDate,
   getCalendarDateComponents,
   getContractPersonAge,
@@ -134,15 +135,28 @@ export class ContractPdfService {
 
       const logoBase64 = await loadLogoBase64(this.logger);
 
+      const effectiveStartDate = fullContract.startDate || fullContract.affiliationDate;
+      const startDateFormatted = formatContractDate(effectiveStartDate);
+
+      const effectiveExpirationDate = fullContract.expirationDate
+        ? fullContract.expirationDate
+        : effectiveStartDate
+          ? calculateContractExpirationDate(effectiveStartDate)
+          : null;
+      const expirationDateFormatted = formatContractDate(effectiveExpirationDate);
+
       const pdfData: ContractPdfTemplateData = {
         contractCode: fullContract.code,
         affiliationDateFormatted: formatContractDate(fullContract.affiliationDate),
+        startDateFormatted,
+        expirationDateFormatted,
         logoBase64,
         titular: titularData,
         planName,
         beneficiaries,
         emptyRows,
         healthQuestions,
+        advisorCode: fullContract.advisor?.code || '',
         advisorName: fullContract.advisor?.name || '',
         dayText,
         dayNumber,

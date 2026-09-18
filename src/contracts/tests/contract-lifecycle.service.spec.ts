@@ -5,10 +5,12 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AffiliationHistory } from '../entities/affiliation-history.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractAffiliationService } from '../services/contract-affiliation.service';
 import { ContractLifecycleService } from '../services/contract-lifecycle.service';
 import { ContractReactivationService } from '../services/contract-reactivation.service';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { RenewContractDto } from '../dto/renew-contract.dto';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
@@ -19,6 +21,7 @@ import { CARACAS_ZONE } from '../../common/utils/date.util';
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
   let contractsRepository: jest.Mocked<Repository<Contract>>;
+  let affiliationService: jest.Mocked<ContractAffiliationService>;
   let mockManager: Record<string, unknown>;
   let mockQr: Record<string, unknown>;
 
@@ -66,6 +69,13 @@ describe('ContractLifecycleService', () => {
         ContractLifecycleService,
         ContractReactivationService,
         {
+          provide: ContractAffiliationService,
+          useValue: {
+            updateBeneficiary: jest.fn().mockResolvedValue({ id: 'cp-1' }),
+            recalculateMonthlyAmount: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
           provide: getRepositoryToken(Contract),
           useValue: {
             findOne: jest.fn(),
@@ -99,6 +109,7 @@ describe('ContractLifecycleService', () => {
 
     service = module.get<ContractLifecycleService>(ContractLifecycleService);
     contractsRepository = module.get(getRepositoryToken(Contract));
+    affiliationService = module.get(ContractAffiliationService);
   });
 
   it('should be defined', () => {
@@ -236,6 +247,115 @@ describe('ContractLifecycleService', () => {
           },
         }),
       );
+    });
+  });
+
+  describe('renew', () => {
+    it('should renew contract updating startDate and calculating expirationDate without modifying affiliationDate', async () => {
+      const mockExistingContract = {
+        ...mockContract,
+        affiliationDate: new Date('2025-01-01'),
+        startDate: new Date('2025-01-01'),
+        expirationDate: new Date('2025-01-01'),
+        status: ContractStatus.INACTIVE,
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockExistingContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === ContractPerson) {
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+          };
+        }
+        return {};
+      });
+
+      const dto: RenewContractDto = {
+        startDate: '2026-09-01',
+      };
+
+      const res = await service.renew('contract-1', dto);
+
+      expect(res.affiliationDate).toEqual(new Date('2025-01-01'));
+      expect(res.startDate).toEqual(new Date('2026-09-01'));
+      expect(res.expirationDate).toEqual(new Date('2027-08-31'));
+      expect(res.status).toBe(ContractStatus.ACTIVE);
+    });
+
+    it('should renew contract and update patient/affiliate data when provided', async () => {
+      const mockExistingContract = {
+        ...mockContract,
+        affiliationDate: new Date('2025-01-01'),
+        startDate: new Date('2025-01-01'),
+        expirationDate: new Date('2025-01-01'),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockExistingContract),
+            save: jest.fn().mockImplementation(async (c) => c),
+          };
+        }
+        if (target === ContractPerson) {
+          return {
+            findOne: jest.fn().mockResolvedValue({ id: 'cp-1' }),
+          };
+        }
+        return {};
+      });
+
+      const dto: RenewContractDto = {
+        startDate: '2026-09-01',
+        expirationDate: '2027-09-01',
+        beneficiaries: [
+          {
+            contractPersonId: 'cp-1',
+            weight: 75,
+            height: 1.8,
+            address: 'Nueva Dirección',
+          },
+        ],
+      };
+
+      const res = await service.renew('contract-1', dto);
+
+      expect(affiliationService.updateBeneficiary).toHaveBeenCalledWith(
+        'contract-1',
+        'cp-1',
+        expect.objectContaining({ weight: 75, height: 1.8, address: 'Nueva Dirección' }),
+        mockManager,
+      );
+      expect(affiliationService.recalculateMonthlyAmount).toHaveBeenCalledWith(
+        'contract-1',
+        mockManager,
+      );
+      expect(res.startDate).toEqual(new Date('2026-09-01'));
+      expect(res.expirationDate).toEqual(new Date('2027-09-01'));
+    });
+
+    it('should throw BadRequestException if expirationDate is before startDate', async () => {
+      const mockExistingContract = { ...mockContract };
+      mockManager.getRepository = jest.fn().mockImplementation((target) => {
+        if (target === Contract) {
+          return {
+            findOne: jest.fn().mockResolvedValue(mockExistingContract),
+          };
+        }
+        return {};
+      });
+
+      const dto: RenewContractDto = {
+        startDate: '2026-09-01',
+        expirationDate: '2026-08-01',
+      };
+
+      await expect(service.renew('contract-1', dto)).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -591,8 +711,10 @@ describe('ContractLifecycleService', () => {
         'contract-1',
         em as unknown as EntityManager,
       );
-      expect(result).toBeInstanceOf(Date);
-      const expected = DateTime.fromJSDate(opDate).setZone(CARACAS_ZONE).plus({ days: 7 });
+      const expected = DateTime.fromJSDate(opDate)
+        .setZone(CARACAS_ZONE)
+        .plus({ days: 7 })
+        .startOf('day');
       expect(DateTime.fromJSDate(result as Date).toMillis()).toBe(expected.toMillis());
       expect(saveMock).toHaveBeenCalled();
       expect(mockSuspended.reactivationEligibleAt).toBeInstanceOf(Date);

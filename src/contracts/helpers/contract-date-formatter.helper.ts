@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { getCaracasDateTime, getCaracasNow } from '../../common/utils/date.util';
 
 export interface CalendarDateComponents {
@@ -86,4 +87,19 @@ export function formatContractDate(date?: Date | string | null): string {
   const dayStr = String(day).padStart(2, '0');
   const monthStr = String(monthIndex + 1).padStart(2, '0');
   return `${dayStr}-${monthStr}-${year}`;
+}
+
+/**
+ * Calculates the contract expiration date given a start date (or affiliation date).
+ * Business rule: The cycle is 1 year minus 1 month, ending on the last day of that month.
+ * Example: startDate = 2026-06-28 -> expirationDate = 2027-05-31.
+ * Example: startDate = 2026-01-15 -> expirationDate = 2026-12-31.
+ */
+export function calculateContractExpirationDate(startDate: Date | string): string {
+  const { year, monthIndex } = getCalendarDateComponents(startDate);
+  const dt = DateTime.fromObject(
+    { year, month: monthIndex + 1, day: 1 },
+    { zone: 'America/Caracas' },
+  );
+  return dt.plus({ years: 1 }).minus({ months: 1 }).endOf('month').toISODate()!;
 }

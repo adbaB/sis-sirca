@@ -6,6 +6,11 @@ import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import {
+  EvaluateHealthExclusionsDto,
+  HealthExclusionEvaluationResult,
+} from '../dto/evaluate-health-exclusions.dto';
+
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Person, PersonStatus, TypeIdentityCard } from '../../persons/entities/person.entity';
@@ -16,6 +21,8 @@ import {
 } from '../interfaces/person-verification.interface';
 import { ContractsService } from '../services/contracts.service';
 import { ContractsController } from './contracts.controller';
+import { FindRenewalsDto } from '../dto/find-renewals.dto';
+import { JwtPayload } from '../../auth/guards';
 
 describe('ContractsController', () => {
   let controller: ContractsController;
@@ -48,10 +55,12 @@ describe('ContractsController', () => {
             create: jest.fn(),
             createFull: jest.fn(),
             findAll: jest.fn(),
+            findRenewals: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
             remove: jest.fn(),
             inactivate: jest.fn(),
+            renew: jest.fn(),
             activate: jest.fn(),
             addBeneficiary: jest.fn(),
             updateBeneficiary: jest.fn(),
@@ -61,6 +70,7 @@ describe('ContractsController', () => {
             removeAffiliate: jest.fn(),
             verifyPersonAffiliation: jest.fn(),
             verifyUnified: jest.fn(),
+            evaluateHealthExclusions: jest.fn(),
           },
         },
       ],
@@ -95,6 +105,28 @@ describe('ContractsController', () => {
 
       expect(service.createFull).toHaveBeenCalledWith(dto);
       expect(result).toEqual(mockContract);
+    });
+  });
+
+  describe('evaluateHealthExclusions', () => {
+    it('should delegate to service.evaluateHealthExclusions', async () => {
+      const dto: EvaluateHealthExclusionsDto = { healthDeclarations: [] };
+      const mockResult: HealthExclusionEvaluationResult = {
+        suggestedExclusions: [],
+        manualExclusions: [],
+        allExclusions: [],
+        summary: {
+          totalConditionsDeclared: 0,
+          totalServicesExcluded: 0,
+          hasManualModifications: false,
+        },
+      };
+      jest.spyOn(service, 'evaluateHealthExclusions').mockResolvedValue(mockResult);
+
+      const result = await controller.evaluateHealthExclusions(dto);
+
+      expect(service.evaluateHealthExclusions).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(mockResult);
     });
   });
 
@@ -142,6 +174,33 @@ describe('ContractsController', () => {
     });
   });
 
+  describe('findRenewals', () => {
+    it('should return a paginated result with counts for renewals', async () => {
+      const renewalsResult = {
+        data: [mockContract],
+        counts: { expiringSoon: 1, pendingRenewal: 0 },
+        meta: {
+          totalItems: 1,
+          itemCount: 1,
+          itemsPerPage: 10,
+          totalPages: 1,
+          currentPage: 1,
+        },
+      };
+
+      jest.spyOn(service, 'findRenewals').mockResolvedValue(renewalsResult);
+
+      const mockUser = { userId: 'user-1', roleId: 'role-1', advisorId: null };
+      const result = await controller.findRenewals(
+        {} as unknown as FindRenewalsDto,
+        mockUser as unknown as JwtPayload,
+      );
+
+      expect(service.findRenewals).toHaveBeenCalledWith({}, null);
+      expect(result).toEqual(renewalsResult);
+    });
+  });
+
   describe('findOne', () => {
     it('should return a single contract', async () => {
       jest.spyOn(service, 'findOne').mockResolvedValue(mockContract);
@@ -177,6 +236,18 @@ describe('ContractsController', () => {
       await controller.remove('1');
 
       expect(service.remove).toHaveBeenCalledWith('1');
+    });
+  });
+
+  describe('renew', () => {
+    it('should delegate renewing a contract to service.renew', async () => {
+      const dto = { startDate: '2026-09-01', expirationDate: '2027-09-01' };
+      jest.spyOn(service, 'renew').mockResolvedValue(mockContract);
+
+      const result = await controller.renew('1', dto);
+
+      expect(service.renew).toHaveBeenCalledWith('1', dto);
+      expect(result).toEqual(mockContract);
     });
   });
 

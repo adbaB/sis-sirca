@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsString,
@@ -13,6 +14,7 @@ import { Type } from 'class-transformer';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { PersonRole, Parentesco } from '../entities/contract-person.entity';
 import { HealthDeclarationDto } from './health-declaration.dto';
+import { CreateContractPersonExclusionDto } from './create-contract-person-exclusion.dto';
 
 export class CreateBeneficiaryDto {
   @IsString()
@@ -34,6 +36,13 @@ export class CreateBeneficiaryDto {
   @IsEnum(PersonRole)
   @IsNotEmpty()
   role: PersonRole;
+
+  @IsDateString(
+    {},
+    { message: 'La fecha de afiliación debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  @IsOptional()
+  affiliationDate?: string;
 
   @IsBoolean()
   @IsNotEmpty()
@@ -96,4 +105,10 @@ export class CreateBeneficiaryDto {
   @ValidateNested({ each: true })
   @Type(() => HealthDeclarationDto)
   healthDeclarations?: HealthDeclarationDto[];
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateContractPersonExclusionDto)
+  exclusions?: CreateContractPersonExclusionDto[];
 }

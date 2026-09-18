@@ -35,7 +35,7 @@
     .header-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 5px;
+      margin-bottom: 8px;
     }
     .header-table td {
       border: 1px solid var(--border-color);
@@ -43,23 +43,26 @@
       vertical-align: middle;
     }
     .logo-container {
-      width: 40%;
+      width: 32%;
       text-align: center;
+      padding: 4px 6px;
     }
     .logo-img {
-      height: 35px;
+      height: 55px;
+      max-width: 170px;
       object-fit: contain;
     }
     .title-container {
-      width: 40%;
+      width: 38%;
       text-align: center;
       font-size: 14px;
       font-weight: bold;
       color: var(--primary-dark);
     }
     .contract-info-container {
-      width: 20%;
-      font-size: 8.5px;
+      width: 30%;
+      font-size: 8px;
+      line-height: 1.25;
       color: var(--text-color);
     }
     .section-title {
@@ -190,6 +193,9 @@
       font-weight: bold;
       color: var(--primary-dark);
     }
+    .enrollment-page .section-title.text-center {
+      text-align: center !important;
+    }
     .enrollment-page .data-table td, 
     .enrollment-page .data-table th {
       border: 1px solid var(--border-light);
@@ -258,22 +264,25 @@
           {{#if logoBase64}}
             <img src="{{logoBase64}}" alt="SIRCA LOGO" class="logo-img" />
           {{/if}}
+          <div style="font-size: 8px; font-weight: bold; color: var(--text-dark); margin-top: 2px;">RIF: J-501776385</div>
         </td>
         <td class="title-container">PLANILLA DE AFILIACIÓN</td>
         <td class="contract-info-container">
           <strong>Nº DE CONTRATO:</strong><br>
-          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span><br>
-          <strong>FECHA:</strong> {{ affiliationDateFormatted }}
+          <span style="font-size: 11px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span><br>
+          <strong>FECHA AFILIACIÓN:</strong> {{ affiliationDateFormatted }}<br>
+          <strong>FECHA INICIO:</strong> {{ startDateFormatted }}<br>
+          <strong>FECHA VENCIMIENTO:</strong> {{ expirationDateFormatted }}
         </td>
       </tr>
     </table>
 
-    <div class="legal-disclaimer" style="text-align: justify; margin-bottom: 5px;">
+    <div class="legal-disclaimer" style="text-align: justify; margin-top: 10px; margin-bottom: 10px;">
       De acuerdo con la información solicitada a continuación, la Empresa <strong>SALUD INTEGRAL EL ROSARIO, C.A. (SIRCA)</strong> se reservará el derecho de contratar o no el Servicio de Medicina Prepagada, es por ello que agradecemos que esta solicitud sea completada en todas sus partes con letra legible o de imprenta, sin enmienda, alteración, omisión, forjamiento, información falsa o fraudulenta.
     </div>
 
     <!-- Tipo de Operacion -->
-    <div style="display: flex; justify-content: space-around; border: 1px solid var(--border-color); padding: 5px; font-size: 9.5px; font-weight: bold; margin-bottom: 6px; background-color: var(--bg-light); border-radius: 4px;">
+    <div style="display: flex; justify-content: space-around; border: 1px solid var(--border-color); padding: 6px 10px; font-size: 9.5px; font-weight: bold; margin-top: 10px; margin-bottom: 10px; background-color: var(--bg-light); border-radius: 4px;">
       <div><span class="checkbox-box">X</span> INCLUSIÓN</div>
       <div><span class="checkbox-box"></span> EXCLUSIÓN</div>
       <div><span class="checkbox-box"></span> MODIFICACIÓN</div>
@@ -389,26 +398,19 @@
         {{/each}}
       </tbody>
     </table>
-  </div>
 
-  <!-- ==================== HOJA 2: DECLARACIÓN DE SALUD ==================== -->
-  <div class="page enrollment-page">
-    <table class="header-table">
+    <!-- Datos del Asesor -->
+    <div class="section-title">Datos del Asesor / Promotor</div>
+    <table class="data-table">
       <tr>
-        <td class="logo-container">
-          {{#if logoBase64}}
-            <img src="{{logoBase64}}" alt="SIRCA LOGO" class="logo-img" />
-          {{/if}}
-        </td>
-        <td class="title-container">DECLARACIÓN DE SALUD</td>
-        <td class="contract-info-container">
-          <strong>Nº DE CONTRATO:</strong><br>
-          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span>
-        </td>
+        <td style="width: 25%;"><span class="bold">CÓDIGO DE ASESOR:</span><br>{{#if advisorCode}}{{ advisorCode }}{{else}}-{{/if}}</td>
+        <td style="width: 75%;"><span class="bold">APELLIDOS Y NOMBRES DEL ASESOR:</span><br>{{#if advisorName}}{{ advisorName }}{{else}}-{{/if}}</td>
       </tr>
     </table>
 
-    <div class="legal-disclaimer" style="margin-bottom: 5px;">
+    <!-- Declaración de Salud -->
+    <div class="section-title text-center" style="margin-top: 10px;">Declaración de Salud</div>
+    <div class="legal-disclaimer" style="margin: 6px 0 8px 0; font-size: 8.5px; text-align: justify;">
       RESPONDA EL CUESTIONARIO E INDIQUE SI USTED O CUALQUIERA DE LAS PERSONAS DE SU GRUPO FAMILIAR HAN PADECIDO, HAN SIDO DIAGNOSTICADOS, TRATADOS O MEDICADOS, POR ALGUNOS DE LOS SÍNTOMAS Y/O ENFERMEDADES DETALLADAS A CONTINUACIÓN.
     </div>
 
@@ -434,7 +436,7 @@
     </table>
 
     <!-- Declaracion Jurada -->
-    <div class="section-title">Declaración Jurada</div>
+    <div class="section-title text-center" style="margin-top: 10px;">Declaración Jurada</div>
     <div class="juramento-box" style="text-align: justify;">
       Yo, el Afiliado Titular, declaro:<br>
       a. Que he leído y entendido cabalmente cada una de las partes de esta Solicitud y la información que suministro es verdadera, amplia, completa y exacta, dependiendo de ella la validez del contrato.<br>
@@ -444,32 +446,33 @@
     </div>
 
     <!-- Origen y Destino de Fondos -->
-    <div class="section-title">Declaración Jurada de Origen y Destino de Fondos</div>
+    <div class="section-title text-center" style="margin-top: 10px;">Declaración Jurada de Origen y Destino de Fondos</div>
     <div class="fondos-box text-center bold">
       "DOY FE QUE EL DINERO UTILIZADO PARA EL PAGO DE LAS CUOTAS DEL PRESENTE CONTRATO PROVIENE DE UNA FUENTE LÍCITA Y POR LO TANTO, NO TIENE RELACIÓN ALGUNA CON DINERO, CAPITALES, BIENES, HABERES, VALORES O TÍTULOS PRODUCTO DE LAS ACTIVIDADES O ACCIONES DERIVADAS DE OPERACIONES ILÍCITAS PREVISTAS EN LA 'LEY ORGÁNICA CONTRA LA DELINCUENCIA ORGANIZADA Y EL FINANCIAMIENTO AL TERRORISMO'"
     </div>
 
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px;">
-      <div style="width: 45%; text-align: center;">
-        <div style="border-top: 1px solid #000; width: 80%; margin: 0 auto 5px auto;"></div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; page-break-inside: avoid;">
+      <div style="width: 32%; text-align: center;">
+        <div style="border-top: 1px solid #000; width: 90%; margin: 0 auto 6px auto;"></div>
         <span class="bold" style="font-size: 10px;">POR SIRCA (ASESOR)</span><br>
         <span style="font-size: 9px;">{{#if advisorName}}{{advisorName}}{{else}}-{{/if}}</span>
       </div>
       
-      <div style="width: 55%; display: flex; justify-content: flex-end; align-items: flex-end;">
-        <div style="display: flex; flex-direction: column; align-items: center; margin-right: 15px;">
-          <div style="width: 50px; height: 65px; border: 1px solid #000; border-radius: 4px; margin-bottom: 5px;"></div>
-          <span style="font-size: 8px;">Pulgar Izq.</span>
+      <div style="width: 36%; display: flex; justify-content: center; align-items: flex-end; gap: 20px;">
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 70px; height: 95px; border: 1.5px solid #000; border-radius: 4px; margin-bottom: 5px; background-color: #fff;"></div>
+          <span style="font-size: 8.5px; font-weight: bold;">Pulgar Izq.</span>
         </div>
-        <div style="display: flex; flex-direction: column; align-items: center; margin-right: 20px;">
-          <div style="width: 50px; height: 65px; border: 1px solid #000; border-radius: 4px; margin-bottom: 5px;"></div>
-          <span style="font-size: 8px;">Pulgar Der.</span>
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 70px; height: 95px; border: 1.5px solid #000; border-radius: 4px; margin-bottom: 5px; background-color: #fff;"></div>
+          <span style="font-size: 8.5px; font-weight: bold;">Pulgar Der.</span>
         </div>
-        <div style="text-align: center; width: 180px;">
-          <div style="border-top: 1px solid #000; width: 100%; margin: 0 auto 5px auto;"></div>
-          <span style="font-size: 10px;" class="bold">FIRMA DEL AFILIADO</span><br>
-          <span style="font-size: 9px;">{{titular.name}}</span>
-        </div>
+      </div>
+
+      <div style="width: 32%; text-align: center;">
+        <div style="border-top: 1px solid #000; width: 90%; margin: 0 auto 6px auto;"></div>
+        <span style="font-size: 10px;" class="bold">FIRMA DEL AFILIADO</span><br>
+        <span style="font-size: 9px;">{{titular.name}}</span>
       </div>
     </div>
   </div>
@@ -478,7 +481,10 @@
   <div class="page" style="padding: 20px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
       {{#if logoBase64}}
-        <img src="{{logoBase64}}" alt="Logo" style="height: 40px;" />
+        <div>
+          <img src="{{logoBase64}}" alt="Logo" style="height: 50px; max-width: 160px; object-fit: contain;" />
+          <div style="font-size: 8px; font-weight: bold; color: var(--text-dark); margin-top: 2px;">RIF: J-501776385</div>
+        </div>
       {{/if}}
       <h2 style="margin: 0; font-size: 16px; font-weight: bold; text-align: right;">CONTRATO</h2>
     </div>
@@ -808,11 +814,14 @@
           {{#if logoBase64}}
             <img src="{{logoBase64}}" alt="SIRCA LOGO" class="logo-img" />
           {{/if}}
+          <div style="font-size: 8px; font-weight: bold; color: var(--text-dark); margin-top: 2px;">RIF: J-501776385</div>
         </td>
         <td class="title-container" style="font-size: 16px;">DOCUMENTOS CONSIGNADOS</td>
         <td class="contract-info-container">
           <strong>Nº DE CONTRATO:</strong><br>
-          <span style="font-size: 12px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span>
+          <span style="font-size: 11px; font-weight: bold; color: var(--accent-color);">{{ contractCode }}</span><br>
+          <strong>FECHA INICIO:</strong> {{ startDateFormatted }}<br>
+          <strong>FECHA VENCIMIENTO:</strong> {{ expirationDateFormatted }}
         </td>
       </tr>
     </table>

@@ -19,10 +19,12 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { generateContractCode } from '../helpers/contract-code-generator.helper';
+import { calculateContractExpirationDate } from '../helpers/contract-date-formatter.helper';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 import { validateContractAffiliates } from '../helpers/contract-validator.helper';
 import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { HealthExclusionsService } from './health-exclusions.service';
 
 @Injectable()
 export class ContractCreationService {
@@ -36,6 +38,7 @@ export class ContractCreationService {
     private readonly plansService: PlansService,
     private readonly affiliationService: ContractAffiliationService,
     private readonly contractPdfService: ContractPdfService,
+    private readonly healthExclusionsService: HealthExclusionsService,
   ) {}
 
   /**
@@ -63,8 +66,21 @@ export class ContractCreationService {
     // 2. Generate code and create contract entity
     const { generatedCode, advisor } = await generateContractCode(manager, advisorId);
 
+    const effectiveStartDate = dto.startDate ? dto.startDate : dto.affiliationDate;
+    const effectiveExpirationDate = dto.expirationDate
+      ? dto.expirationDate
+      : calculateContractExpirationDate(effectiveStartDate);
+
+    if (new Date(effectiveExpirationDate) < new Date(effectiveStartDate)) {
+      throw new BadRequestException(
+        'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
+      );
+    }
+
     const contract = contractRepo.create({
       ...contractData,
+      startDate: effectiveStartDate ? new Date(effectiveStartDate) : undefined,
+      expirationDate: effectiveExpirationDate ? new Date(effectiveExpirationDate) : undefined,
       code: generatedCode,
       advisor,
       ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
@@ -95,6 +111,7 @@ export class ContractCreationService {
         occupation,
         legalRepresentative,
         healthDeclarations,
+        affiliationDate,
       } = affiliate;
 
       // Check if person exists (lock row for updates to prevent race conditions)
@@ -200,6 +217,9 @@ export class ContractCreationService {
         ? (isBillingOwner ?? false)
         : role === PersonRole.TITULAR;
 
+      const resolvedAffiliationDate =
+        affiliationDate || savedContract.affiliationDate || contractData.affiliationDate;
+
       const contractPerson = cpRepo.create({
         contract: savedContract,
         person,
@@ -207,6 +227,7 @@ export class ContractCreationService {
         role,
         isBillingOwner: resolvedIsBillingOwner,
         relationship,
+        affiliationDate: resolvedAffiliationDate,
       });
       const savedCp = await cpRepo.save(contractPerson);
 
@@ -221,6 +242,14 @@ export class ContractCreationService {
         );
         await hdRepo.save(hdEntities);
       }
+
+      // Process health exclusions (Requirement R3)
+      await this.healthExclusionsService.detectAndPersistExclusions(
+        savedCp,
+        healthDeclarations ?? [],
+        affiliate.exclusions,
+        manager,
+      );
 
       // Record affiliation history for AFILIADOs
       if (role === PersonRole.AFILIADO) {
@@ -249,6 +278,9 @@ export class ContractCreationService {
         'contractPersons.plan',
         'contractPersons.person',
         'contractPersons.person.plan',
+        'contractPersons.exclusions',
+        'contractPersons.exclusions.medicalService',
+        'contractPersons.exclusions.serviceCategory',
         'advisor',
         'portfolio',
       ],

@@ -34,10 +34,11 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas.');
     }
 
-    // 4. Generar JWT con payload mínimo (solo userId y roleId)
+    // 4. Generar JWT con payload mínimo (userId, roleId, advisorId)
     const payload: JwtPayload = {
       userId: user.id,
       roleId: user.roleId,
+      advisorId: user.advisorId ?? null,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);

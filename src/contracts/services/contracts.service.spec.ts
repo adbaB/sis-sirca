@@ -7,6 +7,7 @@ import { ContractReactivationService } from './contract-reactivation.service';
 import { ContractPdfService } from './contract-pdf.service';
 import { ContractStatisticsService } from './contract-statistics.service';
 import { ContractsService } from './contracts.service';
+import { HealthExclusionsService } from './health-exclusions.service';
 import { ContractQueryRepository } from '../repositories/contract-query.repository';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
@@ -34,6 +35,7 @@ describe('ContractsService (Facade)', () => {
   let pdfService: jest.Mocked<ContractPdfService>;
   let statisticsService: jest.Mocked<ContractStatisticsService>;
   let queryRepository: jest.Mocked<ContractQueryRepository>;
+  let healthExclusionsService: jest.Mocked<HealthExclusionsService>;
 
   const mockContract = {
     id: 'contract-uuid-1',
@@ -66,6 +68,7 @@ describe('ContractsService (Facade)', () => {
             update: jest.fn().mockResolvedValue(mockContract),
             remove: jest.fn().mockResolvedValue(undefined),
             inactivate: jest.fn().mockResolvedValue(mockContract),
+            renew: jest.fn().mockResolvedValue(mockContract),
             activate: jest.fn().mockResolvedValue(mockContract),
             syncReactivationEligibility: jest.fn().mockResolvedValue(new Date('2026-09-08')),
             setAdvisor: jest.fn().mockResolvedValue(undefined),
@@ -136,6 +139,23 @@ describe('ContractsService (Facade)', () => {
                 currentPage: 1,
               },
             }),
+            findRenewalsPaginated: jest.fn().mockResolvedValue({
+              data: [mockContract],
+              counts: { expiringSoon: 1, pendingRenewal: 0 },
+              meta: {
+                totalItems: 1,
+                itemCount: 1,
+                itemsPerPage: 10,
+                totalPages: 1,
+                currentPage: 1,
+              },
+            }),
+          },
+        },
+        {
+          provide: HealthExclusionsService,
+          useValue: {
+            evaluateHealthExclusions: jest.fn(),
           },
         },
       ],
@@ -150,6 +170,7 @@ describe('ContractsService (Facade)', () => {
     pdfService = module.get(ContractPdfService);
     statisticsService = module.get(ContractStatisticsService);
     queryRepository = module.get(ContractQueryRepository);
+    healthExclusionsService = module.get(HealthExclusionsService);
   });
 
   it('should be defined', () => {
@@ -184,6 +205,14 @@ describe('ContractsService (Facade)', () => {
       expect(res.data).toEqual([mockContract]);
     });
 
+    it('findRenewals should delegate to queryRepository.findRenewalsPaginated', async () => {
+      const query = { search: 'SIR' };
+      const res = await service.findRenewals(query, 'advisor-1');
+      expect(queryRepository.findRenewalsPaginated).toHaveBeenCalledWith(query, 'advisor-1');
+      expect(res.data).toEqual([mockContract]);
+      expect(res.counts.expiringSoon).toBe(1);
+    });
+
     it('findOne should delegate to lifecycleService.findOne', async () => {
       const res = await service.findOne('contract-uuid-1');
       expect(lifecycleService.findOne).toHaveBeenCalledWith('contract-uuid-1');
@@ -214,6 +243,13 @@ describe('ContractsService (Facade)', () => {
       const dto: InactivateContractDto = { reason: 'Mora' };
       const res = await service.inactivate('contract-uuid-1', dto);
       expect(lifecycleService.inactivate).toHaveBeenCalledWith('contract-uuid-1', dto);
+      expect(res).toEqual(mockContract);
+    });
+
+    it('renew should delegate to lifecycleService.renew', async () => {
+      const dto = { startDate: '2026-09-01', expirationDate: '2027-09-01' };
+      const res = await service.renew('contract-uuid-1', dto);
+      expect(lifecycleService.renew).toHaveBeenCalledWith('contract-uuid-1', dto);
       expect(res).toEqual(mockContract);
     });
 
@@ -347,6 +383,26 @@ describe('ContractsService (Facade)', () => {
     });
   });
 
+  describe('Health Exclusions delegates', () => {
+    it('evaluateHealthExclusions should delegate to healthExclusionsService.evaluateHealthExclusions', async () => {
+      const dto = { healthDeclarations: [] };
+      const mockResult = {
+        suggestedExclusions: [],
+        manualExclusions: [],
+        allExclusions: [],
+        summary: {
+          totalConditionsDeclared: 0,
+          totalServicesExcluded: 0,
+          hasManualModifications: false,
+        },
+      };
+      healthExclusionsService.evaluateHealthExclusions.mockResolvedValue(mockResult);
+
+      const res = await service.evaluateHealthExclusions(dto);
+      expect(healthExclusionsService.evaluateHealthExclusions).toHaveBeenCalledWith(dto);
+      expect(res).toEqual(mockResult);
+    });
+  });
   describe('Verification delegates', () => {
     it('verifyPersonAffiliation should delegate to verificationService.verifyPersonAffiliation', async () => {
       const res = await service.verifyPersonAffiliation(TypeIdentityCard.V, '12345678');

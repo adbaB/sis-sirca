@@ -1,12 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CreatePersonDto } from '../dto/create-person.dto';
 import { Person, TypeIdentityCard } from '../entities/person.entity';
+import { PersonBenefitsResponseDto } from '../dto/person-benefits-response.dto';
+import { PersonBenefitsService } from '../services/person-benefits.service';
 import { PersonsService } from '../services/persons.service';
 import { PersonsController } from './persons.controller';
 
 describe('PersonsController', () => {
   let controller: PersonsController;
   let service: PersonsService;
+  let benefitsService: PersonBenefitsService;
 
   const mockPerson = {
     id: '1',
@@ -33,6 +36,13 @@ describe('PersonsController', () => {
             findOne: jest.fn(),
             update: jest.fn(),
             remove: jest.fn(),
+            findByIdentityCard: jest.fn(),
+          },
+        },
+        {
+          provide: PersonBenefitsService,
+          useValue: {
+            getPersonBenefits: jest.fn(),
           },
         },
       ],
@@ -40,6 +50,7 @@ describe('PersonsController', () => {
 
     controller = module.get<PersonsController>(PersonsController);
     service = module.get<PersonsService>(PersonsService);
+    benefitsService = module.get<PersonBenefitsService>(PersonBenefitsService);
   });
 
   it('should be defined', () => {
@@ -93,6 +104,42 @@ describe('PersonsController', () => {
       await controller.remove('1');
 
       expect(service.remove).toHaveBeenCalledWith('1');
+    });
+  });
+
+  describe('getPersonBenefits', () => {
+    it('should delegate to personBenefitsService.getPersonBenefits', async () => {
+      const mockBenefits = {
+        person: {
+          id: '1',
+          firstName: 'John',
+          lastName: 'Doe',
+          identityCard: '123456',
+          typeIdentityCard: 'V',
+        },
+        contract: {
+          id: 'c-1',
+          code: 'CTR-1',
+          status: 'ACTIVE',
+          affiliationDate: new Date(),
+        },
+        plan: {
+          id: 'p-1',
+          code: 'PLN-1',
+          name: 'Plan Basico',
+        },
+        affiliationDaysElapsed: 10,
+        services: [],
+      };
+
+      jest
+        .spyOn(benefitsService, 'getPersonBenefits')
+        .mockResolvedValue(mockBenefits as unknown as PersonBenefitsResponseDto);
+
+      const result = await controller.getPersonBenefits('1');
+
+      expect(benefitsService.getPersonBenefits).toHaveBeenCalledWith('1');
+      expect(result).toEqual(mockBenefits);
     });
   });
 });

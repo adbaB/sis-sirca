@@ -21,6 +21,7 @@ import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { FindRenewalsDto } from '../dto/find-renewals.dto';
 import { GetAffiliationStatsDto } from '../dto/get-affiliation-stats.dto';
 import { GetPipelineStatsDto } from '../dto/get-pipeline-stats.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
@@ -28,6 +29,8 @@ import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { EvaluateHealthExclusionsDto } from '../dto/evaluate-health-exclusions.dto';
+import { RenewContractDto } from '../dto/renew-contract.dto';
 import { ContractsService } from '../services/contracts.service';
 
 @Controller('contracts')
@@ -40,10 +43,22 @@ export class ContractsController {
     return this.contractsService.createFull(createContractFullDto);
   }
 
+  @Post('evaluate-health-exclusions')
+  @RequirePermissions('create:contracts', 'read:contracts')
+  evaluateHealthExclusions(@Body() dto: EvaluateHealthExclusionsDto) {
+    return this.contractsService.evaluateHealthExclusions(dto);
+  }
+
   @Get()
   @RequirePermissions('read:contracts', 'read:pipeline')
   findAll(@Query() query: FindContractDto) {
     return this.contractsService.findAll(query);
+  }
+
+  @Get('renewals')
+  @RequirePermissions('read:contracts')
+  findRenewals(@Query() query: FindRenewalsDto, @CurrentUser() user: JwtPayload) {
+    return this.contractsService.findRenewals(query, user?.advisorId);
   }
 
   @Get('pipeline-stats')
@@ -125,6 +140,12 @@ export class ContractsController {
   @RequirePermissions('update:contracts')
   inactivate(@Param('id') id: string, @Body() dto: InactivateContractDto) {
     return this.contractsService.inactivate(id, dto);
+  }
+
+  @Patch(':id/renew')
+  @RequirePermissions('update:contracts')
+  renew(@Param('id') id: string, @Body() dto: RenewContractDto) {
+    return this.contractsService.renew(id, dto);
   }
 
   @Patch(':id/activate')

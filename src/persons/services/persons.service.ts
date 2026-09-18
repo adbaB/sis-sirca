@@ -36,8 +36,22 @@ function extractPersonData(dto: Partial<CreatePersonDto>): Partial<Person> {
       (data as Record<string, unknown>)[key] = dto[key];
     }
   }
+  if (!data.name && (dto.firstName || dto.lastName)) {
+    data.name = [dto.firstName, dto.lastName].filter(Boolean).join(' ');
+  }
   if (dto.birthDate !== undefined) {
     data.birthDate = parseBirthDate(dto.birthDate);
+  }
+  if (typeof (dto as unknown as { gender?: unknown }).gender === 'string') {
+    const upper = (dto as unknown as { gender?: string }).gender?.trim().toUpperCase();
+    if (upper === 'MALE' || upper === 'M') {
+      data.gender = true;
+    } else if (upper === 'FEMALE' || upper === 'F') {
+      data.gender = false;
+    }
+  }
+  if (!data.phone && (dto as unknown as { mobilePhone?: string }).mobilePhone) {
+    data.phone = (dto as unknown as { mobilePhone?: string }).mobilePhone;
   }
   return data;
 }

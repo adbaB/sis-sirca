@@ -11,15 +11,18 @@ import { BulkUpdateBeneficiariesDto } from '../dto/bulk-update-beneficiaries.dto
 import { CreateBeneficiaryDto } from '../dto/create-beneficiary.dto';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
 import { FindContractDto } from '../dto/find-contract.dto';
+import { FindRenewalsDto } from '../dto/find-renewals.dto';
 import { ActivateContractDto } from '../dto/activate-contract.dto';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { SetBillingOwnerDto } from '../dto/set-billing-owner.dto';
 import { SetContractTitularDto } from '../dto/set-contract-titular.dto';
 import { UpdateBeneficiaryDto } from '../dto/update-beneficiary.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
+import { RenewContractDto } from '../dto/renew-contract.dto';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 import { ContractPerson } from '../entities/contract-person.entity';
 import { Contract } from '../entities/contract.entity';
+import { RenewalsResult } from '../interfaces/renewals-result.interface';
 import {
   AffiliationStatsMode,
   AffiliationStatsResult,
@@ -36,6 +39,11 @@ import { ContractLifecycleService } from './contract-lifecycle.service';
 import { ContractPdfService } from './contract-pdf.service';
 import { ContractReactivationService } from './contract-reactivation.service';
 import { ContractStatisticsService } from './contract-statistics.service';
+import { HealthExclusionsService } from './health-exclusions.service';
+import {
+  EvaluateHealthExclusionsDto,
+  HealthExclusionEvaluationResult,
+} from '../dto/evaluate-health-exclusions.dto';
 import { ContractVerificationService } from './contract-verification.service';
 
 export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationStatsResult };
@@ -53,6 +61,7 @@ export type { PipelineTotals, PipelineCounts, PipelineStatsResult, AffiliationSt
  * - `ContractPdfService`         → Template formatting, PDF generation & S3 storage
  * - `ContractStatisticsService`  → Pipeline classification & affiliation period analytics
  * - `ContractQueryRepository`    → Query building, pagination & stage filters
+ * - `HealthExclusionsService`   → Pre-evaluation & health exclusions persistence
  */
 @Injectable()
 export class ContractsService {
@@ -65,6 +74,7 @@ export class ContractsService {
     private readonly pdfService: ContractPdfService,
     private readonly statisticsService: ContractStatisticsService,
     private readonly queryRepository: ContractQueryRepository,
+    private readonly healthExclusionsService: HealthExclusionsService,
   ) {}
 
   // ── 1. Creation ────────────────────────────────────────────────────────────
@@ -72,9 +82,19 @@ export class ContractsService {
     return this.creationService.createFull(dto);
   }
 
+  async evaluateHealthExclusions(
+    dto: EvaluateHealthExclusionsDto,
+  ): Promise<HealthExclusionEvaluationResult> {
+    return this.healthExclusionsService.evaluateHealthExclusions(dto);
+  }
+
   // ── 2. Queries & Search ───────────────────────────────────────────────────
   async findAll(query: FindContractDto): Promise<PaginatedResult<Contract>> {
     return this.queryRepository.findAllPaginated(query);
+  }
+
+  async findRenewals(dto: FindRenewalsDto, userAdvisorId?: string): Promise<RenewalsResult> {
+    return this.queryRepository.findRenewalsPaginated(dto, userAdvisorId);
   }
 
   async findOne(id: string): Promise<Contract> {
@@ -96,6 +116,10 @@ export class ContractsService {
 
   async inactivate(contractId: string, dto: InactivateContractDto): Promise<Contract> {
     return this.lifecycleService.inactivate(contractId, dto);
+  }
+
+  async renew(contractId: string, dto: RenewContractDto): Promise<Contract> {
+    return this.lifecycleService.renew(contractId, dto);
   }
 
   async activate(

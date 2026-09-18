@@ -14,6 +14,7 @@ import type { Contract } from './contract.entity';
 import type { Person } from '../../persons/entities/person.entity';
 import type { HealthDeclaration } from './health-declaration.entity';
 import type { Plan } from '../../plans/entities/plan.entity';
+import type { ContractPersonExclusion } from './contract-person-exclusion.entity';
 
 export enum PersonRole {
   TITULAR = 'TITULAR',
@@ -48,6 +49,7 @@ export enum Parentesco {
 @Index('IDX_contract_persons_contract_id', ['contract'])
 @Index('IDX_contract_persons_person_id', ['person'])
 @Index('IDX_contract_persons_plan_id', ['plan'])
+@Index('IDX_contract_persons_affiliation_date', ['affiliationDate'])
 export class ContractPerson {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -73,8 +75,16 @@ export class ContractPerson {
   @Column({ type: 'boolean', default: false, name: 'is_billing_owner' })
   isBillingOwner: boolean;
 
+  @Column({ type: 'date', name: 'affiliation_date' })
+  affiliationDate: Date;
+
   @OneToMany('HealthDeclaration', (hd: HealthDeclaration) => hd.contractPerson)
   healthDeclarations?: HealthDeclaration[];
+
+  @OneToMany('ContractPersonExclusion', (ex: ContractPersonExclusion) => ex.contractPerson, {
+    cascade: ['soft-remove'],
+  })
+  exclusions?: ContractPersonExclusion[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Ficha Técnica del Plan - {{ planName }}</title>
+  <style>
+    :root {
+      --primary-color: #1d9e11;
+      --primary-dark: #15790d;
+      --text-black: #000000;
+      --text-dark: #111827;
+      --text-muted: #4b5563;
+      --border-dark: #374151;
+      --border-medium: #6b7280;
+      --border-light: #9ca3af;
+      --border-table: #d1d5db;
+      --table-header-bg: #f3f4f6;
+      --white: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text-black);
+      margin: 0;
+      padding: 0;
+      font-size: 9.5px;
+      line-height: 1.25;
+      background-color: var(--white);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page-container {
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 4px;
+    }
+
+    /* ── Top Header (Minimal color, high contrast) ───────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--primary-color);
+      padding-bottom: 5px;
+      margin-bottom: 7px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      height: 38px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .header-title-group h1 {
+      color: var(--text-black);
+      margin: 0;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      line-height: 1.1;
+    }
+
+    .header-title-group p {
+      color: var(--text-muted);
+      margin: 2px 0 0 0;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .header-right {
+      text-align: right;
+      font-size: 8.5px;
+      color: var(--text-muted);
+    }
+
+    .header-right p { margin: 1px 0; }
+
+    /* ── Plan Summary Ribbon (Clean white, high contrast) ────── */
+    .plan-info-bar {
+      display: flex;
+      align-items: stretch;
+      background-color: var(--white);
+      border: 1px solid var(--border-medium);
+      border-left: 4px solid var(--primary-color);
+      border-radius: 2px;
+      margin-bottom: 7px;
+    }
+
+    .info-cell {
+      flex: 1;
+      padding: 5px 10px;
+      border-right: 1px solid var(--border-table);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .info-cell:last-child { border-right: none; }
+
+    .info-cell.plan-name-cell {
+      flex: 1.6;
+      border-right: 1.5px solid var(--border-medium);
+    }
+
+    .info-label {
+      font-size: 7.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 1px;
+    }
+
+    .info-value {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-black);
+      margin: 0;
+      line-height: 1.1;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .info-cell.plan-name-cell .info-value {
+      color: var(--primary-dark);
+    }
+
+    .info-sub {
+      font-size: 7.5px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    /* ── Two-Column Table (B&W print optimized) ──────────────── */
+    .table-container {
+      margin-bottom: 6px;
+    }
+
+    .services-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--border-dark);
+      font-size: 9px;
+      table-layout: fixed;
+      background-color: var(--white);
+    }
+
+    .services-table thead {
+      display: table-header-group;
+    }
+
+    .services-table thead th {
+      background-color: var(--table-header-bg);
+      color: var(--text-black);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      font-size: 8.5px;
+      padding: 4px 6px;
+      text-align: left;
+      border: 1px solid var(--border-medium);
+      border-top: 2px solid var(--primary-color);
+    }
+
+    .services-table thead th.text-center {
+      text-align: center;
+    }
+
+    /* Category Section Header Row (Clean, high contrast for B&W) */
+    .category-section-row td {
+      background-color: #f9fafb !important;
+      border-top: 1.5px solid var(--border-dark) !important;
+      border-bottom: 1px solid var(--border-medium) !important;
+      padding: 4px 8px !important;
+      font-weight: 800 !important;
+      color: var(--text-black) !important;
+      font-size: 10px !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.4px !important;
+    }
+
+    .category-bullet {
+      color: var(--primary-color);
+      font-size: 10px;
+      margin-right: 4px;
+    }
+
+    .category-badge-count {
+      color: var(--text-muted);
+      font-size: 8.5px;
+      font-weight: normal;
+      margin-left: 6px;
+    }
+
+    .services-table tbody tr {
+      page-break-inside: avoid;
+    }
+
+    .services-table tbody td {
+      padding: 3.5px 6px;
+      border: 1px solid var(--border-table);
+      vertical-align: middle;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      font-size: 9px;
+      color: var(--text-black);
+    }
+
+    .divider-col {
+      width: 3px !important;
+      background-color: var(--border-medium) !important;
+      border-left: 1px solid var(--border-dark) !important;
+      border-right: 1px solid var(--border-dark) !important;
+      padding: 0 !important;
+    }
+
+    .service-col {
+      width: 39%;
+      color: var(--text-black);
+      font-weight: 500;
+    }
+
+    .waiting-col {
+      width: 11%;
+      text-align: center;
+      color: var(--text-black);
+    }
+
+    .waiting-immediate {
+      font-weight: 700;
+      color: var(--text-black);
+    }
+
+    .waiting-days {
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+
+    .empty-cell {
+      background-color: #ffffff;
+      border: 1px solid var(--border-table);
+    }
+
+    /* ── Disclaimer Box (Clean border, high contrast) ────────── */
+    .disclaimer-box {
+      margin-top: 6px;
+      background-color: var(--white);
+      border: 1px solid var(--border-medium);
+      border-left: 3px solid var(--primary-color);
+      border-radius: 2px;
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      page-break-inside: avoid;
+    }
+
+    .disclaimer-icon {
+      font-size: 10px;
+      color: var(--primary-color);
+      font-weight: bold;
+    }
+
+    .disclaimer-text {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-black);
+      margin: 0;
+      letter-spacing: 0.1px;
+    }
+
+    /* ── System Footer ──────────────────────────────────────── */
+    .system-footer {
+      margin-top: 6px;
+      padding-top: 3px;
+      border-top: 1px solid var(--border-table);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 7.5px;
+      color: var(--text-muted);
+      page-break-inside: avoid;
+    }
+
+    .system-footer p { margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <!-- Top Header -->
+    <div class="header">
+      <div class="header-left">
+        {{#if logo}}
+        <img src="{{ logo }}" alt="Logo SIRCA" class="header-logo" />
+        {{/if}}
+        <div class="header-title-group">
+          <h1>SIRCA PLAN DE SALUD</h1>
+          <p>Salud Integral El Rosario C.A. &bull; RIF: J-40810777-6</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <p>Emisión: <strong>{{ generatedAt }}</strong></p>
+        <p>Estado: <strong>{{ statusText }}</strong></p>
+      </div>
+    </div>
+
+    <!-- Plan Summary Ribbon -->
+    <div class="plan-info-bar">
+      <div class="info-cell plan-name-cell">
+        <span class="info-label">Nombre del Plan</span>
+        <p class="info-value">{{ planName }}</p>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Importe Mensual</span>
+        <p class="info-value">{{ monthlyAmount }}</p>
+        <span class="info-sub">por afiliado / mes</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Cobertura</span>
+        <p class="info-value">{{ coverage }}</p>
+        <span class="info-sub">límite amparado</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Edad Permitida</span>
+        <p class="info-value" style="font-size: 11px;">{{ ageRange }}</p>
+        <span class="info-sub">rango de admisión</span>
+      </div>
+    </div>
+
+    <!-- Cuadro a Doble Columna con separación por Categoría -->
+    <div class="table-container">
+      <table class="services-table">
+        <thead>
+          <tr>
+            <th style="width: 39%;">SERVICIO MÉDICO</th>
+            <th class="text-center" style="width: 11%;">PLAZO DE ESPERA</th>
+            <th class="divider-col"></th>
+            <th style="width: 39%;">SERVICIO MÉDICO</th>
+            <th class="text-center" style="width: 11%;">PLAZO DE ESPERA</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each categoryGroups}}
+            <!-- Category Section Header -->
+            <tr class="category-section-row">
+              <td colspan="5">
+                <span class="category-bullet">&#9658;</span>
+                <span>{{ categoryName }}</span>
+                <span class="category-badge-count">({{ servicesCount }} servicios)</span>
+              </td>
+            </tr>
+
+            <!-- Paired Rows within this Category -->
+            {{#each pairedRows}}
+            <tr>
+              <td class="service-col">{{ left.serviceName }}</td>
+              <td class="waiting-col">
+                {{#if left.isImmediate}}
+                  <span class="waiting-immediate">Inmediato</span>
+                {{else}}
+                  <span class="waiting-days">{{ left.waitingPeriodText }}</span>
+                {{/if}}
+              </td>
+
+              <td class="divider-col"></td>
+
+              {{#if right}}
+              <td class="service-col">{{ right.serviceName }}</td>
+              <td class="waiting-col">
+                {{#if right.isImmediate}}
+                  <span class="waiting-immediate">Inmediato</span>
+                {{else}}
+                  <span class="waiting-days">{{ right.waitingPeriodText }}</span>
+                {{/if}}
+              </td>
+              {{else}}
+              <td class="empty-cell"></td>
+              <td class="empty-cell"></td>
+              {{/if}}
+            </tr>
+            {{/each}}
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pie de página requerido: Leyenda de exclusión -->
+    <div class="disclaimer-box">
+      <span class="disclaimer-icon">&#9679;</span>
+      <p class="disclaimer-text">
+        Los servicios que no estén en el presente cuadro no están amparados por el plan.
+      </p>
+    </div>
+
+    <!-- Pie de página del sistema -->
+    <div class="system-footer">
+      <p>Salud Integral El Rosario C.A. &mdash; Todos los derechos reservados.</p>
+      <p>Total de servicios amparados: <strong>{{ totalServices }}</strong></p>
+    </div>
+  </div>
+</body>
+</html>

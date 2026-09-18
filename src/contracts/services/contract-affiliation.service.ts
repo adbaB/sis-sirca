@@ -4,6 +4,7 @@ import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { resolveQueryRunner } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
+import { getCaracasNow } from '../../common/utils/date.util';
 import { Person, PersonStatus } from '../../persons/entities/person.entity';
 import { PersonsService } from '../../persons/services/persons.service';
 import { Plan } from '../../plans/entities/plan.entity';
@@ -19,6 +20,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
+import { HealthExclusionsService } from './health-exclusions.service';
 
 @Injectable()
 export class ContractAffiliationService {
@@ -31,6 +33,7 @@ export class ContractAffiliationService {
     private readonly personsService: PersonsService,
     private readonly invoiceService: InvoiceService,
     private readonly plansService: PlansService,
+    private readonly healthExclusionsService: HealthExclusionsService,
   ) {}
 
   /**
@@ -57,7 +60,7 @@ export class ContractAffiliationService {
       throw new NotFoundException(`Contract with ID "${contractId}" not found`);
     }
 
-    const { planId, role, isBillingOwner, relationship, healthDeclarations } = dto;
+    const { planId, role, isBillingOwner, relationship, healthDeclarations, affiliationDate } = dto;
     const personFields = {
       name: dto.name,
       typeIdentityCard: dto.typeIdentityCard,
@@ -139,6 +142,9 @@ export class ContractAffiliationService {
       contract.code,
     );
 
+    const resolvedAffiliationDate =
+      affiliationDate ?? contract.affiliationDate ?? getCaracasNow().toISODate()!;
+
     // 7. Crear y guardar ContractPerson
     const contractPerson = cpRepo.create({
       contract,
@@ -147,6 +153,7 @@ export class ContractAffiliationService {
       isBillingOwner: isBillingOwner ?? false,
       relationship,
       plan: resolvedRole === PersonRole.AFILIADO ? plan : null,
+      affiliationDate: resolvedAffiliationDate,
     });
     const savedCp = await cpRepo.save(contractPerson);
 
@@ -161,7 +168,16 @@ export class ContractAffiliationService {
       await hdRepo.save(hdEntities);
     }
 
+    // Process health exclusions (Requirement R3)
+    await this.healthExclusionsService.detectAndPersistExclusions(
+      savedCp,
+      healthDeclarations ?? [],
+      dto.exclusions,
+      manager,
+    );
+
     // 9. Registrar en historial y auto-agregar cargo INCLUSION si corresponde
+
     if (resolvedRole === PersonRole.AFILIADO && plan) {
       await historyRepo.save(
         historyRepo.create({
@@ -444,6 +460,11 @@ export class ContractAffiliationService {
       contractPerson.relationship = dto.relationship;
     }
 
+    // Update affiliationDate if provided
+    if (dto.affiliationDate !== undefined) {
+      contractPerson.affiliationDate = dto.affiliationDate as unknown as Date;
+    }
+
     // 5. Update plan if provided
     let planChanged = false;
     if (dto.planId !== undefined) {
@@ -491,6 +512,17 @@ export class ContractAffiliationService {
       }
     }
 
+    // Process health exclusions (Requirement R3)
+    if (dto.exclusions !== undefined) {
+      await this.healthExclusionsService.replaceExclusions(lockedCp, dto.exclusions, manager);
+    } else if (dto.healthDeclarations !== undefined) {
+      await this.healthExclusionsService.resyncAutomaticExclusions(
+        lockedCp,
+        dto.healthDeclarations,
+        manager,
+      );
+    }
+
     await cpRepo.save(contractPerson);
 
     // 7. Recalculate monthly amount if plan changed
@@ -500,7 +532,16 @@ export class ContractAffiliationService {
 
     return (await cpRepo.findOne({
       where: { id: lockedCp.id },
-      relations: ['contract', 'person', 'person.plan', 'plan', 'healthDeclarations'],
+      relations: [
+        'contract',
+        'person',
+        'person.plan',
+        'plan',
+        'healthDeclarations',
+        'exclusions',
+        'exclusions.medicalService',
+        'exclusions.serviceCategory',
+      ],
     })) as ContractPerson;
   }
 

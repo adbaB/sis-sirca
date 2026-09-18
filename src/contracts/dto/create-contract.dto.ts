@@ -11,6 +11,7 @@ import {
   IsArray,
   MaxLength,
   IsInt,
+  Matches,
 } from 'class-validator';
 
 export class CreateContractDto {
@@ -19,8 +20,31 @@ export class CreateContractDto {
   @MaxLength(255)
   legacyCode?: string;
   @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de afiliación debe tener formato YYYY-MM-DD.',
+  })
   @IsNotEmpty()
   affiliationDate: string;
+
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de inicio debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de inicio debe tener formato YYYY-MM-DD.',
+  })
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de vencimiento debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de vencimiento debe tener formato YYYY-MM-DD.',
+  })
+  expirationDate?: string;
 
   @IsNotEmpty()
   @IsUUID()

@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -7,13 +8,14 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   ValidateNested,
-  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
 import { Parentesco } from '../entities/contract-person.entity';
 import { HealthDeclarationDto } from './health-declaration.dto';
+import { CreateContractPersonExclusionDto } from './create-contract-person-exclusion.dto';
 
 export class UpdateBeneficiaryDto {
   // Datos de Persona (opcionales)
@@ -86,6 +88,16 @@ export class UpdateBeneficiaryDto {
   @IsOptional()
   planId?: string;
 
+  @IsDateString(
+    {},
+    { message: 'La fecha de afiliación debe tener un formato de fecha válido (YYYY-MM-DD).' },
+  )
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'La fecha de afiliación debe tener formato YYYY-MM-DD.',
+  })
+  @IsOptional()
+  affiliationDate?: string;
+
   @IsEnum(Parentesco)
   @IsOptional()
   relationship?: Parentesco;
@@ -95,4 +107,10 @@ export class UpdateBeneficiaryDto {
   @ValidateNested({ each: true })
   @Type(() => HealthDeclarationDto)
   healthDeclarations?: HealthDeclarationDto[];
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateContractPersonExclusionDto)
+  exclusions?: CreateContractPersonExclusionDto[];
 }

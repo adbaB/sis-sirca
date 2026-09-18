@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { DateTime } from 'luxon';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { ContractReactivationService } from './contract-reactivation.service';
 import { Contract, ContractStatus } from '../entities/contract.entity';
@@ -7,6 +8,7 @@ import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.
 import { Payment, PaymentStatus } from '../../billing/payments/entities/payment.entity';
 import { Role } from '../../roles/entities/role.entity';
 import { OVERRIDE_REACTIVATION_PERMISSION } from '../constants/contract.constants';
+import { CARACAS_ZONE } from '../../common/utils/date.util';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 
 describe('ContractReactivationService', () => {
@@ -147,6 +149,10 @@ describe('ContractReactivationService', () => {
 
       const result = await service.syncReactivationEligibility('c-1');
       expect(result).toBeInstanceOf(Date);
+      const dt = DateTime.fromJSDate(result!).setZone(CARACAS_ZONE);
+      expect(dt.hour).toBe(0);
+      expect(dt.minute).toBe(0);
+      expect(dt.second).toBe(0);
       expect(mockContractRepo.save).toHaveBeenCalledWith(contract);
     });
   });
@@ -237,6 +243,21 @@ describe('ContractReactivationService', () => {
           { reason: 'Excepción autorizada por gerencia médica' },
           user,
         ),
+      ).resolves.not.toThrow();
+    });
+
+    it('should allow reactivation on the eligible day even if reactivationEligibleAt has a later hour on that day', async () => {
+      const now = DateTime.now().setZone(CARACAS_ZONE);
+      const todayLaterHour = now.set({ hour: 23, minute: 59, second: 0 }).toJSDate();
+      const contractEligibleToday = {
+        ...suspendedContract,
+        reactivationEligibleAt: todayLaterHour,
+      } as Contract;
+
+      (mockInvoiceRepo.find as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.validateReactivationEligibility(contractEligibleToday),
       ).resolves.not.toThrow();
     });
   });
