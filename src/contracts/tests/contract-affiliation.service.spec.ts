@@ -32,11 +32,20 @@ describe('ContractAffiliationService', () => {
   let mockQr: Record<string, unknown>;
 
   beforeEach(async () => {
+    const mockQb = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue(undefined),
+    };
+
     mockManager = {
       getRepository: jest.fn(),
-      find: jest.fn(),
-      save: jest.fn(),
-      update: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
+      save: jest.fn().mockResolvedValue(true),
+      update: jest.fn().mockResolvedValue(true),
+      createQueryBuilder: jest.fn().mockReturnValue(mockQb),
     };
 
     mockQr = {
@@ -303,6 +312,41 @@ describe('ContractAffiliationService', () => {
 
       expect(capturedCp.affiliationDate).toBe('2026-09-01');
     });
+
+    it('should unset existing billing owners when adding a beneficiary with isBillingOwner = true', async () => {
+      const mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue(mockContract),
+        update: jest.fn().mockResolvedValue(true),
+      };
+      const mockPrevOwner = { id: 'cp-old', isBillingOwner: true } as unknown as ContractPerson;
+      const mockCpRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        find: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((val) => ({ id: 'cp-new', ...val })),
+        save: jest.fn().mockImplementation(async (val) => val),
+      };
+
+      mockManager.find = jest.fn().mockResolvedValue([mockPrevOwner]);
+      mockManager.save = jest.fn().mockResolvedValue(true);
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        if (entity === AffiliationHistory) return { create: jest.fn(), save: jest.fn() };
+        if (entity === HealthDeclaration) return { create: jest.fn(), save: jest.fn() };
+        if (entity === ContractPersonExclusion) return { create: jest.fn(), save: jest.fn() };
+        return {};
+      });
+
+      plansService.findOne.mockResolvedValue(mockPlan as unknown as Plan);
+      personsService.findByIdentityCard.mockResolvedValue(null);
+      personsService.create.mockResolvedValue(mockCreated);
+
+      await service.addBeneficiary('contract-1', { ...dto, isBillingOwner: true });
+
+      expect(mockPrevOwner.isBillingOwner).toBe(false);
+      expect(mockManager.save).toHaveBeenCalledWith(ContractPerson, mockPrevOwner);
+      expect(mockManager.createQueryBuilder).toHaveBeenCalled();
+    });
   });
 
   describe('removeAffiliate', () => {
@@ -447,15 +491,17 @@ describe('ContractAffiliationService', () => {
 
     it('should unset other billing owners and set target in transaction', async () => {
       const mockTarget = { id: 'cp-1', isBillingOwner: false } as unknown as ContractPerson;
+      const mockPrev = { id: 'cp-prev', isBillingOwner: true } as unknown as ContractPerson;
       const mockCpRepo = { findOne: jest.fn().mockResolvedValue(mockTarget) };
       mockManager.getRepository = jest.fn().mockReturnValue(mockCpRepo);
-
-      mockManager.update = jest.fn().mockResolvedValue(true);
+      mockManager.find = jest.fn().mockResolvedValue([mockPrev]);
       mockManager.save = jest.fn().mockResolvedValue(true);
 
       await service.setBillingOwner('contract-1', { contractPersonId: 'cp-1' });
 
-      expect(mockManager.update).toHaveBeenCalled();
+      expect(mockPrev.isBillingOwner).toBe(false);
+      expect(mockManager.save).toHaveBeenCalledWith(ContractPerson, mockPrev);
+      expect(mockManager.createQueryBuilder).toHaveBeenCalled();
       expect(mockTarget.isBillingOwner).toBe(true);
       expect(mockManager.save).toHaveBeenCalledWith(ContractPerson, mockTarget);
     });
