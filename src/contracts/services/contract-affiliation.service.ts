@@ -145,6 +145,38 @@ export class ContractAffiliationService {
     const resolvedAffiliationDate =
       affiliationDate ?? contract.affiliationDate ?? getCaracasNow().toISODate()!;
 
+    // Si el nuevo afiliado es marcado como titular de factura, desmarcar a los anteriores
+    if (isBillingOwner) {
+      const currentBillingOwners = await manager.find(ContractPerson, {
+        where: { contract: { id: contractId }, isBillingOwner: true, deletedAt: IsNull() },
+      });
+      for (const owner of currentBillingOwners) {
+        owner.isBillingOwner = false;
+        await manager.save(ContractPerson, owner);
+      }
+
+      await manager
+        .createQueryBuilder()
+        .update(ContractPerson)
+        .set({ isBillingOwner: false })
+        .where('contract_id = :contractId', { contractId })
+        .andWhere('is_billing_owner = true')
+        .andWhere('deleted_at IS NULL')
+        .execute();
+    }
+
+    // Validar regla de negocio: no se permite agregar otro TITULAR si el contrato ya posee uno
+    if (resolvedRole === PersonRole.TITULAR) {
+      const existingTitular = await cpRepo.findOne({
+        where: { contract: { id: contractId }, role: PersonRole.TITULAR, deletedAt: IsNull() },
+      });
+      if (existingTitular) {
+        throw new BadRequestException(
+          'El contrato ya posee un titular activo. No está permitido cambiar el titular ni agregar otro titular en este contrato.',
+        );
+      }
+    }
+
     // 7. Crear y guardar ContractPerson
     const contractPerson = cpRepo.create({
       contract,
@@ -342,14 +374,30 @@ export class ContractAffiliationService {
       throw new NotFoundException('Afiliado no encontrado en este contrato.');
     }
 
-    // Desmarcar a todos los demás responsables de cobro en este contrato
-    await manager.update(
-      ContractPerson,
-      { contract: { id: contractId }, deletedAt: IsNull() },
-      { isBillingOwner: false },
-    );
+    // 1. Desmarcar a todos los demás responsables de cobro en este contrato en memoria y guardar
+    const currentBillingOwners = await manager.find(ContractPerson, {
+      where: { contract: { id: contractId }, isBillingOwner: true, deletedAt: IsNull() },
+    });
 
-    // Marcar al nuevo responsable
+    for (const owner of currentBillingOwners) {
+      if (owner.id !== target.id) {
+        owner.isBillingOwner = false;
+        await manager.save(ContractPerson, owner);
+      }
+    }
+
+    // 2. QueryBuilder directo a nivel de tabla sobre la columna contract_id para garantizar atomicidad en BD
+    await manager
+      .createQueryBuilder()
+      .update(ContractPerson)
+      .set({ isBillingOwner: false })
+      .where('contract_id = :contractId', { contractId })
+      .andWhere('id != :targetId', { targetId: target.id })
+      .andWhere('is_billing_owner = true')
+      .andWhere('deleted_at IS NULL')
+      .execute();
+
+    // 3. Marcar al nuevo responsable
     target.isBillingOwner = true;
     await manager.save(ContractPerson, target);
   }

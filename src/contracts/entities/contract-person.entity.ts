@@ -46,6 +46,10 @@ export enum Parentesco {
   unique: true,
   where: '"deleted_at" IS NULL',
 })
+@Index('UQ_contract_person_billing_owner', ['contract'], {
+  unique: true,
+  where: '"is_billing_owner" = true AND "deleted_at" IS NULL',
+})
 @Index('IDX_contract_persons_contract_id', ['contract'])
 @Index('IDX_contract_persons_person_id', ['person'])
 @Index('IDX_contract_persons_plan_id', ['plan'])
