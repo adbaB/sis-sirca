@@ -4,7 +4,10 @@ export class EnforceSingleBillingOwnerPerContract1790264609015 implements Migrat
   name = 'EnforceSingleBillingOwnerPerContract1790264609015';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // 1. Saneamiento de datos: desmarcar registros duplicados de is_billing_owner en contratos activos
+    // 1. Bloquear escrituras concurrentes en contract_persons para evitar race conditions antes de crear el índice
+    await queryRunner.query(`LOCK TABLE "contract_persons" IN SHARE ROW EXCLUSIVE MODE;`);
+
+    // 2. Saneamiento de datos: desmarcar registros duplicados de is_billing_owner en contratos activos
     await queryRunner.query(`
       WITH ranked_billing_owners AS (
         SELECT id,
@@ -32,8 +35,6 @@ export class EnforceSingleBillingOwnerPerContract1790264609015 implements Migrat
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "public"."UQ_contract_person_billing_owner"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "public"."UQ_contract_person_billing_owner"`);
   }
 }

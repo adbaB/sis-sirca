@@ -347,6 +347,37 @@ describe('ContractAffiliationService', () => {
       expect(mockManager.save).toHaveBeenCalledWith(ContractPerson, mockPrevOwner);
       expect(mockManager.createQueryBuilder).toHaveBeenCalled();
     });
+
+    it('should throw BadRequestException when attempting to add a TITULAR to a contract that already has one', async () => {
+      const mockContractRepo = {
+        findOne: jest.fn().mockResolvedValue(mockContract),
+        update: jest.fn().mockResolvedValue(true),
+      };
+      const mockExistingTitular = {
+        id: 'cp-titular',
+        role: PersonRole.TITULAR,
+      } as unknown as ContractPerson;
+      const mockCpRepo = {
+        findOne: jest.fn().mockImplementation(({ where }) => {
+          if (where?.role === PersonRole.TITULAR) return Promise.resolve(mockExistingTitular);
+          return Promise.resolve(null);
+        }),
+        find: jest.fn().mockResolvedValue([]),
+      };
+
+      mockManager.getRepository = jest.fn().mockImplementation((entity) => {
+        if (entity === Contract) return mockContractRepo;
+        if (entity === ContractPerson) return mockCpRepo;
+        return {};
+      });
+
+      personsService.findByIdentityCard.mockResolvedValue(null);
+      personsService.create.mockResolvedValue(mockCreated);
+
+      await expect(
+        service.addBeneficiary('contract-1', { ...dto, role: PersonRole.TITULAR }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('removeAffiliate', () => {

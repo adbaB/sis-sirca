@@ -160,22 +160,20 @@ export class ContractAffiliationService {
         .update(ContractPerson)
         .set({ isBillingOwner: false })
         .where('contract_id = :contractId', { contractId })
+        .andWhere('is_billing_owner = true')
         .andWhere('deleted_at IS NULL')
         .execute();
     }
 
-    // Si el nuevo afiliado es promovido a TITULAR, revertir titulares actuales a AFILIADO
+    // Validar regla de negocio: no se permite agregar otro TITULAR si el contrato ya posee uno
     if (resolvedRole === PersonRole.TITULAR) {
-      const currentTitulars = await manager.find(ContractPerson, {
+      const existingTitular = await cpRepo.findOne({
         where: { contract: { id: contractId }, role: PersonRole.TITULAR, deletedAt: IsNull() },
-        relations: ['person', 'person.plan'],
       });
-      for (const titular of currentTitulars) {
-        titular.role = PersonRole.AFILIADO;
-        if (!titular.plan) {
-          titular.plan = titular.person?.plan ?? null;
-        }
-        await manager.save(ContractPerson, titular);
+      if (existingTitular) {
+        throw new BadRequestException(
+          'El contrato ya posee un titular activo. No está permitido cambiar el titular ni agregar otro titular en este contrato.',
+        );
       }
     }
 
@@ -395,6 +393,7 @@ export class ContractAffiliationService {
       .set({ isBillingOwner: false })
       .where('contract_id = :contractId', { contractId })
       .andWhere('id != :targetId', { targetId: target.id })
+      .andWhere('is_billing_owner = true')
       .andWhere('deleted_at IS NULL')
       .execute();
 
