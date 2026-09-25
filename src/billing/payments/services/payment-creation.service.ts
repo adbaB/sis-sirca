@@ -210,12 +210,15 @@ export class PaymentCreationService {
       if (isLastInvoice) {
         if (remainingUsd > invoiceUnpaidAmount) {
           appliedUsd = invoiceUnpaidAmount;
-          surplusAmountUsd = round2(remainingUsd - invoiceUnpaidAmount);
-          if (!isZelle) {
-            surplusAmountBs = round2(surplusAmountUsd * rateUsd);
-            appliedBs = Math.max(0, round2(remainingBs - surplusAmountBs));
-          } else {
+          const surplusUsd = round2(remainingUsd - invoiceUnpaidAmount);
+          if (isZelle) {
+            surplusAmountUsd = surplusUsd;
+            surplusAmountBs = null;
             appliedBs = 0;
+          } else {
+            surplusAmountUsd = null;
+            surplusAmountBs = round2(surplusUsd * rateUsd);
+            appliedBs = Math.max(0, round2(remainingBs - surplusAmountBs));
           }
         } else {
           appliedUsd = remainingUsd;

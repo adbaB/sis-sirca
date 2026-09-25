@@ -251,4 +251,92 @@ describe('SurplusService', () => {
       expect(result.status).toBe(SurplusStatus.PENDING);
     });
   });
+
+  describe('applyPendingSurplusesToInvoice', () => {
+    it('should convert Bs surplus using rate of the day and keep surplus amountUsd null', async () => {
+      const mockInvoice = {
+        id: 'inv-1',
+        totalAmount: 50,
+        retentionAmount: 0,
+        paidAmount: 20, // remaining balance = 30 USD
+      };
+
+      const mockSurplus = {
+        id: 's-bs-1',
+        amountBs: 2000,
+        amountUsd: null,
+        date: new Date('2026-07-01'),
+        payment: {
+          id: 'p-orig',
+          person: { id: 'person-1' },
+          referenceNumber: '123456',
+          paymentMethod: 'PAGO_MOVIL',
+          url: null,
+        },
+        contract: { id: 'c-1' },
+        status: SurplusStatus.PENDING,
+      };
+
+      mockQueryRunner.manager.createQueryBuilder.mockReturnValue({
+        setQueryRunner: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockInvoice),
+      });
+
+      // 1st find: locked surpluses without relations
+      // 2nd find: surpluses with relations
+      mockQueryRunner.manager.find = jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 's-bs-1' }])
+        .mockResolvedValueOnce([mockSurplus]);
+
+      // Today exchange rate = 50 Bs/USD.
+      // Available = 2000 Bs / 50 = 40 USD.
+      // Applied to invoice (balance 30 USD) = 30 USD, 1500 Bs.
+      // Leftover = 500 Bs, leftover USD = null.
+      mockExchangeRateService.getExchangeRateByDate.mockResolvedValue({
+        rateUsd: 50,
+      });
+
+      mockQueryRunner.manager.create.mockImplementation((entityClass, data) => data);
+      mockQueryRunner.manager.save.mockImplementation((entity) => Promise.resolve(entity));
+
+      await service.applyPendingSurplusesToInvoice('c-1', 'inv-1');
+
+      // Exchange rate of today was requested
+      expect(mockExchangeRateService.getExchangeRateByDate).toHaveBeenCalled();
+
+      // Check remaining surplus created: Bs = 500, amountUsd = null
+      expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
+        Surplus,
+        expect.objectContaining({
+          amountBs: 500,
+          amountUsd: null,
+          status: SurplusStatus.PENDING,
+        }),
+      );
+
+      // Check synthetic Payment created: amount = 30 (USD), amountBs = 1500
+      expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
+        Payment,
+        expect.objectContaining({
+          amount: 30,
+          amountBs: 1500,
+          referenceNumber: 'SURPLUS-123456',
+        }),
+      );
+
+      // Check applied surplus updated: amountBs = 1500, amountUsd = null, status = APPLIED
+      expect(mockSurplus.amountBs).toBe(1500);
+      expect(mockSurplus.amountUsd).toBeNull();
+      expect(mockSurplus.status).toBe(SurplusStatus.APPLIED);
+
+      // Check invoice recalculation was triggered
+      expect(mockInvoiceCalculationService.recalculateInvoicePaidAmount).toHaveBeenCalledWith(
+        'inv-1',
+        mockQueryRunner.manager,
+      );
+    });
+  });
 });

@@ -30,12 +30,28 @@ describe('surplus-calculator.util', () => {
   it('should convert Bs surplus using rate and calculate proportional application and leftover', () => {
     // 4000 Bs with rate = 40 => 100 USD total surplus.
     // Invoice balance = 50 USD.
-    // Amount to apply = 50 USD, 2000 Bs. Leftover = 50 USD, 2000 Bs.
+    // Amount to apply = 50 USD, 2000 Bs. Leftover = 2000 Bs, leftoverUsd = null.
     const result = calculateSurplusApplication(null, 4000, 50, 40);
     expect(result.paymentAmountUsd).toBe(100);
     expect(result.amountToApplyUsd).toBe(50);
     expect(result.amountToApplyBs).toBe(2000);
     expect(result.hasLeftover).toBe(true);
     expect(result.leftoverBs).toBe(2000);
+    expect(result.leftoverUsd).toBeNull();
+  });
+
+  it('should convert Bs surplus using rate of the day even if legacy record had amountUsd', () => {
+    // Legacy record had amountUsd = 100 (from old rate 36 -> 3600 Bs).
+    // Today rate = 45 -> 3600 Bs / 45 = 80 USD total available.
+    // Invoice balance = 50 USD.
+    // Amount applied = 50 USD, 2250 Bs (50 * 45).
+    // Leftover = 1350 Bs (3600 - 2250), leftoverUsd = null.
+    const result = calculateSurplusApplication(100, 3600, 50, 45);
+    expect(result.paymentAmountUsd).toBe(80);
+    expect(result.amountToApplyUsd).toBe(50);
+    expect(result.amountToApplyBs).toBe(2250);
+    expect(result.hasLeftover).toBe(true);
+    expect(result.leftoverBs).toBe(1350);
+    expect(result.leftoverUsd).toBeNull();
   });
 });

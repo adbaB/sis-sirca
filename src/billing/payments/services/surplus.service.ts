@@ -105,7 +105,9 @@ export class SurplusService {
         if (!exchangeRate) {
           exchangeRate = await this.exchangeRateService.getExchangeRateByDate(fechaVe);
           if (!exchangeRate) {
-            throw new Error('Exchange rate not found for current date to apply Bs surplus');
+            throw new Error(
+              `Exchange rate not found for current date (${fechaVe.toISOString()}) to apply Bs surplus `,
+            );
           }
         }
         rateUsd = Number(exchangeRate.rateUsd);
@@ -151,8 +153,13 @@ export class SurplusService {
         await queryRunner.manager.save(surplusPayment);
 
         // Update current surplus to consumed amount and mark APPLIED
-        surplus.amountUsd = surplus.amountUsd !== null ? calc.amountToApplyUsd : null;
-        surplus.amountBs = surplus.amountBs !== null ? calc.amountToApplyBs : null;
+        const isBsSurplus = surplus.amountBs !== null && Number(surplus.amountBs) > 0;
+        surplus.amountUsd = isBsSurplus
+          ? null
+          : surplus.amountUsd !== null
+            ? calc.amountToApplyUsd
+            : null;
+        surplus.amountBs = isBsSurplus ? calc.amountToApplyBs : null;
         surplus.status = SurplusStatus.APPLIED;
         surplus.invoice = invoice;
         await queryRunner.manager.save(surplus);

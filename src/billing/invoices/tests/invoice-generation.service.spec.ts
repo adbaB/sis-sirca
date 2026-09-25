@@ -328,5 +328,94 @@ describe('InvoiceGenerationService', () => {
         }),
       );
     });
+
+    it('genera factura de afiliación con línea SUSCRIPCION cuando advisorCommission > 0', async () => {
+      const contract = makeContract({ advisorCommission: 25 });
+      const savedInvoice = { id: 'inv-1', status: InvoiceStatus.PENDING } as Invoice;
+
+      contractRepo.findOne.mockResolvedValue(contract);
+      invoiceRepo.findOne.mockResolvedValueOnce(null);
+      invoiceRepo.create.mockReturnValue(savedInvoice);
+      invoiceRepo.save.mockResolvedValue(savedInvoice);
+      invoiceRepo.findOne.mockResolvedValueOnce({ ...savedInvoice, lines: [], payments: [] });
+
+      await withContext(mockQr, () =>
+        service.generateInvoiceForContract('contract-1', '2025-02', true),
+      );
+
+      expect(invoiceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 0,
+          totalAmount: 75, // 50 (plan) + 25 (suscripción/comisión)
+        }),
+      );
+
+      expect(mockQr.manager.create).toHaveBeenCalledWith(
+        InvoiceLine,
+        expect.objectContaining({
+          category: InvoiceLineCategory.INCLUSION,
+          isProjectable: false,
+          amount: 50,
+        }),
+      );
+
+      expect(mockQr.manager.create).toHaveBeenCalledWith(
+        InvoiceLine,
+        expect.objectContaining({
+          category: InvoiceLineCategory.SUSCRIPCION,
+          description: 'Cuota de suscripción',
+          isProjectable: false,
+          amount: 25,
+          person: null,
+          plan: null,
+        }),
+      );
+
+      expect(mockQr.manager.save).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.anything(), expect.anything()]),
+      );
+    });
+
+    it('no genera línea SUSCRIPCION en factura mensual regular aunque el contrato tenga advisorCommission', async () => {
+      const contract = makeContract({ advisorCommission: 25 });
+      const savedInvoice = { id: 'inv-1', status: InvoiceStatus.PENDING } as Invoice;
+
+      contractRepo.findOne.mockResolvedValue(contract);
+      invoiceRepo.findOne.mockResolvedValueOnce(null);
+      invoiceRepo.create.mockReturnValue(savedInvoice);
+      invoiceRepo.save.mockResolvedValue(savedInvoice);
+      invoiceRepo.findOne.mockResolvedValueOnce({ ...savedInvoice, lines: [], payments: [] });
+
+      await withContext(mockQr, () =>
+        service.generateInvoiceForContract('contract-1', '2025-02', false),
+      );
+
+      expect(invoiceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 50,
+          totalAmount: 50, // no debe incluir los 25 en factura mensual
+        }),
+      );
+
+      expect(mockQr.manager.create).not.toHaveBeenCalledWith(
+        InvoiceLine,
+        expect.objectContaining({
+          category: InvoiceLineCategory.SUSCRIPCION,
+        }),
+      );
+    });
+
+    it('lanza BadRequestException si advisorCommission es negativo en afiliación', async () => {
+      const contract = makeContract({ advisorCommission: -10 });
+
+      contractRepo.findOne.mockResolvedValue(contract);
+      invoiceRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        withContext(mockQr, () =>
+          service.generateInvoiceForContract('contract-1', '2025-02', true),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 });

@@ -45,15 +45,11 @@ export function calculateSurplusApplication(
   const rawUsd = surplusAmountUsd ? Number(surplusAmountUsd) : 0;
 
   if (rawBs > 0) {
-    paymentAmountBs = rawBs;
-    if (rawUsd > 0) {
-      paymentAmountUsd = rawUsd;
-    } else {
-      if (!rateUsd || !Number.isFinite(rateUsd) || rateUsd <= 0) {
-        throw new BadRequestException('Exchange rate required for Bs surplus calculation');
-      }
-      paymentAmountUsd = paymentAmountBs / rateUsd;
+    if (!rateUsd || !Number.isFinite(rateUsd) || rateUsd <= 0) {
+      throw new BadRequestException('Exchange rate required for Bs surplus calculation');
     }
+    paymentAmountBs = rawBs;
+    paymentAmountUsd = paymentAmountBs / rateUsd;
   } else if (rawUsd > 0) {
     paymentAmountUsd = rawUsd;
   }
@@ -82,8 +78,13 @@ export function calculateSurplusApplication(
     const proportion = amountToApplyUsd / paymentAmountUsd;
     amountToApplyBs = paymentAmountBs * proportion;
 
-    leftoverUsd = surplusAmountUsd !== null ? round2(paymentAmountUsd - amountToApplyUsd) : null;
-    leftoverBs = surplusAmountBs !== null ? round2(paymentAmountBs - amountToApplyBs) : null;
+    leftoverUsd =
+      rawBs > 0
+        ? null
+        : surplusAmountUsd !== null
+          ? round2(paymentAmountUsd - amountToApplyUsd)
+          : null;
+    leftoverBs = rawBs > 0 ? round2(paymentAmountBs - amountToApplyBs) : null;
     hasLeftover = true;
   }
 

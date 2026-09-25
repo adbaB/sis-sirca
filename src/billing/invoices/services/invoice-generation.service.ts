@@ -163,6 +163,15 @@ export class InvoiceGenerationService {
 
     const dueDate = calculatedDueDate.toJSDate();
 
+    const commissionAmount =
+      isAffiliation && preContract.advisorCommission ? Number(preContract.advisorCommission) : 0;
+
+    if (!Number.isFinite(commissionAmount) || commissionAmount < 0) {
+      throw new BadRequestException('El monto de la comisión del contrato no es válido');
+    }
+
+    totalAmount += commissionAmount;
+
     const retentionPercentage = Number(preContract.retentionPercentage || 0);
     const retentionAmount = totalAmount * (retentionPercentage / 100);
 
@@ -195,6 +204,20 @@ export class InvoiceGenerationService {
         isProjectable: !isAffiliation,
       }),
     );
+
+    if (commissionAmount > 0) {
+      const subscriptionLine = qr.manager.create(InvoiceLine, {
+        invoice: savedInvoice,
+        category: InvoiceLineCategory.SUSCRIPCION,
+        description: 'Cuota de suscripción',
+        amount: commissionAmount,
+        quantity: 1,
+        person: null,
+        plan: null,
+        isProjectable: false,
+      });
+      invoiceLines.push(subscriptionLine);
+    }
 
     await qr.manager.save(invoiceLines);
 
