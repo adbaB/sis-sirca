@@ -238,5 +238,44 @@ describe('ChatbotPaymentService', () => {
         expect.stringContaining('¡Tus facturas seleccionadas han sido pagadas en su totalidad! 🥳'),
       );
     });
+
+    it('should include titularZelle in metadata when zelle_holder_name is present', async () => {
+      const fromNumber = '+584121234567';
+      const state: UserState = {
+        step: Steps.AWAITING_CONFIRMATION,
+        payment_method: 'zelle',
+        zelle_holder_name: 'Alejandro Bastidas',
+        selected_invoices_details: [{ id: 'inv-1', amount: 50 }],
+        extracted_data: {
+          referencia: 'ZELLE456',
+          monto: 50,
+          fecha: '2026-08-21',
+        },
+      };
+
+      mockExchangeRateService.getExchangeRateByDate.mockResolvedValue({ rateUsd: 40 });
+      mockInvoiceService.findInvoicesByIds.mockResolvedValueOnce([
+        {
+          id: 'inv-1',
+          billingMonth: '2026-08',
+          totalAmount: '50.00',
+          paidAmount: '50.00',
+        },
+      ]);
+
+      await service.processPaymentForInvoices(fromNumber, state, 'ZELLE456', 50);
+
+      expect(paymentService.createPayment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: 'inv-1',
+          paymentMethod: 'zelle',
+          referenceNumber: 'ZELLE456',
+          metadata: expect.objectContaining({
+            titularZelle: 'Alejandro Bastidas',
+          }),
+        }),
+        mockQueryRunner,
+      );
+    });
   });
 });

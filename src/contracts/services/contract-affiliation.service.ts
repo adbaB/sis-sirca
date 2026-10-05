@@ -541,6 +541,7 @@ export class ContractAffiliationService {
           newPlan.id,
           Number(newPlan.amount ?? 0),
           newPlan.name,
+          manager,
         );
         planChanged = true;
       }

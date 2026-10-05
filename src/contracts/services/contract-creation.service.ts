@@ -8,7 +8,7 @@ import {
   resolveQueryRunner,
 } from '../../common/context/request-context';
 import { Transactional } from '../../common/decorators/transactional.decorator';
-import { parseBirthDate } from '../../common/utils/date.util';
+import { normalizeDateOnly, parseBirthDate } from '../../common/utils/date.util';
 import { Person } from '../../persons/entities/person.entity';
 import { Plan } from '../../plans/entities/plan.entity';
 import { PlansService } from '../../plans/services/plans.service';
@@ -66,12 +66,29 @@ export class ContractCreationService {
     // 2. Generate code and create contract entity
     const { generatedCode, advisor } = await generateContractCode(manager, advisorId);
 
-    const effectiveStartDate = dto.startDate ? dto.startDate : dto.affiliationDate;
-    const effectiveExpirationDate = dto.expirationDate
-      ? dto.expirationDate
-      : calculateContractExpirationDate(effectiveStartDate);
+    const cleanStartDate = normalizeDateOnly(dto.startDate);
+    const cleanAffiliationDate = normalizeDateOnly(dto.affiliationDate);
+    if (!cleanAffiliationDate) {
+      throw new BadRequestException('La fecha de afiliación es inválida.');
+    }
+    if (dto.startDate && !cleanStartDate) {
+      throw new BadRequestException('La fecha de inicio es inválida.');
+    }
+    const effectiveStartDate = cleanStartDate || cleanAffiliationDate;
 
-    if (new Date(effectiveExpirationDate) < new Date(effectiveStartDate)) {
+    let effectiveExpirationDate: string;
+    if (dto.expirationDate) {
+      const cleanExpirationDate = normalizeDateOnly(dto.expirationDate);
+      if (!cleanExpirationDate) {
+        throw new BadRequestException('La fecha de vencimiento es inválida.');
+      }
+      effectiveExpirationDate = cleanExpirationDate;
+    } else {
+      effectiveExpirationDate = calculateContractExpirationDate(effectiveStartDate);
+    }
+
+    // Ambas son strings YYYY-MM-DD, la comparación lexicográfica es correcta.
+    if (effectiveExpirationDate < effectiveStartDate) {
       throw new BadRequestException(
         'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',
       );
@@ -79,8 +96,11 @@ export class ContractCreationService {
 
     const contract = contractRepo.create({
       ...contractData,
-      startDate: effectiveStartDate ? new Date(effectiveStartDate) : undefined,
-      expirationDate: effectiveExpirationDate ? new Date(effectiveExpirationDate) : undefined,
+      affiliationDate: cleanAffiliationDate as unknown as Date,
+      startDate: effectiveStartDate ? (effectiveStartDate as unknown as Date) : undefined,
+      expirationDate: effectiveExpirationDate
+        ? (effectiveExpirationDate as unknown as Date)
+        : undefined,
       code: generatedCode,
       advisor,
       ...(portfolioId ? { portfolio: { id: portfolioId } } : {}),
@@ -218,7 +238,7 @@ export class ContractCreationService {
         : role === PersonRole.TITULAR;
 
       const resolvedAffiliationDate =
-        affiliationDate || savedContract.affiliationDate || contractData.affiliationDate;
+        affiliationDate || savedContract.affiliationDate || cleanAffiliationDate;
 
       const contractPerson = cpRepo.create({
         contract: savedContract,

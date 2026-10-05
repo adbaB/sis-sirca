@@ -137,10 +137,10 @@
       border-collapse: collapse;
     }
     .grand-total-box td {
-      padding: 8px 12px;
+      padding: 7px 12px;
       font-size: 11px;
       font-weight: bold;
-      border: 1px solid var(--primary-color);
+      border: 1px solid #ffffff;
     }
     .grand-total-label {
       background-color: var(--primary-color);
@@ -151,7 +151,7 @@
       background-color: var(--primary-color);
       color: white;
       text-align: center;
-      width: 150px;
+      width: 170px;
     }
 
     .page-break {
@@ -262,9 +262,19 @@
     <!-- Grand Total Box -->
     <table class="grand-total-box">
       <tr>
-        <td class="grand-total-label">TOTAL MONTO A PAGAR POR COMISIONES AL CORTE:</td>
+        <td class="grand-total-label">TOTAL MONTO A PAGAR POR COMISIONES AL CORTE ($):</td>
         <td class="grand-total-value">${{ grandTotalCommissionFormatted }}</td>
       </tr>
+      {{#if exchangeRate}}
+      <tr>
+        <td class="grand-total-label">TASA DEL DÓLAR (BCV{{#if exchangeRateDateES}} AL {{ exchangeRateDateES }}{{/if}}):</td>
+        <td class="grand-total-value">{{ exchangeRateFormatted }} Bs.</td>
+      </tr>
+      <tr>
+        <td class="grand-total-label">TOTAL MONTO A PAGAR EN BOLÍVARES (Bs.):</td>
+        <td class="grand-total-value">{{ grandTotalCommissionBsFormatted }} Bs.</td>
+      </tr>
+      {{/if}}
     </table>
 
     <!-- Detailed Affiliates Section (New Pages) -->
@@ -325,6 +335,24 @@
         </table>
       {{/if}}
     {{/each}}
+
+    <!-- Grand Total Box Detalle -->
+    <table class="grand-total-box">
+      <tr>
+        <td class="grand-total-label">TOTAL MONTO A PAGAR POR COMISIONES AL CORTE ($):</td>
+        <td class="grand-total-value">${{ grandTotalCommissionFormatted }}</td>
+      </tr>
+      {{#if exchangeRate}}
+      <tr>
+        <td class="grand-total-label">TASA DEL DÓLAR (BCV{{#if exchangeRateDateES}} AL {{ exchangeRateDateES }}{{/if}}):</td>
+        <td class="grand-total-value">{{ exchangeRateFormatted }} Bs.</td>
+      </tr>
+      <tr>
+        <td class="grand-total-label">TOTAL MONTO A PAGAR EN BOLÍVARES (Bs.):</td>
+        <td class="grand-total-value">{{ grandTotalCommissionBsFormatted }} Bs.</td>
+      </tr>
+      {{/if}}
+    </table>
 
     <!-- Footer -->
     <div class="footer">

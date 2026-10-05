@@ -243,6 +243,7 @@ export class InvoiceService {
     newPlanId: string,
     newPlanAmount: number,
     newPlanName: string,
+    manager?: EntityManager,
   ): Promise<void> {
     return this.lineService.updatePlanLineOnActiveInvoice(
       contractId,
@@ -250,6 +251,7 @@ export class InvoiceService {
       newPlanId,
       newPlanAmount,
       newPlanName,
+      manager,
     );
   }
 

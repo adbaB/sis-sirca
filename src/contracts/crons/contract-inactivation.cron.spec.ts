@@ -2,12 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, In } from 'typeorm';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractsService } from '../services/contracts.service';
 import { EmailService } from '../../email/email.service';
 import { ContractInactivationCron } from './contract-inactivation.cron';
 
 describe('ContractInactivationCronService', () => {
   let service: ContractInactivationCron;
   let mockEmailService: { sendHtmlEmail: jest.Mock };
+  let mockContractsService: { inactivate: jest.Mock };
 
   const mockQueryRunner = {
     connect: jest.fn(),
@@ -32,6 +34,7 @@ describe('ContractInactivationCronService', () => {
 
   beforeEach(async () => {
     mockEmailService = { sendHtmlEmail: jest.fn().mockResolvedValue(undefined) };
+    mockContractsService = { inactivate: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -39,6 +42,10 @@ describe('ContractInactivationCronService', () => {
         {
           provide: getRepositoryToken(Contract),
           useValue: mockContractRepository,
+        },
+        {
+          provide: ContractsService,
+          useValue: mockContractsService,
         },
         {
           provide: DataSource,
@@ -84,9 +91,8 @@ describe('ContractInactivationCronService', () => {
 
       await service.processContractInactivations();
 
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(Contract, 'c-1', {
-        status: ContractStatus.INACTIVE,
-        inactivationReason: expect.stringContaining('3 facturas impagas'),
+      expect(mockContractsService.inactivate).toHaveBeenCalledWith('c-1', {
+        reason: expect.stringContaining('3 facturas impagas'),
       });
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockEmailService.sendHtmlEmail).toHaveBeenCalledWith(
@@ -105,7 +111,7 @@ describe('ContractInactivationCronService', () => {
 
       await service.processContractInactivations();
 
-      expect(mockQueryRunner.manager.update).not.toHaveBeenCalled();
+      expect(mockContractsService.inactivate).not.toHaveBeenCalled();
       expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
       expect(mockEmailService.sendHtmlEmail).not.toHaveBeenCalled();
     });
@@ -134,7 +140,7 @@ describe('ContractInactivationCronService', () => {
 
       await service.processContractInactivations();
 
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledTimes(2);
+      expect(mockContractsService.inactivate).toHaveBeenCalledTimes(2);
       expect(mockEmailService.sendHtmlEmail).toHaveBeenCalledTimes(1);
 
       const htmlBody = mockEmailService.sendHtmlEmail.mock.calls[0][2];
@@ -157,9 +163,8 @@ describe('ContractInactivationCronService', () => {
       await service.processContractInactivations();
 
       // Contract should still be inactivated even though email failed
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(Contract, 'c-1', {
-        status: ContractStatus.INACTIVE,
-        inactivationReason: expect.stringContaining('3 facturas impagas'),
+      expect(mockContractsService.inactivate).toHaveBeenCalledWith('c-1', {
+        reason: expect.stringContaining('3 facturas impagas'),
       });
 
       expect(loggerSpy).toHaveBeenCalledWith(
@@ -222,7 +227,7 @@ describe('ContractInactivationCronService', () => {
         id: expect.anything(),
       });
 
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledTimes(2);
+      expect(mockContractsService.inactivate).toHaveBeenCalledTimes(2);
     });
   });
 });

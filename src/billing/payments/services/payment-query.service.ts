@@ -44,6 +44,13 @@ export class PaymentQueryService {
       .leftJoinAndSelect('payment.person', 'person')
       .leftJoinAndSelect('payment.invoice', 'invoice')
       .leftJoinAndSelect('invoice.contract', 'contract')
+      .leftJoinAndSelect(
+        'contract.contractPersons',
+        'billingOwnerCp',
+        'billingOwnerCp.isBillingOwner = :isBillingOwner',
+        { isBillingOwner: true },
+      )
+      .leftJoinAndSelect('billingOwnerCp.person', 'billingOwnerPerson')
       .leftJoinAndSelect('payment.surpluses', 'surpluses')
       .orderBy('payment.createdAt', 'DESC');
 

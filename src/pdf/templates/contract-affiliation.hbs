@@ -301,7 +301,7 @@
       </tr>
       <tr>
         <td><span class="bold">FECHA DE NACIMIENTO:</span><br>{{ titular.birthDateFormatted }}</td>
-        <td><span class="bold">EDAD:</span><br>{{ titular.age }} AÑOS</td>
+        <td><span class="bold">EDAD:</span><br>{{ titular.age }}</td>
         <td><span class="bold">PESO:</span><br>{{#if titular.weight}}{{ titular.weight }} KG{{else}}-{{/if}}</td>
         <td><span class="bold">TALLA:</span><br>{{#if titular.height}}{{ titular.height }} MTS{{else}}-{{/if}}</td>
       </tr>
@@ -355,10 +355,10 @@
           <th style="width: 12%;">PLAN</th>
           <th style="width: 8%;">COBERTURA</th>
           <th style="width: 9%;">PARENTESCO</th>
-          <th style="width: 25%;">APELLIDO(S) Y NOMBRE(S)</th>
+          <th style="width: 23%;">APELLIDO(S) Y NOMBRE(S)</th>
           <th style="width: 12%;">Nº C.I. O PASAPORTE</th>
           <th style="width: 8%;">FECHA NAC.</th>
-          <th style="width: 5%;">EDAD</th>
+          <th style="width: 7%;">EDAD</th>
           <th style="width: 5%;">SEXO</th>
           <th style="width: 6%;">PESO</th>
           <th style="width: 6%;">TALLA</th>
@@ -374,7 +374,7 @@
           <td>{{name}}</td>
           <td>{{typeIdentityCard}}-{{identityCard}}</td>
           <td>{{birthDateFormatted}}</td>
-          <td class="text-center">{{age}}</td>
+          <td class="text-center" style="white-space: nowrap;">{{age}}</td>
           <td class="text-center">{{genderLabel}}</td>
           <td>{{weight}} kg</td>
           <td>{{height}} m</td>
@@ -784,7 +784,7 @@
           <td class="bold">TITULAR</td>
           <td>{{titularRow.name}}</td>
           <td>{{titularRow.typeIdentityCard}}-{{titularRow.identityCard}}</td>
-          <td>{{titularRow.age}} AÑOS</td>
+          <td>{{titularRow.age}}</td>
           <td>{{titularRow.planName}}</td>
           <td class="text-right">${{titularRow.coverage}}</td>
           <td class="text-right">${{titularRow.monthlyCost}}</td>
@@ -796,7 +796,7 @@
           <td>BENEFICIARIO</td>
           <td>{{name}}</td>
           <td>{{typeIdentityCard}}-{{identityCard}}</td>
-          <td>{{age}} AÑOS</td>
+          <td>{{age}}</td>
           <td>{{planName}}</td>
           <td class="text-right">${{coverage}}</td>
           <td class="text-right">${{monthlyCost}}</td>

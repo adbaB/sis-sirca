@@ -2,11 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { SipCommissionsService } from './sip-commissions.service';
 import { PdfService } from '../pdf/services/pdf.service';
+import { ExchangeRateService } from '../exchange-rate/services/exchange-rate.service';
 
 describe('SipCommissionsService', () => {
   let service: SipCommissionsService;
   let dataSource: DataSource;
   let pdfService: PdfService;
+  let exchangeRateService: ExchangeRateService;
 
   const mockPortfolios = [{ code: 'APF' }, { code: 'GMP' }, { code: 'HER' }];
 
@@ -177,12 +179,22 @@ describe('SipCommissionsService', () => {
             generatePdf: jest.fn().mockResolvedValue(Buffer.from('pdf-commissions-mock')),
           },
         },
+        {
+          provide: ExchangeRateService,
+          useValue: {
+            getLatestExchangeRateOnOrBefore: jest.fn().mockResolvedValue({
+              rateUsd: 82.5,
+              date: '2026-04-05',
+            }),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<SipCommissionsService>(SipCommissionsService);
     dataSource = module.get<DataSource>(DataSource);
     pdfService = module.get<PdfService>(PdfService);
+    exchangeRateService = module.get<ExchangeRateService>(ExchangeRateService);
   });
 
   it('should be defined', () => {
@@ -202,6 +214,9 @@ describe('SipCommissionsService', () => {
 
       const secondCall = querySpy.mock.calls[1];
       expect(secondCall[1]).toEqual(['2026-03-06', '2026-04-05']);
+
+      expect(result.startDate).toBe('2026-03-06');
+      expect(result.endDate).toBe('2026-04-05');
 
       expect(result.portfolioCodes).toEqual(['APF', 'GMP', 'HER']);
 
@@ -401,25 +416,67 @@ describe('SipCommissionsService', () => {
   });
 
   describe('generatePdf', () => {
-    it('should generate a PDF buffer successfully with affiliate details', async () => {
+    it('should generate a PDF buffer successfully with affiliate details and exchange rate totals', async () => {
       jest
         .spyOn(dataSource, 'query')
         .mockResolvedValueOnce(mockPortfolios)
         .mockResolvedValueOnce(mockRawData);
+
+      const buffer = await service.generatePdf(2026, 4, undefined, '2026-04-05');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'sip-commissions',
+        expect.objectContaining({
+          startDateES: '06-03-2026',
+          endDateES: '05-04-2026',
+          colspan: 7,
+          grandTotalCommissionFormatted: '105.00',
+          exchangeRate: 82.5,
+          exchangeRateFormatted: '82.50',
+          exchangeRateDateES: '05-04-2026',
+          grandTotalCommissionBsFormatted: '8662.50',
+        }),
+        { landscape: true },
+      );
+      expect(buffer.toString()).toBe('pdf-commissions-mock');
+    });
+
+    it('should throw BadRequestException if exchange rate cannot be found and rateDate was provided', async () => {
+      jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce(mockPortfolios)
+        .mockResolvedValueOnce(mockRawData);
+
+      jest
+        .spyOn(exchangeRateService, 'getLatestExchangeRateOnOrBefore')
+        .mockResolvedValueOnce(null);
+
+      await expect(service.generatePdf(2026, 4, undefined, '2026-04-05')).rejects.toThrow(
+        'No se encontró la tasa de cambio para la fecha 2026-04-05.',
+      );
+    });
+
+    it('should generate report without Bs fields if exchange rate is missing and rateDate was not provided', async () => {
+      jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce(mockPortfolios)
+        .mockResolvedValueOnce(mockRawData);
+
+      jest
+        .spyOn(exchangeRateService, 'getLatestExchangeRateOnOrBefore')
+        .mockResolvedValueOnce(null);
 
       const buffer = await service.generatePdf(2026, 4);
 
       expect(pdfService.generatePdf).toHaveBeenCalledWith(
         'sip-commissions',
         expect.objectContaining({
-          startDateES: '01-04-2026',
-          endDateES: '30-04-2026',
-          colspan: 7,
-          grandTotalCommissionFormatted: '105.00',
+          exchangeRate: undefined,
+          grandTotalCommissionBsFormatted: undefined,
         }),
         { landscape: true },
       );
-      expect(buffer.toString()).toBe('pdf-commissions-mock');
+      expect(buffer).toBeDefined();
     });
   });
 });

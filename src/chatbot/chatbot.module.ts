@@ -11,6 +11,7 @@ import { ChatbotStateService } from './services/chatbot-state.service';
 import { ChatbotPaymentService } from './services/chatbot-payment.service';
 
 import { AwaitingCaptureStep } from './steps/stepsImp/AwaitingCapture.step';
+import { AwaitingZelleHolderStep } from './steps/stepsImp/AwaitingZelleHolder.step';
 import { AwaitingConfirmationStep } from './steps/stepsImp/AwaitingConfirmation.step';
 import { AwaitingDocInfoManualStep } from './steps/stepsImp/AwaitingDocInfoManual.step';
 import { AwaitingFlowInteractionStep } from './steps/stepsImp/AwaitingFlowInteraction.step';
@@ -32,6 +33,7 @@ const stepHandlersProvider = {
   useFactory: (...steps: IStepHandler[]) => steps,
   inject: [
     AwaitingCaptureStep,
+    AwaitingZelleHolderStep,
     AwaitingConfirmationStep,
     AwaitingDocInfoManualStep,
     AwaitingFlowInteractionStep,
@@ -74,6 +76,7 @@ const flowHandlersProvider = {
     ChatbotStateService,
     ChatbotPaymentService,
     AwaitingCaptureStep,
+    AwaitingZelleHolderStep,
     AwaitingConfirmationStep,
     AwaitingDocInfoManualStep,
     AwaitingFlowInteractionStep,

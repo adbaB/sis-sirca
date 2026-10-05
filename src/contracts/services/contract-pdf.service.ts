@@ -15,6 +15,7 @@ import { HealthDeclaration } from '../entities/health-declaration.entity';
 import {
   calculateContractExpirationDate,
   formatContractDate,
+  formatContractPersonAge,
   getCalendarDateComponents,
   getContractPersonAge,
 } from '../helpers/contract-date-formatter.helper';
@@ -106,21 +107,30 @@ export class ContractPdfService {
         (cp) => cp.role === PersonRole.AFILIADO,
       );
 
-      const titularData = this.buildTitularData(titularCp);
+      const referenceDate =
+        fullContract.affiliationDate || fullContract.startDate || getCaracasTodayJSDate();
+
+      const titularData = this.buildTitularData(titularCp, referenceDate);
 
       // Find primary plan
       const planPerson = fullContract.contractPersons.find((cp) => cp.person?.plan)?.person;
       const contractPlan = planPerson?.plan;
       const planName = contractPlan?.name || '';
 
-      const beneficiaries = this.buildBeneficiariesList(affiliateCps, titularCp, contractPlan);
+      const beneficiaries = this.buildBeneficiariesList(
+        affiliateCps,
+        titularCp,
+        contractPlan,
+        referenceDate,
+      );
       const emptyRows = this.buildEmptyRows(beneficiaries.length);
       const healthQuestions = this.buildHealthQuestions(fullContract.contractPersons);
-      const titularRow = this.buildTitularRow(titularCp, contractPlan);
+      const titularRow = this.buildTitularRow(titularCp, contractPlan, referenceDate);
       const beneficiariesRow = this.buildBeneficiariesSummary(
         affiliateCps,
         titularCp,
         contractPlan,
+        referenceDate,
       );
       const contractedPlansList = this.buildContractedPlansList(fullContract.contractPersons);
       const allMembers = this.buildAllMembers(fullContract.contractPersons);
@@ -178,7 +188,10 @@ export class ContractPdfService {
     }
   }
 
-  private buildTitularData(titularCp?: ContractPerson): TitularPdfData {
+  private buildTitularData(
+    titularCp?: ContractPerson,
+    referenceDate?: Date | string | null,
+  ): TitularPdfData {
     const person = titularCp?.person;
     if (!person) {
       return {
@@ -206,7 +219,10 @@ export class ContractPdfService {
       typeIdentityCard: person.typeIdentityCard,
       identityCard: person.identityCard,
       birthDateFormatted: formatContractDate(person.birthDate),
-      age: getContractPersonAge(person.birthDate),
+      age: formatContractPersonAge(person.birthDate, {
+        withUnitForYears: true,
+        referenceDate,
+      }),
       weight: person.weight || '',
       height: person.height || '',
       address: person.address || '',
@@ -225,6 +241,7 @@ export class ContractPdfService {
     affiliateCps: ContractPerson[],
     titularCp: ContractPerson | undefined,
     contractPlan?: Plan | null,
+    referenceDate?: Date | string | null,
   ): BeneficiaryPdfRow[] {
     const beneficiariesCps = affiliateCps.filter((cp) => !isSamePerson(cp, titularCp));
     const beneficiariesList =
@@ -255,7 +272,10 @@ export class ContractPdfService {
           identityCard: person.identityCard,
           relationship: cp.relationship || (isTitular ? 'TITULAR' : '-'),
           birthDateFormatted: formatContractDate(person.birthDate),
-          age: getContractPersonAge(person.birthDate),
+          age: formatContractPersonAge(person.birthDate, {
+            withUnitForYears: true,
+            referenceDate,
+          }),
           genderLabel: person.gender === true ? 'M' : person.gender === false ? 'F' : '-',
           weight: person.weight || '-',
           height: person.height || '-',
@@ -309,6 +329,7 @@ export class ContractPdfService {
   private buildTitularRow(
     titularCp: ContractPerson | undefined,
     contractPlan?: Plan | null,
+    referenceDate?: Date | string | null,
   ): TitularSummaryRow | null {
     if (!titularCp || !titularCp.person) return null;
     const titularPlan = titularCp.plan || titularCp.person?.plan || contractPlan;
@@ -316,7 +337,10 @@ export class ContractPdfService {
       name: titularCp.person.name,
       typeIdentityCard: titularCp.person.typeIdentityCard,
       identityCard: titularCp.person.identityCard,
-      age: getContractPersonAge(titularCp.person.birthDate),
+      age: formatContractPersonAge(titularCp.person.birthDate, {
+        withUnitForYears: true,
+        referenceDate,
+      }),
       planName: titularPlan?.name || 'TITULAR',
       coverage: titularPlan?.coverage
         ? Number(titularPlan.coverage).toLocaleString('en-US', {
@@ -332,6 +356,7 @@ export class ContractPdfService {
     affiliateCps: ContractPerson[],
     titularCp: ContractPerson | undefined,
     contractPlan?: Plan | null,
+    referenceDate?: Date | string | null,
   ): BeneficiarySummaryRow[] {
     return affiliateCps
       .filter((cp) => Boolean(cp.person) && !isSamePerson(cp, titularCp))
@@ -347,7 +372,10 @@ export class ContractPdfService {
           name: cp.person.name,
           typeIdentityCard: cp.person.typeIdentityCard,
           identityCard: cp.person.identityCard,
-          age: getContractPersonAge(cp.person.birthDate),
+          age: formatContractPersonAge(cp.person.birthDate, {
+            withUnitForYears: true,
+            referenceDate,
+          }),
           planName: plan?.name || '-',
           coverage,
           monthlyCost: plan ? Number(plan.amount).toFixed(2) : '0.00',

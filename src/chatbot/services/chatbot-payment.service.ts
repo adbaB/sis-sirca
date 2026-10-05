@@ -72,6 +72,13 @@ export class ChatbotPaymentService {
         }
       }
 
+      if (state.zelle_holder_name) {
+        ocrMetadata = {
+          ...(ocrMetadata || {}),
+          titularZelle: state.zelle_holder_name,
+        };
+      }
+
       if (state.identity_card && state.type_identity_card) {
         try {
           const person = await this.personsService.findByIdentityCard(

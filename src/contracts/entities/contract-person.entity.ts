@@ -15,6 +15,7 @@ import type { Person } from '../../persons/entities/person.entity';
 import type { HealthDeclaration } from './health-declaration.entity';
 import type { Plan } from '../../plans/entities/plan.entity';
 import type { ContractPersonExclusion } from './contract-person-exclusion.entity';
+import { dateColumnTransformer } from '../../common/transformers/date.transformer';
 
 export enum PersonRole {
   TITULAR = 'TITULAR',
@@ -79,7 +80,7 @@ export class ContractPerson {
   @Column({ type: 'boolean', default: false, name: 'is_billing_owner' })
   isBillingOwner: boolean;
 
-  @Column({ type: 'date', name: 'affiliation_date' })
+  @Column({ type: 'date', name: 'affiliation_date', transformer: dateColumnTransformer })
   affiliationDate: Date;
 
   @OneToMany('HealthDeclaration', (hd: HealthDeclaration) => hd.contractPerson)

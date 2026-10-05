@@ -94,7 +94,7 @@ describe('ContractSuspensionCron', () => {
         paidAmount: 0,
         retentionAmount: 0,
         status: InvoiceStatus.PENDING,
-        dueDate: now.minus({ days: 1 }).toJSDate(),
+        dueDate: now.minus({ months: 1 }).toJSDate(),
       },
     ]);
 

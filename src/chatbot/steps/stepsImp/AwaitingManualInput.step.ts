@@ -38,6 +38,7 @@ export class AwaitingManualInputStep implements IStepHandler {
     }
 
     const ref = parts[0];
+    const banco = parts[1];
     const parsedAmount = Number(parts[2]);
 
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -49,6 +50,78 @@ export class AwaitingManualInputStep implements IStepHandler {
     }
 
     const amount = parsedAmount;
+
+    const bancoNormalized = banco.toLowerCase().trim();
+    const isZelleBank =
+      bancoNormalized.includes('zelle') ||
+      [
+        'bank of america',
+        'wells fargo',
+        'chase',
+        'citi',
+        'citibank',
+        'capital one',
+        'td bank',
+        'pnc',
+      ].some((b) => bancoNormalized.includes(b));
+
+    const venezuelanBanks = [
+      'mercantil',
+      'banesco',
+      'venezuela',
+      'bdv',
+      'provincial',
+      'bbva',
+      'bancaribe',
+      'exterior',
+      'bnc',
+      'nacional de credito',
+      'bancamiga',
+      'banplus',
+      '100% banco',
+      'tesoro',
+      'bicentenario',
+      'activo',
+      'plaza',
+      'fondo comun',
+      'bfc',
+      'caroni',
+      'sofitasa',
+      'del sur',
+    ];
+    const isVenezuelanBank = venezuelanBanks.some((vb) => bancoNormalized.includes(vb));
+
+    const isZelle = isZelleBank
+      ? true
+      : isVenezuelanBank
+        ? false
+        : state.payment_method?.toLowerCase() === 'zelle';
+
+    if (isZelle) {
+      state.payment_method = 'zelle';
+    } else if (isVenezuelanBank && state.payment_method?.toLowerCase() === 'zelle') {
+      state.payment_method = 'transferencia';
+    }
+
+    // Si es Zelle pero aún no se ha capturado el titular de la cuenta
+    if (isZelle && !state.zelle_holder_name) {
+      state.extracted_data = {
+        ...(state.extracted_data || {}),
+        referencia: ref,
+        monto: amount,
+        nombreBanco: banco,
+        origen: banco,
+        moneda: 'USD',
+      };
+      state.step = Steps.AWAITING_ZELLE_HOLDER;
+      await this.stateService.setState(phone, state);
+
+      await this.metaWhatsappService.sendMessage(
+        phone,
+        '💳 He registrado los datos de tu pago Zelle.\n\nPor favor, escribe el *nombre y apellido del titular* de la cuenta Zelle desde donde realizaste el pago:',
+      );
+      return;
+    }
 
     await this.chatbotPaymentService.processPaymentForInvoices(
       phone,

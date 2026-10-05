@@ -3,9 +3,12 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, MoreThan, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { ContractsService } from '../services/contracts.service';
+import { PersonRole } from '../entities/contract-person.entity';
 import { EmailService } from '../../email/email.service';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { formatDateES, getCaracasNow } from '../../common/utils/date.util';
+import { generateRequestId, requestContextStorage } from '../../common/context/request-context';
 
 interface InactivatedContractInfo {
   contractCode: string;
@@ -24,6 +27,7 @@ export class ContractInactivationCron {
   constructor(
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
+    private readonly contractsService: ContractsService,
     private readonly dataSource: DataSource,
     private readonly emailService: EmailService,
   ) {}
@@ -84,56 +88,60 @@ export class ContractInactivationCron {
   ): Promise<InactivatedContractInfo | null> {
     const queryRunner = this.dataSource.createQueryRunner();
 
-    try {
-      await queryRunner.connect();
-      await queryRunner.startTransaction();
+    return requestContextStorage.run(
+      { queryRunner, requestId: generateRequestId(), startTime: Date.now() },
+      async () => {
+        try {
+          await queryRunner.connect();
+          await queryRunner.startTransaction();
 
-      const unpaidInvoiceCount = await queryRunner.manager.count(Invoice, {
-        where: {
-          contract: { id: contract.id },
-          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
-        },
-      });
+          const unpaidInvoiceCount = await queryRunner.manager.count(Invoice, {
+            where: {
+              contract: { id: contract.id },
+              status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+            },
+          });
 
-      if (unpaidInvoiceCount < ContractInactivationCron.UNPAID_THRESHOLD) {
-        await queryRunner.rollbackTransaction();
-        return null;
-      }
+          if (unpaidInvoiceCount < ContractInactivationCron.UNPAID_THRESHOLD) {
+            await queryRunner.rollbackTransaction();
+            return null;
+          }
 
-      const reason = `Inactivado automáticamente por morosidad: ${unpaidInvoiceCount} facturas impagas`;
+          const reason = `Inactivado automáticamente por morosidad: ${unpaidInvoiceCount} facturas impagas`;
 
-      await queryRunner.manager.update(Contract, contract.id, {
-        status: ContractStatus.INACTIVE,
-        inactivationReason: reason,
-      });
+          await this.contractsService.inactivate(contract.id, { reason });
 
-      await queryRunner.commitTransaction();
+          await queryRunner.commitTransaction();
 
-      this.logger.warn(
-        `Contract ${contract.code} inactivated: ${unpaidInvoiceCount} unpaid invoices`,
-      );
+          this.logger.warn(
+            `Contract ${contract.code} inactivated: ${unpaidInvoiceCount} unpaid invoices`,
+          );
 
-      const titularCp = contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
-      const titularName = titularCp?.person?.name ?? 'Sin titular';
+          const titularCp =
+            contract.contractPersons?.find((cp) => cp.role === PersonRole.TITULAR) ??
+            contract.contractPersons?.find((cp) => cp.isBillingOwner === true);
+          const titularName = titularCp?.person?.name ?? 'Sin titular';
 
-      return {
-        contractCode: contract.code,
-        titularName,
-        unpaidInvoiceCount,
-        inactivationDate: today,
-      };
-    } catch (error: unknown) {
-      if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
-      }
-      this.logger.error(
-        `Error evaluating contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-      return null;
-    } finally {
-      await queryRunner.release();
-    }
+          return {
+            contractCode: contract.code,
+            titularName,
+            unpaidInvoiceCount,
+            inactivationDate: today,
+          };
+        } catch (error: unknown) {
+          if (queryRunner.isTransactionActive) {
+            await queryRunner.rollbackTransaction();
+          }
+          this.logger.error(
+            `Error evaluating contract ${contract.id}: ${error instanceof Error ? error.message : String(error)}`,
+            error instanceof Error ? error.stack : undefined,
+          );
+          return null;
+        } finally {
+          await queryRunner.release();
+        }
+      },
+    );
   }
 
   private async sendSummaryEmail(

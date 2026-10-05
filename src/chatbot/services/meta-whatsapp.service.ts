@@ -28,6 +28,25 @@ export class MetaWhatsappService {
     return `https://graph.facebook.com/v25.0/${this.configService.meta.phoneNumberId}/messages`;
   }
 
+  private formatAxiosError(error: unknown): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const statusText = error.response?.statusText;
+      const data = error.response?.data;
+      const dataStr = data
+        ? typeof data === 'object'
+          ? JSON.stringify(data)
+          : String(data)
+        : error.message;
+      return `[HTTP ${status ?? 'N/A'}${statusText ? ` ${statusText}` : ''}] Details: ${dataStr}`;
+    }
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private sanitizeRecipientPhone(phone: string): string {
+    return phone ? phone.replace(/\D/g, '') : '';
+  }
+
   public async sendMessage(to: string, text: string): Promise<void> {
     const accessToken = this.configService.meta.accessToken;
     const phoneNumberId = this.configService.meta.phoneNumberId;
@@ -36,12 +55,17 @@ export class MetaWhatsappService {
       throw new Error('Missing Meta access token or phone number ID in configuration.');
     }
 
+    const cleanTo = this.sanitizeRecipientPhone(to);
+    if (!cleanTo) {
+      throw new Error(`Invalid recipient phone number: "${to}"`);
+    }
+
     try {
       await axios.post(
         this.baseUrl,
         {
           messaging_product: 'whatsapp',
-          to,
+          to: cleanTo,
           text: { body: text },
         },
         {
@@ -50,12 +74,11 @@ export class MetaWhatsappService {
         },
       );
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        this.logger.error(`Error sending message to ${to}:`, error.response?.data || error.message);
-      } else {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Error sending message to ${to}:`, message);
-      }
+      const details = this.formatAxiosError(error);
+      this.logger.error(
+        `Error sending message to ${to} (${cleanTo}): ${details}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw error;
     }
   }
@@ -72,13 +95,18 @@ export class MetaWhatsappService {
       throw new Error('Missing Meta access token or phone number ID in configuration.');
     }
 
+    const cleanTo = this.sanitizeRecipientPhone(to);
+    if (!cleanTo) {
+      throw new Error(`Invalid recipient phone number: "${to}"`);
+    }
+
     try {
       await axios.post(
         this.baseUrl,
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
-          to,
+          to: cleanTo,
           type: 'interactive',
           interactive: {
             type: 'button',
@@ -92,15 +120,11 @@ export class MetaWhatsappService {
         },
       );
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        this.logger.error(
-          `Error sending interactive message to ${to}:`,
-          error.response?.data || error.message,
-        );
-      } else {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Error sending interactive message to ${to}:`, message);
-      }
+      const details = this.formatAxiosError(error);
+      this.logger.error(
+        `Error sending interactive message to ${to} (${cleanTo}): ${details}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw error;
     }
   }
@@ -115,13 +139,19 @@ export class MetaWhatsappService {
       return null;
     }
 
+    const cleanTo = this.sanitizeRecipientPhone(to);
+    if (!cleanTo) {
+      this.logger.error(`Invalid recipient phone number for flow message: "${to}"`);
+      return null;
+    }
+
     try {
       const response = await axios.post(
         this.baseUrl,
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
-          to,
+          to: cleanTo,
           type: 'interactive',
           interactive: {
             type: 'flow',
@@ -158,15 +188,11 @@ export class MetaWhatsappService {
       );
       return response.data?.messages?.[0]?.id || null;
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        this.logger.error(
-          `Error sending flow message to ${to}:`,
-          error.response?.data || error.message,
-        );
-      } else {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Error sending flow message to ${to}:`, message);
-      }
+      const details = this.formatAxiosError(error);
+      this.logger.error(
+        `Error sending flow message to ${to} (${cleanTo}): ${details}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       return null;
     }
   }
@@ -175,7 +201,7 @@ export class MetaWhatsappService {
     to: string,
     templateName: string,
     variables: MetaTemplateVariables = {},
-    languageCode: string = 'es',
+    languageCode?: string,
     flowToken?: string,
   ): Promise<void> {
     const accessToken = this.configService.meta.accessToken;
@@ -184,6 +210,13 @@ export class MetaWhatsappService {
     if (!accessToken || !phoneNumberId) {
       throw new Error('Missing Meta access token or phone number ID in configuration.');
     }
+
+    const cleanTo = this.sanitizeRecipientPhone(to);
+    if (!cleanTo) {
+      throw new Error(`Invalid recipient phone number: "${to}"`);
+    }
+
+    const resolvedLanguageCode = languageCode || this.configService.meta.templateLanguage || 'es';
 
     const parameters: MetaTemplateParameter[] = Object.entries(variables).map(([key, value]) => ({
       type: 'text',
@@ -216,7 +249,7 @@ export class MetaWhatsappService {
     const templatePayload: MetaTemplatePayload = {
       name: templateName,
       language: {
-        code: languageCode,
+        code: resolvedLanguageCode,
       },
     };
 
@@ -224,30 +257,24 @@ export class MetaWhatsappService {
       templatePayload.components = components;
     }
 
+    const requestBody = {
+      messaging_product: 'whatsapp',
+      to: cleanTo,
+      type: 'template',
+      template: templatePayload,
+    };
+
     try {
-      await axios.post(
-        this.baseUrl,
-        {
-          messaging_product: 'whatsapp',
-          to,
-          type: 'template',
-          template: templatePayload,
-        },
-        {
-          headers: this.getHeaders(),
-          timeout: 15000,
-        },
-      );
+      await axios.post(this.baseUrl, requestBody, {
+        headers: this.getHeaders(),
+        timeout: 15000,
+      });
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        this.logger.error(
-          `Error sending template message to ${to}:`,
-          error.response?.data || error.message,
-        );
-      } else {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Error sending template message to ${to}:`, message);
-      }
+      const errorDetails = this.formatAxiosError(error);
+      this.logger.error(
+        `Error sending template "${templateName}" (${resolvedLanguageCode}) to ${to} (${cleanTo}): ${errorDetails}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw error;
     }
   }

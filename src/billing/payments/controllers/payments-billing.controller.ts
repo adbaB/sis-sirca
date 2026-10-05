@@ -18,6 +18,7 @@ import { PaymentService } from '../services/payment.service';
 import { SurplusService } from '../services/surplus.service';
 import { ReceiptAnalysisService } from '../services/receipt-analysis.service';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { MAX_UPLOAD_FILE_SIZE } from '../../../common/constants/upload.constants';
 
 /**
  * Controlador de facturación enfocado en la gestión HTTP de pagos y análisis de comprobantes.
@@ -156,7 +157,7 @@ export class PaymentBillingController {
   @RequirePermissions('create:advisor-payments', 'create:payments')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: MAX_UPLOAD_FILE_SIZE },
       fileFilter: (req, file, cb) => {
         const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
         if (!allowedMimeTypes.includes(file.mimetype)) {

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { getCaracasTodayJSDate } from '../../../common/utils/date.util';
@@ -126,11 +126,11 @@ export class InvoiceCalculationService {
       (cp) => cp.person && cp.person.status === PersonStatus.ACTIVE && !cp.deletedAt,
     );
 
-    // Obtener las líneas MENSUALIDAD activas de la factura
+    // Obtener las líneas MENSUALIDAD o INCLUSION activas de la factura
     const invoiceLines = await invoiceLineRepo.find({
       where: {
         invoice: { id: invoiceId },
-        category: InvoiceLineCategory.MENSUALIDAD,
+        category: In([InvoiceLineCategory.MENSUALIDAD, InvoiceLineCategory.INCLUSION]),
         deletedAt: IsNull(),
       },
       relations: ['person', 'plan'],
@@ -138,19 +138,26 @@ export class InvoiceCalculationService {
 
     // Sincronizar las líneas con los planes actuales de los afiliados si cambiaron
     for (const cp of activeAfiliados) {
-      const line = invoiceLines.find((l) => l.person?.id === cp.person?.id);
+      const matchingLines = invoiceLines.filter((l) => l.person?.id === cp.person?.id);
       const currentPlan = cp.plan || cp.person?.plan;
 
-      if (line && currentPlan) {
+      if (matchingLines.length > 0 && currentPlan) {
         const planAmount = Number(currentPlan.amount);
-        const planChanged = line.plan?.id !== currentPlan.id || Number(line.amount) !== planAmount;
+        for (const line of matchingLines) {
+          const planChanged =
+            line.plan?.id !== currentPlan.id || Number(line.amount) !== planAmount;
 
-        if (planChanged) {
-          line.plan = currentPlan;
-          line.amount = planAmount;
-          const personName = cp.person.name || line.person?.name || 'Afiliado';
-          line.description = `${personName} - ${currentPlan.name}`;
-          await invoiceLineRepo.save(line);
+          if (planChanged) {
+            line.plan = currentPlan;
+            line.amount = planAmount;
+            const personPrefix = line.description?.includes(' - ')
+              ? line.description.split(' - ')[0]
+              : line.category === InvoiceLineCategory.INCLUSION
+                ? `Inclusión: ${cp.person.name || 'Afiliado'}`
+                : cp.person.name || line.person?.name || 'Afiliado';
+            line.description = `${personPrefix} - ${currentPlan.name}`;
+            await invoiceLineRepo.save(line);
+          }
         }
       }
     }

@@ -7,7 +7,10 @@ import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.
 import { PaymentStatus } from '../../billing/payments/entities/payment.entity';
 import { evaluateOverdueInvoices } from '../policies/contract-debt-evaluator.policy';
 import { hasRolePermission } from '../../roles/helpers/role-permission.helper';
-import { OVERRIDE_REACTIVATION_PERMISSION } from '../constants/contract.constants';
+import {
+  OVERRIDE_REACTIVATION_PERMISSION,
+  REACTIVATION_COOLDOWN_DAYS,
+} from '../constants/contract.constants';
 import { ActivateContractDto } from '../dto/activate-contract.dto';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 
@@ -80,14 +83,18 @@ export class ContractReactivationService {
     }
 
     // Si no hay pagos en las facturas vencidas (ej. se saldaron por retención o saldo a favor sin un pago directo),
-    // la carencia de 7 días cuenta a partir de la fecha actual en que se regularizó la deuda.
+    // la carencia cuenta a partir de la fecha actual en que se regularizó la deuda.
     const baselineDate = latestOperationDate ?? nowDate;
 
-    // 7 días corridos a partir de la fecha base normalizados a medianoche (00:00:00) en zona Caracas,
-    // para que la reactivación no dependa de la hora del pago y aplique desde el inicio del día.
+    // Carencia de 7 días continuos a partir de la fecha de pago (donde el día 1 es la fecha de pago),
+    // normalizados a medianoche (00:00:00) en zona Caracas.
+    // Ejemplo: pago el día 2 => días de carencia [2, 3, 4, 5, 6, 7, 8] => reactivación elegible el día 9 a las 00:00:00.
+    // Las fechas de pago son timestamptz (instantes reales), por lo que se convierten
+    // directamente a zona Caracas; no se usa normalizeDateOnly para evitar desfases de un día.
     const eligibleAt = DateTime.fromJSDate(baselineDate)
       .setZone(CARACAS_ZONE)
-      .plus({ days: 7 })
+      .startOf('day')
+      .plus({ days: REACTIVATION_COOLDOWN_DAYS })
       .startOf('day')
       .toJSDate();
 
