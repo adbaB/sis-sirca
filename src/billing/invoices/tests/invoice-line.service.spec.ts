@@ -105,6 +105,7 @@ describe('InvoiceLineService', () => {
   let invoiceRepo: { findOne: jest.Mock; save: jest.Mock };
   let invoiceLineRepo: {
     findOne: jest.Mock;
+    find: jest.Mock;
     softRemove: jest.Mock;
     save: jest.Mock;
     create: jest.Mock;
@@ -122,6 +123,7 @@ describe('InvoiceLineService', () => {
 
     const mockInvoiceLineRepo = {
       findOne: jest.fn(),
+      find: jest.fn(),
       softRemove: jest.fn().mockResolvedValue({}),
       save: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockImplementation((dto) => dto),
@@ -499,14 +501,14 @@ describe('InvoiceLineService', () => {
       );
 
       expect(invoiceRepo.findOne).toHaveBeenCalledTimes(2);
-      expect(invoiceLineRepo.findOne).not.toHaveBeenCalled();
+      expect(invoiceLineRepo.find).not.toHaveBeenCalled();
       expect(invoiceLineRepo.save).not.toHaveBeenCalled();
     });
 
     it('no hace nada si el afiliado no tiene línea MENSUALIDAD ni INCLUSION en la factura', async () => {
       const invoice = makeInvoice();
       invoiceRepo.findOne.mockResolvedValue(invoice);
-      invoiceLineRepo.findOne.mockResolvedValue(null);
+      invoiceLineRepo.find.mockResolvedValue([]);
 
       await withContext(mockQr, () =>
         service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 50, 'Plan Oro'),
@@ -526,7 +528,7 @@ describe('InvoiceLineService', () => {
       });
 
       invoiceRepo.findOne.mockResolvedValue(invoice);
-      invoiceLineRepo.findOne.mockResolvedValue(line);
+      invoiceLineRepo.find.mockResolvedValue([line]);
 
       queryRepo.sumBaseLines.mockResolvedValue(50);
       queryRepo.sumAdditionalLines.mockResolvedValue(0);
@@ -565,7 +567,7 @@ describe('InvoiceLineService', () => {
       });
 
       invoiceRepo.findOne.mockResolvedValue(invoice);
-      invoiceLineRepo.findOne.mockResolvedValue(line);
+      invoiceLineRepo.find.mockResolvedValue([line]);
 
       queryRepo.sumBaseLines.mockResolvedValue(50);
       queryRepo.sumAdditionalLines.mockResolvedValue(45);
@@ -606,7 +608,7 @@ describe('InvoiceLineService', () => {
         .mockResolvedValueOnce(null) // no hay en mes en curso
         .mockResolvedValueOnce(previousPendingInvoice); // encontrada por fallback
 
-      invoiceLineRepo.findOne.mockResolvedValue(line);
+      invoiceLineRepo.find.mockResolvedValue([line]);
       queryRepo.sumBaseLines.mockResolvedValue(0);
       queryRepo.sumAdditionalLines.mockResolvedValue(40);
 
@@ -642,7 +644,7 @@ describe('InvoiceLineService', () => {
       });
 
       invoiceRepo.findOne.mockResolvedValue(invoice);
-      invoiceLineRepo.findOne.mockResolvedValue(line);
+      invoiceLineRepo.find.mockResolvedValue([line]);
 
       queryRepo.sumBaseLines.mockResolvedValue(150);
       queryRepo.sumAdditionalLines.mockResolvedValue(0);

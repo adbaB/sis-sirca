@@ -120,4 +120,28 @@ describe('AwaitingManualInputStep', () => {
       100,
     );
   });
+
+  it('should override false-positive zelle state if user manually enters a Venezuelan bank like Mercantil', async () => {
+    const phone = '584121234567';
+    const message: MetaMessage = {
+      from: phone,
+      type: 'text',
+      text: { body: '123456, Mercantil, 100' },
+    };
+    const state: UserState = {
+      step: Steps.AWAITING_MANUAL_INPUT,
+      payment_method: 'zelle', // set erroneously by prior OCR
+    };
+
+    await step.execute(phone, message, state);
+
+    expect(state.payment_method).toBe('transferencia');
+    expect(chatbotPaymentService.processPaymentForInvoices).toHaveBeenCalledWith(
+      phone,
+      state,
+      '123456',
+      100,
+    );
+    expect(state.step).toBe(Steps.AWAITING_MANUAL_INPUT);
+  });
 });

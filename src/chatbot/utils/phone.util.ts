@@ -25,6 +25,11 @@ export function normalizeWhatsappPhone(phone: string | null | undefined): string
 
   if (!cleaned) return null;
 
+  // Remover prefijo internacional '00' si existe (ej: 0058... -> 58...)
+  if (cleaned.startsWith('00')) {
+    cleaned = cleaned.substring(2);
+  }
+
   // Caso Venezuela: 11 dígitos locales empezando por 0 (ej: 0414..., 0424..., 0412..., 0416..., 0426...)
   if (cleaned.length === 11 && cleaned.startsWith('0')) {
     cleaned = '58' + cleaned.substring(1);

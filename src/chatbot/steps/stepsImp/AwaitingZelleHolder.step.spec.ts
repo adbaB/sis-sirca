@@ -77,6 +77,36 @@ describe('AwaitingZelleHolderStep', () => {
     };
     await step.execute(phone, messageShort, state);
     expect(stateService.setState).not.toHaveBeenCalled();
+
+    // Rechazar un solo nombre o palabra (ej: 'Ana' o '123a')
+    const messageSingleWord: MetaMessage = {
+      from: phone,
+      type: 'text',
+      text: { body: 'Ana' },
+    };
+    await step.execute(phone, messageSingleWord, state);
+    expect(stateService.setState).not.toHaveBeenCalled();
+    expect(state.step).toBe(Steps.AWAITING_ZELLE_HOLDER);
+  });
+
+  it('should not update state if sendInteractiveMessage fails', async () => {
+    const phone = '584121234567';
+    const message: MetaMessage = {
+      from: phone,
+      type: 'text',
+      text: { body: 'Juan Perez' },
+    };
+    const state: UserState = {
+      step: Steps.AWAITING_ZELLE_HOLDER,
+    };
+
+    vi.spyOn(metaWhatsappService, 'sendInteractiveMessage').mockRejectedValueOnce(
+      new Error('WhatsApp API error'),
+    );
+
+    await expect(step.execute(phone, message, state)).rejects.toThrow('WhatsApp API error');
+    expect(stateService.setState).not.toHaveBeenCalled();
+    expect(state.step).toBe(Steps.AWAITING_ZELLE_HOLDER);
   });
 
   it('should accept valid holder name and transition to AWAITING_CONFIRMATION with interactive summary', async () => {

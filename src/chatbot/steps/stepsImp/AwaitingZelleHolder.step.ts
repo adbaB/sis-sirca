@@ -20,9 +20,9 @@ export class AwaitingZelleHolderStep implements IStepHandler {
   async execute(phone: string, message: MetaMessage, state: UserState): Promise<void> {
     const text = (message.text?.body || '').trim();
 
-    // Validación básica: al menos 3 caracteres y que contenga letras
-    const hasLetters = /[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(text);
-    if (!text || text.length < 3 || !hasLetters) {
+    // Validación: al menos dos componentes con letras (nombre y apellido) y mínimo 3 caracteres
+    const nameParts = text.split(/\s+/).filter((part) => /[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(part));
+    if (!text || text.length < 3 || nameParts.length < 2) {
       await this.metaWhatsappService.sendMessage(
         phone,
         'Por favor, ingresa un nombre y apellido válido para el titular de la cuenta Zelle (ejemplo: Juan Pérez).',
@@ -35,9 +35,6 @@ export class AwaitingZelleHolderStep implements IStepHandler {
       state.extracted_data = {};
     }
     state.extracted_data.titularZelle = text;
-
-    state.step = Steps.AWAITING_CONFIRMATION;
-    await this.stateService.setState(phone, state);
 
     const ref = (state.extracted_data?.referencia as string) || 'No detectada';
     const monto =
@@ -59,5 +56,8 @@ export class AwaitingZelleHolderStep implements IStepHandler {
       `He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${ref}\n💰 *Monto:* ${monto}${moneda}\n👤 *Titular Zelle:* ${text}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
       buttons,
     );
+
+    state.step = Steps.AWAITING_CONFIRMATION;
+    await this.stateService.setState(phone, state);
   }
 }

@@ -46,6 +46,11 @@ describe('normalizeWhatsappPhone', () => {
     expect(normalizeWhatsappPhone('+573001234567')).toBe('573001234567');
   });
 
+  it('should remove international dialing prefix 00', () => {
+    expect(normalizeWhatsappPhone('00584141234567')).toBe('584141234567');
+    expect(normalizeWhatsappPhone('0015551234567')).toBe('15551234567');
+  });
+
   it('should return null for too short or too long phone numbers', () => {
     expect(normalizeWhatsappPhone('12345')).toBeNull();
     expect(normalizeWhatsappPhone('1234567890123456789')).toBeNull();

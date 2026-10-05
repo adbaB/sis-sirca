@@ -441,7 +441,7 @@ describe('SipCommissionsService', () => {
       expect(buffer.toString()).toBe('pdf-commissions-mock');
     });
 
-    it('should throw BadRequestException if exchange rate cannot be found', async () => {
+    it('should throw BadRequestException if exchange rate cannot be found and rateDate was provided', async () => {
       jest
         .spyOn(dataSource, 'query')
         .mockResolvedValueOnce(mockPortfolios)
@@ -454,6 +454,29 @@ describe('SipCommissionsService', () => {
       await expect(service.generatePdf(2026, 4, undefined, '2026-04-05')).rejects.toThrow(
         'No se encontró la tasa de cambio para la fecha 2026-04-05.',
       );
+    });
+
+    it('should generate report without Bs fields if exchange rate is missing and rateDate was not provided', async () => {
+      jest
+        .spyOn(dataSource, 'query')
+        .mockResolvedValueOnce(mockPortfolios)
+        .mockResolvedValueOnce(mockRawData);
+
+      jest
+        .spyOn(exchangeRateService, 'getLatestExchangeRateOnOrBefore')
+        .mockResolvedValueOnce(null);
+
+      const buffer = await service.generatePdf(2026, 4);
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'sip-commissions',
+        expect.objectContaining({
+          exchangeRate: undefined,
+          grandTotalCommissionBsFormatted: undefined,
+        }),
+        { landscape: true },
+      );
+      expect(buffer).toBeDefined();
     });
   });
 });

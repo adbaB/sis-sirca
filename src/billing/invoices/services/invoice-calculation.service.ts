@@ -138,23 +138,26 @@ export class InvoiceCalculationService {
 
     // Sincronizar las líneas con los planes actuales de los afiliados si cambiaron
     for (const cp of activeAfiliados) {
-      const line = invoiceLines.find((l) => l.person?.id === cp.person?.id);
+      const matchingLines = invoiceLines.filter((l) => l.person?.id === cp.person?.id);
       const currentPlan = cp.plan || cp.person?.plan;
 
-      if (line && currentPlan) {
+      if (matchingLines.length > 0 && currentPlan) {
         const planAmount = Number(currentPlan.amount);
-        const planChanged = line.plan?.id !== currentPlan.id || Number(line.amount) !== planAmount;
+        for (const line of matchingLines) {
+          const planChanged =
+            line.plan?.id !== currentPlan.id || Number(line.amount) !== planAmount;
 
-        if (planChanged) {
-          line.plan = currentPlan;
-          line.amount = planAmount;
-          const personPrefix = line.description?.includes(' - ')
-            ? line.description.split(' - ')[0]
-            : line.category === InvoiceLineCategory.INCLUSION
-              ? `Inclusión: ${cp.person.name || 'Afiliado'}`
-              : cp.person.name || line.person?.name || 'Afiliado';
-          line.description = `${personPrefix} - ${currentPlan.name}`;
-          await invoiceLineRepo.save(line);
+          if (planChanged) {
+            line.plan = currentPlan;
+            line.amount = planAmount;
+            const personPrefix = line.description?.includes(' - ')
+              ? line.description.split(' - ')[0]
+              : line.category === InvoiceLineCategory.INCLUSION
+                ? `Inclusión: ${cp.person.name || 'Afiliado'}`
+                : cp.person.name || line.person?.name || 'Afiliado';
+            line.description = `${personPrefix} - ${currentPlan.name}`;
+            await invoiceLineRepo.save(line);
+          }
         }
       }
     }

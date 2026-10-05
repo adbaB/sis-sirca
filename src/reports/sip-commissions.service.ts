@@ -266,7 +266,9 @@ export class SipCommissionsService {
 
     const grandTotalCommission = sections.reduce((sum, s) => sum + s.subtotalCommission, 0);
 
-    const effectiveRateDateStr = rateDate || formatToISODateString(getCaracasTodayJSDate());
+    const defaultRateDateStr =
+      formatToISODateString(windows.queryEnd) || formatToISODateString(getCaracasTodayJSDate());
+    const effectiveRateDateStr = rateDate || defaultRateDateStr;
     let exchangeRate: number | undefined;
     let exchangeRateDate: string | undefined = effectiveRateDateStr;
     let grandTotalCommissionBs: number | undefined;
@@ -274,14 +276,20 @@ export class SipCommissionsService {
     if (this.exchangeRateService) {
       const rateEntity =
         await this.exchangeRateService.getLatestExchangeRateOnOrBefore(effectiveRateDateStr);
-      if (!rateEntity?.rateUsd) {
-        throw new BadRequestException(
-          `No se encontró la tasa de cambio para la fecha ${effectiveRateDateStr}.`,
+      if (rateEntity?.rateUsd) {
+        exchangeRate = Number(rateEntity.rateUsd);
+        exchangeRateDate = formatToISODateString(rateEntity.date) || effectiveRateDateStr;
+        grandTotalCommissionBs = Number((grandTotalCommission * exchangeRate).toFixed(2));
+      } else {
+        if (rateDate) {
+          throw new BadRequestException(
+            `No se encontró la tasa de cambio para la fecha ${effectiveRateDateStr}.`,
+          );
+        }
+        this.logger.warn(
+          `No se encontró la tasa de cambio para la fecha ${effectiveRateDateStr}. El reporte se generará únicamente en USD.`,
         );
       }
-      exchangeRate = Number(rateEntity.rateUsd);
-      exchangeRateDate = formatToISODateString(rateEntity.date) || effectiveRateDateStr;
-      grandTotalCommissionBs = Number((grandTotalCommission * exchangeRate).toFixed(2));
     }
 
     return {

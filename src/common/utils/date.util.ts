@@ -28,9 +28,9 @@ export function formatToISODateString(dateVal: Date | string | DateTime): string
   } else if (dateVal instanceof Date) {
     dt = DateTime.fromJSDate(dateVal).setZone(CARACAS_ZONE);
   } else {
-    dt = DateTime.fromISO(dateVal).setZone(CARACAS_ZONE);
+    dt = DateTime.fromISO(dateVal, { zone: CARACAS_ZONE }).setZone(CARACAS_ZONE);
     if (!dt.isValid) {
-      dt = DateTime.fromSQL(dateVal).setZone(CARACAS_ZONE);
+      dt = DateTime.fromSQL(dateVal, { zone: CARACAS_ZONE }).setZone(CARACAS_ZONE);
     }
   }
   return dt.isValid ? dt.toFormat('yyyy-MM-dd') : '';
@@ -47,9 +47,9 @@ export function formatDateES(dateVal: Date | string | DateTime, format = 'dd-MM-
   } else if (dateVal instanceof Date) {
     dt = DateTime.fromJSDate(dateVal).setZone(CARACAS_ZONE);
   } else {
-    dt = DateTime.fromISO(dateVal).setZone(CARACAS_ZONE);
+    dt = DateTime.fromISO(dateVal, { zone: CARACAS_ZONE }).setZone(CARACAS_ZONE);
     if (!dt.isValid) {
-      dt = DateTime.fromSQL(dateVal as string).setZone(CARACAS_ZONE);
+      dt = DateTime.fromSQL(dateVal as string, { zone: CARACAS_ZONE }).setZone(CARACAS_ZONE);
     }
   }
   return dt.isValid ? dt.toFormat(format) : '';

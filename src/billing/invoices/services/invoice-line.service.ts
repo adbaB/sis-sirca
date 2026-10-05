@@ -327,8 +327,8 @@ export class InvoiceLineService {
 
     if (!invoice) return;
 
-    // 3. Buscar la línea del afiliado (puede ser MENSUALIDAD o INCLUSION)
-    const line = await invoiceLineRepo.findOne({
+    // 3. Buscar las líneas del afiliado (puede ser MENSUALIDAD o INCLUSION)
+    const lines = await invoiceLineRepo.find({
       where: {
         invoice: { id: invoice.id },
         person: { id: personId },
@@ -337,20 +337,22 @@ export class InvoiceLineService {
       },
     });
 
-    if (!line) return; // Afiliado sin línea MENSUALIDAD ni INCLUSION en la factura
+    if (lines.length === 0) return; // Afiliado sin líneas MENSUALIDAD ni INCLUSION en la factura
 
-    // 4. Actualizar la línea con el nuevo plan y monto
-    line.amount = newPlanAmount;
-    line.plan = { id: newPlanId } as Plan;
+    // 4. Actualizar todas las líneas con el nuevo plan y monto
+    for (const line of lines) {
+      line.amount = newPlanAmount;
+      line.plan = { id: newPlanId } as Plan;
 
-    const personPrefix = line.description?.includes(' - ')
-      ? line.description.split(' - ')[0]
-      : line.category === InvoiceLineCategory.INCLUSION
-        ? `Inclusión: ${line.description ?? 'Afiliado'}`
-        : (line.description ?? 'Afiliado');
+      const personPrefix = line.description?.includes(' - ')
+        ? line.description.split(' - ')[0]
+        : line.category === InvoiceLineCategory.INCLUSION
+          ? `Inclusión: ${line.description ?? 'Afiliado'}`
+          : (line.description ?? 'Afiliado');
 
-    line.description = `${personPrefix} - ${newPlanName}`;
-    await invoiceLineRepo.save(line);
+      line.description = `${personPrefix} - ${newPlanName}`;
+      await invoiceLineRepo.save(line);
+    }
 
     // 5. Recalcular baseAmount y totalAmount
     const baseAmount = await this.queryRepo.sumBaseLines(entityManager, invoice.id);
@@ -375,7 +377,7 @@ export class InvoiceLineService {
     await this.calculationService.recalculateInvoicePaidAmount(invoice.id, entityManager);
 
     this.logger.log(
-      `[billing] Línea ${line.category} actualizada (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,
+      `[billing] ${lines.length} línea(s) actualizada(s) (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,
     );
   }
 

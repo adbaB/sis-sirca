@@ -112,10 +112,13 @@ export class ContractLifecycleService {
       contract.expirationDate = expirationDate ? new Date(expirationDate) : null;
     }
 
+    const startDateValue = contract.startDate ? new Date(contract.startDate) : null;
+    const expirationDateValue = contract.expirationDate ? new Date(contract.expirationDate) : null;
+
     if (
-      contract.startDate &&
-      contract.expirationDate &&
-      contract.expirationDate < contract.startDate
+      startDateValue &&
+      expirationDateValue &&
+      expirationDateValue.getTime() < startDateValue.getTime()
     ) {
       throw new BadRequestException(
         'La fecha de vencimiento no puede ser anterior a la fecha de inicio.',

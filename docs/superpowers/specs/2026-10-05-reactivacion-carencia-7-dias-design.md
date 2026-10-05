@@ -23,7 +23,7 @@ En el sistema **SIRCA**, cuando un contrato en estado `SUSPENDED` salda sus fact
      * Día 7 de carencia: Día 8
    * El contrato queda formalmente elegible para reactivación a partir de las **00:00:00 del día 9** (`operation_date + 7 días`).
 3. **Constante Centralizada:** Se define `REACTIVATION_COOLDOWN_DAYS = 7` en `src/contracts/constants/contract.constants.ts`.
-4. **Normalización de Zona Horaria:** Se normaliza la fecha con `normalizeDateOnly` y `CARACAS_ZONE` (`America/Caracas`) para evitar desfases por conversión UTC-4.
+4. **Normalización de Zona Horaria:** La fecha de pago (`timestamptz`) se convierte directamente a `CARACAS_ZONE` (`America/Caracas`) y se normaliza a `startOf('day')` para evitar desfases de horario sin alterar el instante real.
 
 ---
 
@@ -32,7 +32,7 @@ En el sistema **SIRCA**, cuando un contrato en estado `SUSPENDED` salda sus fact
 1. `src/contracts/constants/contract.constants.ts`:
    * Exporta `REACTIVATION_COOLDOWN_DAYS = 7`.
 2. `src/contracts/services/contract-reactivation.service.ts`:
-   * Aplica `plus({ days: REACTIVATION_COOLDOWN_DAYS })` a la fecha base con `normalizeDateOnly`.
+   * Aplica `plus({ days: REACTIVATION_COOLDOWN_DAYS })` a la fecha base convertida a zona Caracas (`startOf('day')`).
 3. `src/contracts/crons/contract-reactivation.cron.ts`:
    * Logs informativos dinámicos utilizando `REACTIVATION_COOLDOWN_DAYS`.
 4. `src/contracts/services/contract-lifecycle.service.ts`:

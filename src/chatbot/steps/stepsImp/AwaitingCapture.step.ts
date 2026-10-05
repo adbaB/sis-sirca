@@ -43,6 +43,8 @@ export class AwaitingCaptureStep implements IStepHandler {
           const extractedData = await this.ocrService.extractReceiptData(receiptUrl);
           state.extracted_data = { ...state.extracted_data, ...extractedData };
 
+          const detectedBank =
+            `${extractedData.origen || ''} ${extractedData.nombreBanco || ''}`.toLowerCase();
           const isZelle =
             state.payment_method?.toLowerCase() === 'zelle' ||
             extractedData.esZelle === true ||
@@ -57,7 +59,7 @@ export class AwaitingCaptureStep implements IStepHandler {
               'capital one',
               'td bank',
               'pnc',
-            ].some((b) => (extractedData.origen || '').toLowerCase().includes(b));
+            ].some((b) => detectedBank.includes(b));
 
           if (isZelle) {
             state.payment_method = 'zelle';

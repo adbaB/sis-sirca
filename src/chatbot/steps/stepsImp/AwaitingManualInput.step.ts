@@ -51,9 +51,9 @@ export class AwaitingManualInputStep implements IStepHandler {
 
     const amount = parsedAmount;
 
-    const isZelle =
-      state.payment_method?.toLowerCase() === 'zelle' ||
-      banco.toLowerCase().includes('zelle') ||
+    const bancoNormalized = banco.toLowerCase().trim();
+    const isZelleBank =
+      bancoNormalized.includes('zelle') ||
       [
         'bank of america',
         'wells fargo',
@@ -63,10 +63,44 @@ export class AwaitingManualInputStep implements IStepHandler {
         'capital one',
         'td bank',
         'pnc',
-      ].some((b) => banco.toLowerCase().includes(b));
+      ].some((b) => bancoNormalized.includes(b));
+
+    const venezuelanBanks = [
+      'mercantil',
+      'banesco',
+      'venezuela',
+      'bdv',
+      'provincial',
+      'bbva',
+      'bancaribe',
+      'exterior',
+      'bnc',
+      'nacional de credito',
+      'bancamiga',
+      'banplus',
+      '100% banco',
+      'tesoro',
+      'bicentenario',
+      'activo',
+      'plaza',
+      'fondo comun',
+      'bfc',
+      'caroni',
+      'sofitasa',
+      'del sur',
+    ];
+    const isVenezuelanBank = venezuelanBanks.some((vb) => bancoNormalized.includes(vb));
+
+    const isZelle = isZelleBank
+      ? true
+      : isVenezuelanBank
+        ? false
+        : state.payment_method?.toLowerCase() === 'zelle';
 
     if (isZelle) {
       state.payment_method = 'zelle';
+    } else if (isVenezuelanBank && state.payment_method?.toLowerCase() === 'zelle') {
+      state.payment_method = 'transferencia';
     }
 
     // Si es Zelle pero aún no se ha capturado el titular de la cuenta
