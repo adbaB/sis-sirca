@@ -11,6 +11,7 @@ export interface UserState {
   payment_method?: string;
   total_amount?: string;
   extracted_data?: Record<string, unknown>;
+  zelle_holder_name?: string;
   full_name?: string;
   identity_card?: string;
   type_identity_card?: TypeIdentityCard;

@@ -61,6 +61,46 @@ describe('ExchangeRateService', () => {
     expect(repo.findOne).not.toHaveBeenCalled();
   });
 
+  describe('getLatestExchangeRateOnOrBefore', () => {
+    it('should return exact match if available', async () => {
+      const mockRate = {
+        uuid: '1',
+        date: new Date('2026-09-08'),
+        rateUsd: 820.1,
+      } as ExchangeRate;
+      repo.findOne.mockResolvedValueOnce(mockRate);
+
+      const result = await service.getLatestExchangeRateOnOrBefore('2026-09-08');
+
+      expect(result).toBe(mockRate);
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { date: '2026-09-08' as unknown as Date },
+      });
+    });
+
+    it('should fallback to latest rate on or before date if exact match not found', async () => {
+      const fallbackRate = {
+        uuid: 'fallback-1',
+        date: new Date('2026-09-05'),
+        rateUsd: 815.0,
+      } as ExchangeRate;
+      repo.findOne
+        .mockResolvedValueOnce(null) // exact match fails
+        .mockResolvedValueOnce(fallbackRate); // fallback succeeds
+
+      const result = await service.getLatestExchangeRateOnOrBefore('2026-09-07');
+
+      expect(result).toBe(fallbackRate);
+      expect(repo.findOne).toHaveBeenCalledTimes(2);
+    });
+
+    it('should return null when date is empty or invalid', async () => {
+      const result = await service.getLatestExchangeRateOnOrBefore('');
+      expect(result).toBeNull();
+      expect(repo.findOne).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resolvePaymentExchangeRate', () => {
     it('should return null when payment is null or undefined', async () => {
       expect(await service.resolvePaymentExchangeRate(null)).toBeNull();

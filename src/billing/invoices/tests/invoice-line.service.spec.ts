@@ -479,4 +479,184 @@ describe('InvoiceLineService', () => {
       );
     });
   });
+
+  // ─── updatePlanLineOnActiveInvoice ──────────────────────────────────────────
+
+  describe('updatePlanLineOnActiveInvoice', () => {
+    const mockPerson = makePerson({ id: 'p-1', name: 'Carlos Perez' });
+
+    it('lanza Error si no hay transacción activa (sin contexto ALS ni manager)', async () => {
+      await expect(
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 50, 'Plan Oro'),
+      ).rejects.toThrow('Transaction required for updatePlanLineOnActiveInvoice');
+    });
+
+    it('no hace nada si no existe factura pendiente en el mes actual ni en ciclos previos', async () => {
+      invoiceRepo.findOne.mockResolvedValue(null);
+
+      await withContext(mockQr, () =>
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 50, 'Plan Oro'),
+      );
+
+      expect(invoiceRepo.findOne).toHaveBeenCalledTimes(2);
+      expect(invoiceLineRepo.findOne).not.toHaveBeenCalled();
+      expect(invoiceLineRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('no hace nada si el afiliado no tiene línea MENSUALIDAD ni INCLUSION en la factura', async () => {
+      const invoice = makeInvoice();
+      invoiceRepo.findOne.mockResolvedValue(invoice);
+      invoiceLineRepo.findOne.mockResolvedValue(null);
+
+      await withContext(mockQr, () =>
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 50, 'Plan Oro'),
+      );
+
+      expect(invoiceLineRepo.save).not.toHaveBeenCalled();
+      expect(invoiceRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('actualiza línea MENSUALIDAD, recalculando baseAmount y totalAmount', async () => {
+      const invoice = makeInvoice({ baseAmount: 30, totalAmount: 30 });
+      const line = makeInvoiceLine({
+        category: InvoiceLineCategory.MENSUALIDAD,
+        description: 'Carlos Perez - Plan Plata',
+        amount: 30,
+        person: mockPerson,
+      });
+
+      invoiceRepo.findOne.mockResolvedValue(invoice);
+      invoiceLineRepo.findOne.mockResolvedValue(line);
+
+      queryRepo.sumBaseLines.mockResolvedValue(50);
+      queryRepo.sumAdditionalLines.mockResolvedValue(0);
+
+      await withContext(mockQr, () =>
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 50, 'Plan Oro'),
+      );
+
+      expect(invoiceLineRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 50,
+          description: 'Carlos Perez - Plan Oro',
+          plan: { id: 'plan-new' },
+        }),
+      );
+      expect(invoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 50,
+          totalAmount: 50,
+        }),
+      );
+      expect(calculationService.recalculateInvoicePaidAmount).toHaveBeenCalledWith(
+        invoice.id,
+        mockQr.manager as unknown as EntityManager,
+      );
+    });
+
+    it('actualiza línea INCLUSION, preservando el prefijo de Inclusión en la descripción y recalculando', async () => {
+      const invoice = makeInvoice({ baseAmount: 50, totalAmount: 80 });
+      const line = makeInvoiceLine({
+        category: InvoiceLineCategory.INCLUSION,
+        description: 'Inclusión: Carlos Perez - Plan Plata',
+        amount: 30,
+        person: mockPerson,
+        isProjectable: false,
+      });
+
+      invoiceRepo.findOne.mockResolvedValue(invoice);
+      invoiceLineRepo.findOne.mockResolvedValue(line);
+
+      queryRepo.sumBaseLines.mockResolvedValue(50);
+      queryRepo.sumAdditionalLines.mockResolvedValue(45);
+
+      await withContext(mockQr, () =>
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 45, 'Plan Oro'),
+      );
+
+      expect(invoiceLineRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 45,
+          description: 'Inclusión: Carlos Perez - Plan Oro',
+          plan: { id: 'plan-new' },
+        }),
+      );
+      expect(invoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 50,
+          totalAmount: 95,
+        }),
+      );
+      expect(calculationService.recalculateInvoicePaidAmount).toHaveBeenCalledWith(
+        invoice.id,
+        mockQr.manager as unknown as EntityManager,
+      );
+    });
+
+    it('busca la última factura pendiente cuando no hay factura para el mes en curso', async () => {
+      const previousPendingInvoice = makeInvoice({ billingMonth: '2024-12', totalAmount: 30 });
+      const line = makeInvoiceLine({
+        category: InvoiceLineCategory.INCLUSION,
+        description: 'Inclusión: Carlos Perez - Plan Plata',
+        amount: 30,
+        person: mockPerson,
+      });
+
+      invoiceRepo.findOne
+        .mockResolvedValueOnce(null) // no hay en mes en curso
+        .mockResolvedValueOnce(previousPendingInvoice); // encontrada por fallback
+
+      invoiceLineRepo.findOne.mockResolvedValue(line);
+      queryRepo.sumBaseLines.mockResolvedValue(0);
+      queryRepo.sumAdditionalLines.mockResolvedValue(40);
+
+      await withContext(mockQr, () =>
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 40, 'Plan Oro'),
+      );
+
+      expect(invoiceLineRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 40,
+          description: 'Inclusión: Carlos Perez - Plan Oro',
+        }),
+      );
+      expect(invoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          totalAmount: 40,
+        }),
+      );
+    });
+
+    it('recalcula retentionAmount cuando retentionPercentage > 0', async () => {
+      const invoice = makeInvoice({
+        baseAmount: 100,
+        totalAmount: 100,
+        retentionPercentage: 10,
+        retentionAmount: 10,
+      });
+      const line = makeInvoiceLine({
+        category: InvoiceLineCategory.MENSUALIDAD,
+        description: 'Carlos Perez - Plan Plata',
+        amount: 50,
+        person: mockPerson,
+      });
+
+      invoiceRepo.findOne.mockResolvedValue(invoice);
+      invoiceLineRepo.findOne.mockResolvedValue(line);
+
+      queryRepo.sumBaseLines.mockResolvedValue(150);
+      queryRepo.sumAdditionalLines.mockResolvedValue(0);
+
+      await withContext(mockQr, () =>
+        service.updatePlanLineOnActiveInvoice('contract-1', 'p-1', 'plan-new', 100, 'Plan Oro'),
+      );
+
+      expect(invoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          totalAmount: 150,
+          retentionAmount: 15,
+        }),
+      );
+    });
+  });
 });

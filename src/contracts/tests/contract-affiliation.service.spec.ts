@@ -674,6 +674,7 @@ describe('ContractAffiliationService', () => {
         'plan-new',
         25,
         'Plan Premium',
+        mockManager,
       );
       expect(mockContractRepo.update).toHaveBeenCalledWith('contract-1', { monthlyAmount: 25 });
       expect(result).toBeDefined();

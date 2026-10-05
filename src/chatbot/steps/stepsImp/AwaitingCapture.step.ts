@@ -43,22 +43,49 @@ export class AwaitingCaptureStep implements IStepHandler {
           const extractedData = await this.ocrService.extractReceiptData(receiptUrl);
           state.extracted_data = { ...state.extracted_data, ...extractedData };
 
-          state.step = Steps.AWAITING_CONFIRMATION;
-          await this.stateService.setState(phone, state);
+          const isZelle =
+            state.payment_method?.toLowerCase() === 'zelle' ||
+            extractedData.esZelle === true ||
+            extractedData.moneda?.toUpperCase() === 'USD' ||
+            [
+              'bank of america',
+              'wells fargo',
+              'chase',
+              'zelle',
+              'citi',
+              'citibank',
+              'capital one',
+              'td bank',
+              'pnc',
+            ].some((b) => (extractedData.origen || '').toLowerCase().includes(b));
 
-          const buttons = [
-            { type: 'reply', reply: { id: 'datos_correctos', title: 'Sí, son correctos' } },
-            {
-              type: 'reply',
-              reply: { id: 'datos_incorrectos', title: 'Ingreso manual' },
-            },
-          ];
+          if (isZelle) {
+            state.payment_method = 'zelle';
+            state.step = Steps.AWAITING_ZELLE_HOLDER;
+            await this.stateService.setState(phone, state);
 
-          await this.metaWhatsappService.sendInteractiveMessage(
-            phone,
-            `He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n💰 *Monto:* ${extractedData.monto || 'No detectado'}${extractedData.moneda || ''}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
-            buttons,
-          );
+            await this.metaWhatsappService.sendMessage(
+              phone,
+              '💳 He detectado tu pago por Zelle.\n\nPor favor, escribe el *nombre y apellido del titular* de la cuenta Zelle desde donde realizaste el pago:',
+            );
+          } else {
+            state.step = Steps.AWAITING_CONFIRMATION;
+            await this.stateService.setState(phone, state);
+
+            const buttons = [
+              { type: 'reply', reply: { id: 'datos_correctos', title: 'Sí, son correctos' } },
+              {
+                type: 'reply',
+                reply: { id: 'datos_incorrectos', title: 'Ingreso manual' },
+              },
+            ];
+
+            await this.metaWhatsappService.sendInteractiveMessage(
+              phone,
+              `He revisado tu comprobante y esto es lo que encontré: ✨\n\n📝 *Referencia:* ${extractedData.referencia || 'No detectada'}\n💰 *Monto:* ${extractedData.monto || 'No detectado'}${extractedData.moneda || ''}\n\n¿Me confirmas si los datos están correctos para continuar? 👍`,
+              buttons,
+            );
+          }
         } catch (ocrError) {
           this.logger.error('OCR Error', ocrError);
           state.step = Steps.AWAITING_MANUAL_INPUT;

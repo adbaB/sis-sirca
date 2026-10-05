@@ -280,8 +280,8 @@ export class InvoiceLineService {
   }
 
   /**
-   * Actualiza la línea MENSUALIDAD de un afiliado en la factura activa
-   * cuando se cambia su plan. Recalcula baseAmount y totalAmount.
+   * Actualiza la línea MENSUALIDAD o INCLUSION de un afiliado en la factura activa (o última pendiente)
+   * cuando se cambia su plan. Recalcula baseAmount, totalAmount y retenciones.
    */
   @Transactional()
   async updatePlanLineOnActiveInvoice(
@@ -290,10 +290,11 @@ export class InvoiceLineService {
     newPlanId: string,
     newPlanAmount: number,
     newPlanName: string,
+    manager?: EntityManager,
   ): Promise<void> {
     const qr = getQueryRunnerSafe();
-    const activeManager = qr?.manager;
-    if (!activeManager) {
+    const activeManager = manager ?? qr?.manager;
+    if (!activeManager?.queryRunner?.isTransactionActive && !qr?.isTransactionActive) {
       throw new Error('Transaction required for updatePlanLineOnActiveInvoice');
     }
     const invoiceRepo = activeManager.getRepository(Invoice);
@@ -302,7 +303,8 @@ export class InvoiceLineService {
 
     const billingMonth = getBillingMonth();
 
-    const invoice = await invoiceRepo.findOne({
+    // 1. Buscar primero la factura en estado PENDING o PARTIAL del mes en curso
+    let invoice = await invoiceRepo.findOne({
       where: {
         contract: { id: contractId },
         billingMonth,
@@ -311,32 +313,56 @@ export class InvoiceLineService {
       lock: { mode: 'pessimistic_write' },
     });
 
+    // 2. Si no hay factura para el mes actual, buscar la última factura pendiente del contrato
+    if (!invoice) {
+      invoice = await invoiceRepo.findOne({
+        where: {
+          contract: { id: contractId },
+          status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]),
+        },
+        order: { billingMonth: 'DESC' },
+        lock: { mode: 'pessimistic_write' },
+      });
+    }
+
     if (!invoice) return;
 
+    // 3. Buscar la línea del afiliado (puede ser MENSUALIDAD o INCLUSION)
     const line = await invoiceLineRepo.findOne({
       where: {
         invoice: { id: invoice.id },
         person: { id: personId },
-        category: InvoiceLineCategory.MENSUALIDAD,
+        category: In([InvoiceLineCategory.MENSUALIDAD, InvoiceLineCategory.INCLUSION]),
         deletedAt: IsNull(),
       },
     });
 
-    if (!line) return; // Afiliado sin línea MENSUALIDAD en el mes actual
+    if (!line) return; // Afiliado sin línea MENSUALIDAD ni INCLUSION en la factura
 
-    // Actualizar la línea con el nuevo plan y monto
+    // 4. Actualizar la línea con el nuevo plan y monto
     line.amount = newPlanAmount;
     line.plan = { id: newPlanId } as Plan;
-    const personName = line.description.split(' - ')[0];
-    line.description = `${personName} - ${newPlanName}`;
+
+    const personPrefix = line.description?.includes(' - ')
+      ? line.description.split(' - ')[0]
+      : line.category === InvoiceLineCategory.INCLUSION
+        ? `Inclusión: ${line.description ?? 'Afiliado'}`
+        : (line.description ?? 'Afiliado');
+
+    line.description = `${personPrefix} - ${newPlanName}`;
     await invoiceLineRepo.save(line);
 
-    // Recalcular baseAmount y totalAmount
+    // 5. Recalcular baseAmount y totalAmount
     const baseAmount = await this.queryRepo.sumBaseLines(entityManager, invoice.id);
     const additionalAmount = await this.queryRepo.sumAdditionalLines(entityManager, invoice.id);
 
     invoice.baseAmount = baseAmount;
     invoice.totalAmount = baseAmount + additionalAmount;
+
+    // Recalcular retención si aplica
+    if (Number(invoice.retentionPercentage || 0) > 0) {
+      invoice.retentionAmount = invoice.totalAmount * (Number(invoice.retentionPercentage) / 100);
+    }
 
     // Prevenir violación de constraint
     if (invoice.paidAmount > invoice.totalAmount) {
@@ -349,7 +375,7 @@ export class InvoiceLineService {
     await this.calculationService.recalculateInvoicePaidAmount(invoice.id, entityManager);
 
     this.logger.log(
-      `[billing] Línea MENSUALIDAD actualizada (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,
+      `[billing] Línea ${line.category} actualizada (plan: ${newPlanName}, $${newPlanAmount}) para persona ${personId} en factura ${invoice.id}`,
     );
   }
 

@@ -65,14 +65,18 @@ export class ReportsController {
     @Query('year') year: number,
     @Query('month') month: number,
     @Query('advisorId') advisorId: string,
+    @Query('rateDate') rateDate: string,
+    @Query('date') date: string,
     @Res() res: Response,
   ) {
     this.validatePeriod(year, month);
 
+    const effectiveRateDate = rateDate || date;
     const buffer = await this.sipCommissionsService.generateExcel(
       Number(year),
       Number(month),
       advisorId || undefined,
+      effectiveRateDate || undefined,
     );
     const monthStr = String(month).padStart(2, '0');
     res.set({
@@ -89,14 +93,18 @@ export class ReportsController {
     @Query('year') year: number,
     @Query('month') month: number,
     @Query('advisorId') advisorId: string,
+    @Query('rateDate') rateDate: string,
+    @Query('date') date: string,
     @Res() res: Response,
   ) {
     this.validatePeriod(year, month);
 
+    const effectiveRateDate = rateDate || date;
     const buffer = await this.sipCommissionsService.generatePdf(
       Number(year),
       Number(month),
       advisorId || undefined,
+      effectiveRateDate || undefined,
     );
     const monthStr = String(month).padStart(2, '0');
     res.set({

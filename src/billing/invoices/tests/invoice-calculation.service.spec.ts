@@ -8,6 +8,11 @@ import { InvoiceQueryRepository } from '../repositories/invoice-query.repository
 import { ExchangeRateService } from '../../../exchange-rate/services/exchange-rate.service';
 import { ExchangeRate } from '../../../exchange-rate/entities/Exchange-rate.entity';
 import { Contract } from '../../../contracts/entities/contract.entity';
+import { Person, PersonStatus } from '../../../persons/entities/person.entity';
+import { Plan } from '../../../plans/entities/plan.entity';
+import { ContractPerson, PersonRole } from '../../../contracts/entities/contract-person.entity';
+import { InvoiceLine } from '../entities/invoice-line.entity';
+import { InvoiceLineCategory } from '../enums/invoice-line-category.enum';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -350,6 +355,86 @@ describe('InvoiceCalculationService', () => {
         expect.objectContaining({
           baseAmount: 50,
           totalAmount: 50,
+        }),
+      );
+      expect(result).toBeDefined();
+    });
+
+    it('sincroniza y recalcula líneas de categoría INCLUSION preservando el prefijo', async () => {
+      const oldPlan = { id: 'plan-old', name: 'Plan Plata', amount: 30 } as unknown as Plan;
+      const newPlan = { id: 'plan-new', name: 'Plan Oro', amount: 45 } as unknown as Plan;
+      const person = { id: 'p-1', name: 'Juan Perez', status: PersonStatus.ACTIVE } as Person;
+      const contractPerson = {
+        person,
+        plan: newPlan,
+        role: PersonRole.AFILIADO,
+      } as unknown as ContractPerson;
+
+      const line = {
+        id: 'line-inc-1',
+        category: InvoiceLineCategory.INCLUSION,
+        person,
+        plan: oldPlan,
+        amount: 30,
+        description: 'Inclusión: Juan Perez - Plan Plata',
+      } as unknown as InvoiceLine;
+
+      const invoice = makeInvoice({
+        id: 'inv-1',
+        status: InvoiceStatus.PENDING,
+        baseAmount: 0,
+        totalAmount: 30,
+        contract: { id: 'contract-1', retentionPercentage: 0 } as unknown as Contract,
+      });
+
+      const mockInvoiceRepo = {
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce(invoice)
+          .mockResolvedValueOnce(invoice)
+          .mockResolvedValueOnce({
+            ...invoice,
+            baseAmount: 0,
+            totalAmount: 45,
+            lines: [line],
+          }),
+        save: jest.fn().mockResolvedValue(invoice),
+      };
+
+      const mockLineRepo = {
+        find: jest.fn().mockResolvedValue([line]),
+        save: jest.fn().mockImplementation(async (l) => l),
+      };
+
+      const mockCpRepo = {
+        find: jest.fn().mockResolvedValue([contractPerson]),
+      };
+
+      const mockManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity.name === 'Invoice' || entity === Invoice) return mockInvoiceRepo;
+          if (entity.name === 'InvoiceLine') return mockLineRepo;
+          return mockCpRepo;
+        }),
+      } as unknown as EntityManager;
+
+      queryRepo.sumBaseLines.mockResolvedValue(0);
+      queryRepo.sumAdditionalLines.mockResolvedValue(45);
+      queryRepo.sumCompletedPayments.mockResolvedValue(0);
+
+      const result = await service.recalculateInvoiceAmountFromContract('inv-1', mockManager);
+
+      expect(mockLineRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 45,
+          description: 'Inclusión: Juan Perez - Plan Oro',
+          plan: newPlan,
+        }),
+      );
+      expect(mockInvoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseAmount: 0,
+          totalAmount: 45,
         }),
       );
       expect(result).toBeDefined();

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThanOrEqual, Repository } from 'typeorm';
 import { ExchangeRate } from '../entities/Exchange-rate.entity';
 import { formatToISODateString } from '../../common/utils/date.util';
 
@@ -26,6 +26,23 @@ export class ExchangeRateService {
 
     return this.exchangeRateRepository.findOne({
       where: { date: dateStr as unknown as Date },
+    });
+  }
+
+  /**
+   * Retrieves the exchange rate for a given date, or falls back to the latest
+   * recorded exchange rate on or before that date (e.g. for weekends or holidays).
+   */
+  async getLatestExchangeRateOnOrBefore(date: Date | string): Promise<ExchangeRate | null> {
+    const dateStr = formatToISODateString(date);
+    if (!dateStr) return null;
+
+    const exact = await this.getExchangeRateByDate(dateStr);
+    if (exact) return exact;
+
+    return this.exchangeRateRepository.findOne({
+      where: { date: LessThanOrEqual(dateStr as unknown as Date) },
+      order: { date: 'DESC' },
     });
   }
 

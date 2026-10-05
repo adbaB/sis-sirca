@@ -96,6 +96,53 @@ describe('OcrService', () => {
         descripcion: 'Pago de seguro',
         nombreBanco: 'Banesco',
         moneda: 'BS',
+        esZelle: null,
+      });
+    });
+
+    it('should extract Zelle receipt data correctly', async () => {
+      const mockChatCompletionsCreate = jest.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                monto: 50,
+                referencia: 'WFCT128RS4V9',
+                beneficiario: 'Platinum Club Corp',
+                bancoDestino: null,
+                fecha: '05/10/2026',
+                origen: 'Wells Fargo',
+                moneda: 'USD',
+                descripcion: 'Payment',
+                nombreBanco: 'Wells Fargo',
+                esZelle: true,
+              }),
+            },
+          },
+        ],
+      });
+
+      const openAiInstance = service['openai'];
+      openAiInstance.chat = {
+        completions: {
+          create: mockChatCompletionsCreate,
+        },
+      } as unknown as typeof openAiInstance.chat;
+
+      const buffer = Buffer.from('dummy zelle image');
+      const result = await service.extractReceiptData(buffer);
+
+      expect(result).toEqual({
+        monto: 50,
+        referencia: 'WFCT128RS4V9',
+        beneficiario: 'Platinum Club Corp',
+        bancoDestino: null,
+        fecha: '05/10/2026',
+        origen: 'Wells Fargo',
+        moneda: 'USD',
+        descripcion: 'Payment',
+        nombreBanco: 'Wells Fargo',
+        esZelle: true,
       });
     });
 

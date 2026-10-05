@@ -1,4 +1,9 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { DateTime } from 'luxon';
 import { DataSource } from 'typeorm';
@@ -7,7 +12,9 @@ import {
   formatToISODateString,
   getBillingDateWindows,
   getCaracasDateTime,
+  getCaracasTodayJSDate,
 } from '../common/utils/date.util';
+import { ExchangeRateService } from '../exchange-rate/services/exchange-rate.service';
 import { PdfService } from '../pdf/services/pdf.service';
 import {
   applyGrandTotalStyle,
@@ -71,6 +78,9 @@ export interface SipCommissionReport {
   sections: ReportSection[];
   grandTotalCommission: number;
   portfolioCodes: string[];
+  exchangeRate?: number;
+  exchangeRateDate?: string;
+  grandTotalCommissionBs?: number;
 }
 
 export interface SipCommissionQueryRow {
@@ -111,6 +121,7 @@ export class SipCommissionsService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly pdfService: PdfService,
+    private readonly exchangeRateService: ExchangeRateService,
   ) {}
 
   /**
@@ -120,6 +131,7 @@ export class SipCommissionsService {
     year: number,
     month: number,
     advisorId?: string,
+    rateDate?: string,
   ): Promise<SipCommissionReport> {
     const windows = getBillingDateWindows(year, month);
     const startDate = windows.queryStart;
@@ -254,7 +266,35 @@ export class SipCommissionsService {
 
     const grandTotalCommission = sections.reduce((sum, s) => sum + s.subtotalCommission, 0);
 
-    return { startDate, endDate, advisorName, sections, grandTotalCommission, portfolioCodes };
+    const effectiveRateDateStr = rateDate || formatToISODateString(getCaracasTodayJSDate());
+    let exchangeRate: number | undefined;
+    let exchangeRateDate: string | undefined = effectiveRateDateStr;
+    let grandTotalCommissionBs: number | undefined;
+
+    if (this.exchangeRateService) {
+      const rateEntity =
+        await this.exchangeRateService.getLatestExchangeRateOnOrBefore(effectiveRateDateStr);
+      if (!rateEntity?.rateUsd) {
+        throw new BadRequestException(
+          `No se encontró la tasa de cambio para la fecha ${effectiveRateDateStr}.`,
+        );
+      }
+      exchangeRate = Number(rateEntity.rateUsd);
+      exchangeRateDate = formatToISODateString(rateEntity.date) || effectiveRateDateStr;
+      grandTotalCommissionBs = Number((grandTotalCommission * exchangeRate).toFixed(2));
+    }
+
+    return {
+      startDate,
+      endDate,
+      advisorName,
+      sections,
+      grandTotalCommission,
+      portfolioCodes,
+      exchangeRate,
+      exchangeRateDate,
+      grandTotalCommissionBs,
+    };
   }
 
   private classifyRowsIntoBuckets(
@@ -468,8 +508,13 @@ export class SipCommissionsService {
    * Includes Sheet 1: 'CUADRO DE COMISIONES MES' (Resumen)
    * and Sheet 2: 'Detalle de Afiliados' (Desglose por Asesor)
    */
-  async generateExcel(year: number, month: number, advisorId?: string): Promise<Buffer> {
-    const report = await this.buildReportData(year, month, advisorId);
+  async generateExcel(
+    year: number,
+    month: number,
+    advisorId?: string,
+    rateDate?: string,
+  ): Promise<Buffer> {
+    const report = await this.buildReportData(year, month, advisorId, rateDate);
 
     // === SHEET 1: RESUMEN DE COMISIONES ===
     const { workbook, ws } = createWorkbook('CUADRO DE COMISIONES MES');
@@ -500,7 +545,7 @@ export class SipCommissionsService {
     }
 
     currentRow++;
-    currentRow = this.renderExcelGrandTotal(ws, totalCols, report.grandTotalCommission, currentRow);
+    currentRow = this.renderExcelGrandTotal(ws, totalCols, report, currentRow);
 
     currentRow += 3;
     const footerRow = ws.getRow(currentRow);
@@ -581,8 +626,11 @@ export class SipCommissionsService {
       detailRowIdx += 2;
     }
 
+    detailRowIdx++;
+    detailRowIdx = this.renderExcelGrandTotal(wsDetails, 13, report, detailRowIdx);
+
     // Sheet 2 Footer
-    detailRowIdx += 1;
+    detailRowIdx += 3;
     const footerRow2 = wsDetails.getRow(detailRowIdx);
     wsDetails.mergeCells(detailRowIdx, 1, detailRowIdx, 13);
     const footerCell2 = footerRow2.getCell(1);
@@ -842,31 +890,77 @@ export class SipCommissionsService {
   }
 
   /**
-   * Helper to render Excel grand total row.
+   * Helper to render Excel grand total rows: total commission ($), exchange rate (BCV), and total in Bs.
    */
   private renderExcelGrandTotal(
     ws: ExcelJS.Worksheet,
     totalCols: number,
-    grandTotalCommission: number,
+    report: SipCommissionReport,
     currentRow: number,
   ): number {
+    // 1. Total en USD
     const grandRow = ws.getRow(currentRow);
     ws.mergeCells(currentRow, 1, currentRow, totalCols - 1);
     const grandLabelCell = grandRow.getCell(1);
-    grandLabelCell.value = 'TOTAL MONTO A PAGAR POR COMISIONES AL CORTE';
+    grandLabelCell.value = 'TOTAL MONTO A PAGAR POR COMISIONES AL CORTE ($)';
     applyGrandTotalStyle(grandLabelCell, 'right');
-    grandLabelCell.font = { ...grandLabelCell.font, size: 13 };
+    grandLabelCell.font = { ...grandLabelCell.font, size: 12 };
 
     const grandValueCell = grandRow.getCell(totalCols);
-    grandValueCell.value = grandTotalCommission;
+    grandValueCell.value = report.grandTotalCommission;
     grandValueCell.numFmt = '$#,##0.00';
     applyGrandTotalStyle(grandValueCell, 'center');
-    grandValueCell.font = { ...grandValueCell.font, size: 13 };
-    grandRow.height = 28;
+    grandValueCell.font = { ...grandValueCell.font, size: 12 };
+    grandRow.height = 26;
 
-    // Apply border to grand total
     for (let c = 1; c <= totalCols; c++) {
       grandRow.getCell(c).border = this.thinBorder();
+    }
+
+    // 2. Tasa del Dólar y Total en Bs.
+    if (report.exchangeRate !== undefined) {
+      currentRow++;
+      const rateRow = ws.getRow(currentRow);
+      ws.mergeCells(currentRow, 1, currentRow, totalCols - 1);
+      const rateLabelCell = rateRow.getCell(1);
+      const rateDateText = report.exchangeRateDate
+        ? ` (BCV AL ${formatDateES(report.exchangeRateDate)})`
+        : ' (BCV)';
+      rateLabelCell.value = `TASA DEL DÓLAR${rateDateText}`;
+      applyGrandTotalStyle(rateLabelCell, 'right');
+      rateLabelCell.font = { ...rateLabelCell.font, size: 12 };
+
+      const rateValueCell = rateRow.getCell(totalCols);
+      rateValueCell.value = report.exchangeRate;
+      rateValueCell.numFmt = '"Bs. "#,##0.00';
+      applyGrandTotalStyle(rateValueCell, 'center');
+      rateValueCell.font = { ...rateValueCell.font, size: 12 };
+      rateRow.height = 26;
+
+      for (let c = 1; c <= totalCols; c++) {
+        rateRow.getCell(c).border = this.thinBorder();
+      }
+
+      currentRow++;
+      const bsRow = ws.getRow(currentRow);
+      ws.mergeCells(currentRow, 1, currentRow, totalCols - 1);
+      const bsLabelCell = bsRow.getCell(1);
+      bsLabelCell.value = 'TOTAL MONTO A PAGAR EN BOLÍVARES (Bs.)';
+      applyGrandTotalStyle(bsLabelCell, 'right');
+      bsLabelCell.font = { ...bsLabelCell.font, size: 13 };
+
+      const bsValueCell = bsRow.getCell(totalCols);
+      bsValueCell.value =
+        report.grandTotalCommissionBs ??
+        Number((report.grandTotalCommission * report.exchangeRate).toFixed(2));
+      bsValueCell.numFmt = '"Bs. "#,##0.00';
+      applyGrandTotalStyle(bsValueCell, 'center');
+      bsValueCell.font = { ...bsValueCell.font, size: 13 };
+      bsRow.height = 28;
+
+      for (let c = 1; c <= totalCols; c++) {
+        bsRow.getCell(c).border = this.thinBorder();
+      }
     }
 
     return currentRow;
@@ -1064,8 +1158,13 @@ export class SipCommissionsService {
   /**
    * Generate the formatted PDF report buffer.
    */
-  async generatePdf(year: number, month: number, advisorId?: string): Promise<Buffer> {
-    const report = await this.buildReportData(year, month, advisorId);
+  async generatePdf(
+    year: number,
+    month: number,
+    advisorId?: string,
+    rateDate?: string,
+  ): Promise<Buffer> {
+    const report = await this.buildReportData(year, month, advisorId, rateDate);
 
     const generatedAt = getGeneratedAtTimestamp();
     const logoBase64 = await loadLogoBase64(this.logger);
@@ -1125,6 +1224,17 @@ export class SipCommissionsService {
       portfolioCodes: report.portfolioCodes,
       colspan: 4 + report.portfolioCodes.length,
       grandTotalCommissionFormatted: Number(report.grandTotalCommission).toFixed(2),
+      exchangeRate: report.exchangeRate,
+      exchangeRateFormatted: report.exchangeRate
+        ? Number(report.exchangeRate).toFixed(2)
+        : undefined,
+      exchangeRateDateES: report.exchangeRateDate
+        ? formatDateES(report.exchangeRateDate)
+        : undefined,
+      grandTotalCommissionBsFormatted:
+        report.grandTotalCommissionBs !== undefined
+          ? Number(report.grandTotalCommissionBs).toFixed(2)
+          : undefined,
     };
 
     return this.pdfService.generatePdf('sip-commissions', templateData, { landscape: true });

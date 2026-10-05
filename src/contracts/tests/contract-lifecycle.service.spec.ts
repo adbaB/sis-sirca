@@ -163,7 +163,7 @@ describe('ContractLifecycleService', () => {
       });
       contractsRepository.save.mockImplementation(async (c) => c as Contract);
       const txSave = jest.fn().mockImplementation(async (c) => c as Contract);
-      mockManager.getRepository.mockReturnValue({ save: txSave });
+      mockManager.getRepository = jest.fn().mockReturnValue({ save: txSave });
       const inactivateSpy = jest
         .spyOn(service, 'inactivate')
         .mockResolvedValue({ ...mockContract, status: ContractStatus.INACTIVE });

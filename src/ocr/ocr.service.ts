@@ -14,6 +14,7 @@ export interface ReceiptData {
   descripcion: string | null;
   nombreBanco: string | null;
   moneda?: string | null;
+  esZelle?: boolean | null;
 }
 
 @Injectable()
@@ -160,7 +161,8 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
   "origen": (string|null) Banco desde donde se realizó el pago (nombre normalizado),
   "descripcion": (string|null) Concepto o descripción del pago,
   "nombreBanco": (string|null) Nombre del banco que emitió el comprobante (mismo que origen),
-  "moneda": (string|null) "Bs" o "USD"
+  "moneda": (string|null) "Bs" o "USD",
+  "esZelle": (boolean|null) true si es un comprobante de Zelle o banco estadounidense, false si es venezolano
 }`;
 
       const completion = await this.openai.chat.completions.create(
@@ -227,6 +229,7 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
         descripcion: raw.descripcion ?? null,
         nombreBanco: raw.nombreBanco ?? null,
         moneda: raw.moneda ?? null,
+        esZelle: raw.esZelle ?? null,
       };
       return parsedData;
     } catch (error) {
