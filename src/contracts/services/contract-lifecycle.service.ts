@@ -89,9 +89,18 @@ export class ContractLifecycleService {
   /**
    * Updates basic contract properties (retention percentage, advisor, portfolio, dates).
    */
+  @Transactional()
   async update(id: string, updateContractDto: UpdateContractDto): Promise<Contract> {
     const contract = await this.findOne(id);
     const { advisorId, portfolioId, startDate, expirationDate, ...rest } = updateContractDto;
+
+    // Si se intenta inactivar a través de update(), delegar al método centralizado inactivate()
+    // (que registra DESAFILIACION) una vez aplicados el resto de los cambios.
+    const shouldInactivate =
+      rest.status === ContractStatus.INACTIVE && contract.status !== ContractStatus.INACTIVE;
+    if (shouldInactivate) {
+      delete rest.status;
+    }
 
     Object.assign(contract, rest);
 
@@ -119,6 +128,16 @@ export class ContractLifecycleService {
 
     if (portfolioId !== undefined) {
       contract.portfolio = portfolioId ? ({ id: portfolioId } as Portfolio) : null;
+    }
+
+    if (shouldInactivate) {
+      // Se guarda con el QueryRunner transaccional para que, si inactivate() falla,
+      // los cambios previos se reviertan junto con él.
+      const qr = resolveQueryRunner(undefined, this.dataSource);
+      await qr.manager.getRepository(Contract).save(contract);
+      return this.inactivate(id, {
+        reason: contract.inactivationReason || 'Inactivado mediante actualización de contrato',
+      });
     }
 
     return this.contractsRepository.save(contract);
@@ -276,6 +295,7 @@ export class ContractLifecycleService {
           action: AffiliationAction.DESAFILIACION,
           amount: Number(effectivePlan?.amount ?? 0),
           reason: truncatedReason,
+          actionDate: getCaracasNow().toJSDate(),
         }),
       );
     }

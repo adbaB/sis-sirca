@@ -24,6 +24,7 @@ export enum ContractStatus {
 }
 
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
+import { dateColumnTransformer } from '../../common/transformers/date.transformer';
 import { DEFAULT_CUTOFF_DAY } from '../constants/contract.constants';
 
 @Entity('contracts')
@@ -70,13 +71,18 @@ export class Contract {
   })
   excludeFromNextBilling: boolean;
 
-  @Column({ type: 'date', name: 'affiliation_date' })
+  @Column({ type: 'date', name: 'affiliation_date', transformer: dateColumnTransformer })
   affiliationDate: Date;
 
-  @Column({ type: 'date', name: 'start_date', nullable: true })
+  @Column({ type: 'date', name: 'start_date', nullable: true, transformer: dateColumnTransformer })
   startDate?: Date | null;
 
-  @Column({ type: 'date', name: 'expiration_date', nullable: true })
+  @Column({
+    type: 'date',
+    name: 'expiration_date',
+    nullable: true,
+    transformer: dateColumnTransformer,
+  })
   expirationDate?: Date | null;
 
   @Column({

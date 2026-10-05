@@ -24,7 +24,7 @@ export interface BeneficiaryPdfRow {
   identityCard: string;
   relationship: string;
   birthDateFormatted: string;
-  age: number;
+  age: number | string;
   genderLabel: string;
   weight: number | string;
   height: number | string;
@@ -44,7 +44,7 @@ export interface TitularSummaryRow {
   name: string;
   typeIdentityCard: string;
   identityCard: string;
-  age: number;
+  age: number | string;
   planName: string;
   coverage: string;
   monthlyCost: string;
@@ -54,7 +54,7 @@ export interface BeneficiarySummaryRow {
   name: string;
   typeIdentityCard: string;
   identityCard: string;
-  age: number;
+  age: number | string;
   planName: string;
   coverage: string;
   monthlyCost: string;

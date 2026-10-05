@@ -17,6 +17,7 @@ import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { Role } from '../../roles/entities/role.entity';
 import { DateTime } from 'luxon';
 import { CARACAS_ZONE } from '../../common/utils/date.util';
+import { REACTIVATION_COOLDOWN_DAYS } from '../constants/contract.constants';
 
 describe('ContractLifecycleService', () => {
   let service: ContractLifecycleService;
@@ -153,6 +154,29 @@ describe('ContractLifecycleService', () => {
       expect(res.retentionPercentage).toBe(5);
       expect(res.advisor).toEqual({ id: 'adv-2' });
       expect(contractsRepository.save).toHaveBeenCalled();
+    });
+
+    it('should delegate to inactivate when status is updated to INACTIVE', async () => {
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        status: ContractStatus.ACTIVE,
+      });
+      contractsRepository.save.mockImplementation(async (c) => c as Contract);
+      const txSave = jest.fn().mockImplementation(async (c) => c as Contract);
+      mockManager.getRepository.mockReturnValue({ save: txSave });
+      const inactivateSpy = jest
+        .spyOn(service, 'inactivate')
+        .mockResolvedValue({ ...mockContract, status: ContractStatus.INACTIVE });
+
+      const dto: UpdateContractDto = { status: ContractStatus.INACTIVE };
+      const res = await service.update('contract-1', dto);
+
+      expect(txSave).toHaveBeenCalled();
+      expect(inactivateSpy).toHaveBeenCalledWith('contract-1', {
+        reason: expect.any(String),
+      });
+      expect(res.status).toBe(ContractStatus.INACTIVE);
+      inactivateSpy.mockRestore();
     });
   });
 
@@ -713,7 +737,7 @@ describe('ContractLifecycleService', () => {
       );
       const expected = DateTime.fromJSDate(opDate)
         .setZone(CARACAS_ZONE)
-        .plus({ days: 7 })
+        .plus({ days: REACTIVATION_COOLDOWN_DAYS })
         .startOf('day');
       expect(DateTime.fromJSDate(result as Date).toMillis()).toBe(expected.toMillis());
       expect(saveMock).toHaveBeenCalled();

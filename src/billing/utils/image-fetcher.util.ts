@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_FILE_SIZE } from '../../common/constants/upload.constants';
 export function sanitizeUrl(urlStr: string): string {
   try {
     const parsed = new URL(urlStr);
@@ -66,7 +67,7 @@ export async function fetchSafeImage(
       const reader = response.body.getReader();
       const chunks: Buffer[] = [];
       let totalSize = 0;
-      const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+      const MAX_SIZE = MAX_UPLOAD_FILE_SIZE;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -76,7 +77,7 @@ export async function fetchSafeImage(
           if (totalSize > MAX_SIZE) {
             await reader.cancel();
             logger.warn(
-              `[Resource Exhaustion Blocked] Image size exceeded limit of 10MB: ${sanitizeUrl(currentUrl)}`,
+              `[Resource Exhaustion Blocked] Image size exceeded limit of 15MB: ${sanitizeUrl(currentUrl)}`,
             );
             return null;
           }

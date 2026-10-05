@@ -1,5 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { ConfigType } from '@nestjs/config';
+import axios from 'axios';
+import config from '../../config/configurations';
 import { MetaWhatsappService } from './meta-whatsapp.service';
 import { ChatbotStateService } from './chatbot-state.service';
 import { WHATSAPP_TEMPLATES } from '../constants/whatsapp-templates.contants';
@@ -9,6 +12,7 @@ import { Person } from '../../persons/entities/person.entity';
 import { Invoice } from '../../billing/invoices/entities/invoice.entity';
 import { getBillingMonth } from '../../common/utils/date.util';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
+import { normalizeWhatsappPhone } from '../utils/phone.util';
 
 // Interfaz temporal para agrupar los datos
 interface PendingDebt {
@@ -24,6 +28,7 @@ export class ReminderService {
     private readonly whatsappService: MetaWhatsappService,
     private readonly invoiceService: InvoiceService,
     private readonly stateService: ChatbotStateService,
+    @Inject(config.KEY) private readonly configService: ConfigType<typeof config>,
   ) {}
 
   // 🎯 DÍA 25: Plantilla con 2 variables (Ej: Nombre y Monto)
@@ -91,48 +96,110 @@ export class ReminderService {
     templateName: string,
     variablesMapper: (person: Person, invoices: Invoice[]) => Record<string, string>,
   ): Promise<void> {
+    const templateLang = this.configService.meta.templateLanguage || 'es';
     try {
       const debts = await this.getPersonsWithPendingInvoices();
-      this.logger.log(`Enviando "${templateName}" a ${debts.length} personas.`);
+      this.logger.log(
+        `[Reminder] Iniciando envío de plantilla "${templateName}" (${templateLang}) para ${debts.length} personas con deuda pendiente.`,
+      );
+
+      let successCount = 0;
+      let failCount = 0;
+      let skippedCount = 0;
 
       for (const debt of debts) {
-        // 1. Validaciones de seguridad
-        if (!debt.person.phone || !debt.person.phone.startsWith('+')) continue;
+        const rawPhone = debt.person?.phone;
+        const normalizedPhone = normalizeWhatsappPhone(rawPhone);
+
+        // 1. Validaciones de teléfono
+        if (!normalizedPhone) {
+          this.logger.warn(
+            `[Reminder] Omitiendo a persona ${debt.person?.id}: teléfono inválido o no reconocido.`,
+          );
+          skippedCount++;
+          continue;
+        }
 
         const unpaidInvoices = debt.invoices.filter(
           (inv) => Number(inv.paidAmount) < Number(inv.totalAmount),
         );
-        if (unpaidInvoices.length === 0) continue;
+        if (unpaidInvoices.length === 0) {
+          this.logger.debug(
+            `[Reminder] Omitiendo a persona ${debt.person?.id} (${this.maskPhone(normalizedPhone)}): no posee facturas con saldo pendiente.`,
+          );
+          skippedCount++;
+          continue;
+        }
 
         try {
-          // 2. 🎯 MAGIA: Ejecutamos la función específica que creamos en cada Cron Job
+          // 2. Mapeo de variables según el Cron Job
           const templateVariables = variablesMapper(debt.person, unpaidInvoices);
+
+          this.logger.log(
+            `[Reminder] Enviando "${templateName}" a persona ${debt.person.id} (${this.maskPhone(normalizedPhone)}).`,
+          );
 
           // 3. Enviamos a Meta
           await this.whatsappService.sendTemplateMessage(
-            debt.person.phone,
+            normalizedPhone,
             templateName,
             templateVariables,
-            'en',
+            templateLang,
             `REMINDER_${debt.person.id}`,
           );
 
-          this.logger.log(`Plantilla enviada a ${debt.person.phone}`);
-
           // Pre-set state so the chatbot knows a Flow response is expected
-          await this.stateService.setState(debt.person.phone, {
+          await this.stateService.setState(normalizedPhone, {
             step: Steps.AWAITING_FLOW_INTERACTION,
           });
-        } catch (error) {
-          this.logger.error(`Error enviando a ${debt.person.phone}:`, error?.message);
+
+          successCount++;
+          this.logger.log(
+            `[Reminder] Plantilla "${templateName}" enviada a persona ${debt.person.id} (${this.maskPhone(normalizedPhone)}).`,
+          );
+        } catch (error: unknown) {
+          failCount++;
+          let errorDetails = '';
+          if (axios.isAxiosError(error)) {
+            const status = error.response?.status;
+            const data = error.response?.data;
+            const dataStr = data
+              ? typeof data === 'object'
+                ? JSON.stringify(data)
+                : String(data)
+              : error.message;
+            errorDetails = `[HTTP ${status ?? 'N/A'}] ${dataStr}`;
+          } else if (error instanceof Error) {
+            errorDetails = error.message;
+          } else {
+            errorDetails = String(error);
+          }
+
+          this.logger.error(
+            `[Reminder] Error enviando recordatorio a persona ${debt.person?.id} (${this.maskPhone(normalizedPhone)}) [plantilla: "${templateName}", idioma: "${templateLang}"]: ${errorDetails}`,
+            error instanceof Error ? error.stack : undefined,
+          );
         }
 
-        // 4. Pausa para evitar bans de Meta
+        // 4. Pausa para evitar bans / rate limits de Meta
         await this.sleep(500);
       }
-    } catch (error) {
-      this.logger.error('Error crítico en el proceso de recordatorios:', error);
+
+      this.logger.log(
+        `[Reminder] Proceso finalizado para "${templateName}". Resumen -> Total: ${debts.length}, Enviados: ${successCount}, Fallidos: ${failCount}, Omitidos: ${skippedCount}`,
+      );
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `[Reminder] Error crítico en el proceso de recordatorios ("${templateName}"): ${errorMsg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
     }
+  }
+
+  /** Enmascara el teléfono para logs (deja solo los últimos 4 dígitos). */
+  private maskPhone(phone: string): string {
+    return phone.length > 4 ? `***${phone.slice(-4)}` : '***';
   }
 
   // Helper para extraer el mes de vencimiento

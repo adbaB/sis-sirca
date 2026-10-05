@@ -36,6 +36,7 @@ export default registerAs('config', () => {
       flowPrivateKey: process.env.META_FLOW_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       flowPassphrase: process.env.META_FLOW_PASSPHRASE,
       flowMode: process.env.META_FLOW_MODE || 'draft',
+      templateLanguage: process.env.META_TEMPLATE_LANGUAGE || 'es',
     },
 
     redis: {

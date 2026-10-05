@@ -199,3 +199,31 @@ export function getCaracasDateTime(dateVal?: Date | string | DateTime): DateTime
   if (dateVal instanceof Date) return DateTime.fromJSDate(dateVal).setZone(CARACAS_ZONE);
   return DateTime.fromISO(dateVal).setZone(CARACAS_ZONE);
 }
+
+/**
+ * Safely extracts a YYYY-MM-DD date string without timezone off-by-one shifts.
+ * Handles strings (YYYY-MM-DD...), UTC-midnight Date objects, and local/Caracas Date objects.
+ */
+export function normalizeDateOnly(dateVal?: Date | string | null): string | null {
+  if (!dateVal) return null;
+  if (typeof dateVal === 'string') {
+    const match = dateVal.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return match[0];
+  }
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+    if (
+      dateVal.getUTCHours() === 0 &&
+      dateVal.getUTCMinutes() === 0 &&
+      dateVal.getUTCSeconds() === 0 &&
+      dateVal.getUTCMilliseconds() === 0
+    ) {
+      const y = dateVal.getUTCFullYear();
+      const m = String(dateVal.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(dateVal.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const dt = DateTime.fromJSDate(dateVal).setZone(CARACAS_ZONE);
+    return dt.isValid ? dt.toFormat('yyyy-MM-dd') : null;
+  }
+  return null;
+}

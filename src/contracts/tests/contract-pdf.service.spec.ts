@@ -108,6 +108,70 @@ describe('ContractPdfService', () => {
         }),
       );
     });
+
+    it('should format age in months for baby affiliate under 1 year old', async () => {
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        affiliationDate: new Date('2026-09-30'),
+        contractPersons: [
+          ...mockContract.contractPersons,
+          {
+            id: 'cp-2',
+            role: PersonRole.AFILIADO,
+            relationship: 'HIJO',
+            person: {
+              id: 'p-2',
+              name: 'Bebe Perez',
+              typeIdentityCard: 'PN',
+              identityCard: '99999999',
+              birthDate: new Date('2026-06-30'),
+              plan: { id: 'plan-1', name: 'Plan Familiar', coverage: 5000, amount: 50 },
+            },
+          } as unknown as NonNullable<Contract['contractPersons']>[0],
+          {
+            id: 'cp-3',
+            role: PersonRole.AFILIADO,
+            relationship: 'ABUELO',
+            person: {
+              id: 'p-3',
+              name: 'Abuelo Perez',
+              typeIdentityCard: 'V',
+              identityCard: '11111111',
+              birthDate: new Date('1942-09-30'),
+              plan: { id: 'plan-1', name: 'Plan Familiar', coverage: 5000, amount: 50 },
+            },
+          } as unknown as NonNullable<Contract['contractPersons']>[0],
+        ],
+      } as unknown as Contract);
+
+      await service.generateContractPdfBuffer('contract-1');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'contract-affiliation',
+        expect.objectContaining({
+          beneficiaries: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Bebe Perez',
+              age: '3 MESES',
+            }),
+            expect.objectContaining({
+              name: 'Abuelo Perez',
+              age: '84 AÑOS',
+            }),
+          ]),
+          beneficiariesRow: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Bebe Perez',
+              age: '3 MESES',
+            }),
+            expect.objectContaining({
+              name: 'Abuelo Perez',
+              age: '84 AÑOS',
+            }),
+          ]),
+        }),
+      );
+    });
   });
 
   describe('generateAndUploadContractPdf', () => {

@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import { Contract, ContractStatus } from '../entities/contract.entity';
+import { REACTIVATION_COOLDOWN_DAYS } from '../constants/contract.constants';
 import { ContractsService } from '../services/contracts.service';
 import { Invoice, InvoiceStatus } from '../../billing/invoices/entities/invoice.entity';
 import { Payment, PaymentStatus } from '../../billing/payments/entities/payment.entity';
@@ -139,7 +140,7 @@ export class ContractReactivationCron {
           if (processingPaymentCount > 0) {
             await queryRunner.rollbackTransaction();
             this.logger.warn(
-              `Contrato ${contract.code} cumplió los 7 días de carencia pero tiene ${processingPaymentCount} pago(s) en PROCESSING pendiente(s) de aprobación.`,
+              `Contrato ${contract.code} cumplió los ${REACTIVATION_COOLDOWN_DAYS} días de carencia pero tiene ${processingPaymentCount} pago(s) en PROCESSING pendiente(s) de aprobación.`,
             );
             return null;
           }
@@ -167,7 +168,7 @@ export class ContractReactivationCron {
           const titularName = titularCp?.person?.name ?? 'Sin titular';
 
           this.logger.log(
-            `Contrato ${contract.code} (${titularName}) reactivado exitosamente tras cumplir 7 días de carencia.`,
+            `Contrato ${contract.code} (${titularName}) reactivado exitosamente tras cumplir ${REACTIVATION_COOLDOWN_DAYS} días de carencia.`,
           );
 
           return {

@@ -1,8 +1,10 @@
 import {
   calculateContractExpirationDate,
   formatContractDate,
+  formatContractPersonAge,
   getCalendarDateComponents,
   getContractPersonAge,
+  getContractPersonAgeDetail,
 } from '../helpers/contract-date-formatter.helper';
 
 describe('contract-date-formatter.helper', () => {
@@ -69,6 +71,131 @@ describe('contract-date-formatter.helper', () => {
     it('should calculate positive age correctly', () => {
       const age = getContractPersonAge('2000-01-01');
       expect(age).toBeGreaterThan(20);
+    });
+
+    it('should calculate age with custom referenceDate', () => {
+      const age = getContractPersonAge('2000-01-01', '2025-06-01');
+      expect(age).toBe(25);
+    });
+  });
+
+  describe('getContractPersonAgeDetail', () => {
+    it('should return zeros and isMonthsOld false if birthDate is missing', () => {
+      expect(getContractPersonAgeDetail(null)).toEqual({
+        years: 0,
+        months: 0,
+        isMonthsOld: false,
+      });
+    });
+
+    it('should identify a baby of 3 months', () => {
+      const detail = getContractPersonAgeDetail('2026-06-15', '2026-09-30');
+      expect(detail).toEqual({
+        years: 0,
+        months: 3,
+        isMonthsOld: true,
+      });
+    });
+
+    it('should identify a baby of 1 month', () => {
+      const detail = getContractPersonAgeDetail('2026-08-15', '2026-09-30');
+      expect(detail).toEqual({
+        years: 0,
+        months: 1,
+        isMonthsOld: true,
+      });
+    });
+
+    it('should identify a baby of less than 1 month as 0 months', () => {
+      const detail = getContractPersonAgeDetail('2026-09-20', '2026-09-30');
+      expect(detail).toEqual({
+        years: 0,
+        months: 0,
+        isMonthsOld: true,
+      });
+    });
+
+    it('should identify an adult of 25 years as not months-old', () => {
+      const detail = getContractPersonAgeDetail('2001-01-01', '2026-09-30');
+      expect(detail.years).toBe(25);
+      expect(detail.isMonthsOld).toBe(false);
+    });
+  });
+
+  describe('formatContractPersonAge', () => {
+    it('should return "-" if birthDate is missing', () => {
+      expect(formatContractPersonAge(null)).toBe('-');
+      expect(formatContractPersonAge(undefined)).toBe('-');
+    });
+
+    it('should format months for baby with plural MESES', () => {
+      const formatted = formatContractPersonAge('2026-06-15', {
+        referenceDate: '2026-09-30',
+        withUnitForYears: false,
+      });
+      expect(formatted).toBe('3 MESES');
+    });
+
+    it('should format months for baby with plural MESES even if withUnitForYears is true', () => {
+      const formatted = formatContractPersonAge('2026-06-15', {
+        referenceDate: '2026-09-30',
+        withUnitForYears: true,
+      });
+      expect(formatted).toBe('3 MESES');
+    });
+
+    it('should format 1 month with singular MES', () => {
+      const formatted = formatContractPersonAge('2026-08-15', {
+        referenceDate: '2026-09-30',
+        withUnitForYears: false,
+      });
+      expect(formatted).toBe('1 MES');
+    });
+
+    it('should format 0 months as 0 MESES', () => {
+      const formatted = formatContractPersonAge('2026-09-20', {
+        referenceDate: '2026-09-30',
+        withUnitForYears: false,
+      });
+      expect(formatted).toBe('0 MESES');
+    });
+
+    it('should format 1 year old as "1" without unit and "1 AÑO" with unit', () => {
+      expect(
+        formatContractPersonAge('2025-09-15', {
+          referenceDate: '2026-09-30',
+          withUnitForYears: false,
+        }),
+      ).toBe('1');
+      expect(
+        formatContractPersonAge('2025-09-15', {
+          referenceDate: '2026-09-30',
+          withUnitForYears: true,
+        }),
+      ).toBe('1 AÑO');
+    });
+
+    it('should format adult years without unit as number string', () => {
+      const formatted = formatContractPersonAge('2001-01-01', {
+        referenceDate: '2026-09-30',
+        withUnitForYears: false,
+      });
+      expect(formatted).toBe('25');
+    });
+
+    it('should format adult years with unit as "X AÑOS"', () => {
+      const formatted = formatContractPersonAge('2001-01-01', {
+        referenceDate: '2026-09-30',
+        withUnitForYears: true,
+      });
+      expect(formatted).toBe('25 AÑOS');
+    });
+
+    it('should default withUnitForYears to true when options or withUnitForYears not specified', () => {
+      const formatted = formatContractPersonAge('2001-01-01', {
+        referenceDate: '2026-09-30',
+      });
+      expect(formatted).toBe('25 AÑOS');
     });
   });
 

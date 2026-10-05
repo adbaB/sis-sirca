@@ -7,7 +7,6 @@ import {
   formatToISODateString,
   getBillingDateWindows,
   getCaracasDateTime,
-  getEndOfMonth,
 } from '../common/utils/date.util';
 import { PdfService } from '../pdf/services/pdf.service';
 import {
@@ -122,11 +121,9 @@ export class SipCommissionsService {
     month: number,
     advisorId?: string,
   ): Promise<SipCommissionReport> {
-    const monthStr = String(month).padStart(2, '0');
-
-    const startDate = `${year}-${monthStr}-01`;
-    const lastDay = getEndOfMonth(startDate).getDate();
-    const endDate = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+    const windows = getBillingDateWindows(year, month);
+    const startDate = windows.queryStart;
+    const endDate = windows.queryEnd;
 
     let advisorName: string;
     try {
@@ -154,7 +151,6 @@ export class SipCommissionsService {
     const convenioInicialPattern = '^SIR-002-0[0-5][0-9]$|^SIR-002-060$';
 
     // 3. Fetch all invoice lines (MENSUALIDAD only) with payments in the operation_date window
-    const windows = getBillingDateWindows(year, month);
     let rawData: SipCommissionQueryRow[];
     try {
       let query = `

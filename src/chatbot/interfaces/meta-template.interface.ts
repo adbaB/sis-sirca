@@ -1,6 +1,6 @@
 export interface MetaTemplateTextParameter {
   type: 'text';
-  parameter_name: string;
+  parameter_name?: string;
   text: string;
 }
 

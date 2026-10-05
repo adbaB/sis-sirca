@@ -203,6 +203,9 @@ describe('SipCommissionsService', () => {
       const secondCall = querySpy.mock.calls[1];
       expect(secondCall[1]).toEqual(['2026-03-06', '2026-04-05']);
 
+      expect(result.startDate).toBe('2026-03-06');
+      expect(result.endDate).toBe('2026-04-05');
+
       expect(result.portfolioCodes).toEqual(['APF', 'GMP', 'HER']);
 
       // Verify sections
@@ -412,8 +415,8 @@ describe('SipCommissionsService', () => {
       expect(pdfService.generatePdf).toHaveBeenCalledWith(
         'sip-commissions',
         expect.objectContaining({
-          startDateES: '01-04-2026',
-          endDateES: '30-04-2026',
+          startDateES: '06-03-2026',
+          endDateES: '05-04-2026',
           colspan: 7,
           grandTotalCommissionFormatted: '105.00',
         }),

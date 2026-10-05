@@ -12,6 +12,7 @@ import {
   getBillingMonth,
   excelDateToDateString,
   parseOcrDateToISO,
+  normalizeDateOnly,
 } from './date.util';
 
 describe('Date Utilities', () => {
@@ -119,5 +120,28 @@ describe('Date Utilities', () => {
     expect(parseOcrDateToISO(null)).toBe('');
     expect(parseOcrDateToISO('')).toBe('');
     expect(parseOcrDateToISO('invalid-date')).toBe('');
+  });
+
+  describe('normalizeDateOnly and dateColumnTransformer', () => {
+    it('should preserve YYYY-MM-DD string as-is', () => {
+      expect(normalizeDateOnly('2026-09-30')).toBe('2026-09-30');
+      expect(normalizeDateOnly('2026-01-01')).toBe('2026-01-01');
+    });
+
+    it('should normalize UTC midnight Date to correct YYYY-MM-DD without subtracting a day', () => {
+      const utcMidnight = new Date('2026-09-30'); // parsed as 2026-09-30T00:00:00.000Z
+      expect(normalizeDateOnly(utcMidnight)).toBe('2026-09-30');
+    });
+
+    it('should normalize DB parsed Date (04:00Z) to correct YYYY-MM-DD in Caracas zone', () => {
+      const dbDate = new Date('2026-09-30T04:00:00.000Z');
+      expect(normalizeDateOnly(dbDate)).toBe('2026-09-30');
+    });
+
+    it('should return null for null or empty values', () => {
+      expect(normalizeDateOnly(null)).toBeNull();
+      expect(normalizeDateOnly(undefined)).toBeNull();
+      expect(normalizeDateOnly('')).toBeNull();
+    });
   });
 });
