@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reporte de Afiliaciones y Desafiliaciones</title>
+  <style>
+    :root {
+      --primary-color: #1d9e11;
+      --primary-dark: #15803d;
+      --text-color: #333333;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --bg-alt: #f8fafc;
+      --danger-color: #dc2626;
+      --danger-bg: #fef2f2;
+      --success-bg: #dcfce7;
+      --success-color: #166534;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      color: var(--text-color);
+      margin: 0;
+      padding: 0;
+      font-size: 11px;
+    }
+    .page-container {
+      width: 100%;
+      padding: 20px;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid var(--primary-color);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .header-logo {
+      height: 44px;
+      width: auto;
+      object-fit: contain;
+    }
+    .header h1 {
+      color: var(--primary-color);
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .header-subtitle {
+      color: var(--text-muted);
+      font-size: 11px;
+      margin: 2px 0 0 0;
+    }
+    .header-right {
+      text-align: right;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .header-right p { margin: 2px 0; }
+
+    /* ── KPI Summary Cards ────────────────────────────────── */
+    .kpi-container {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .kpi-card {
+      flex: 1;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border: 1px solid var(--border-color);
+    }
+    .kpi-card.affiliations {
+      background-color: var(--success-bg);
+      border-color: #bbf7d0;
+    }
+    .kpi-card.disaffiliations {
+      background-color: var(--danger-bg);
+      border-color: #fecaca;
+    }
+    .kpi-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .kpi-card.affiliations .kpi-title { color: var(--success-color); }
+    .kpi-card.disaffiliations .kpi-title { color: #991b1b; }
+    .kpi-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .kpi-card.affiliations .kpi-value { color: var(--success-color); }
+    .kpi-card.disaffiliations .kpi-value { color: var(--danger-color); }
+
+    /* ── Section Title Bar ────────────────────────────────── */
+    .section-title {
+      background-color: var(--primary-color);
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+      padding: 7px 12px;
+      margin-top: 20px;
+      margin-bottom: 0;
+      border-radius: 6px 6px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-title.disaffiliation {
+      background-color: #b91c1c;
+    }
+    .section-badge {
+      background: rgba(255, 255, 255, 0.25);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+    }
+
+    /* ── Tables ───────────────────────────────────────────── */
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      border: 1px solid var(--border-color);
+    }
+    .report-table th,
+    .report-table td {
+      padding: 6px 8px;
+      border: 1px solid var(--border-color);
+      font-size: 10px;
+    }
+    .report-table th {
+      background-color: #f1f5f9;
+      color: #334155;
+      font-weight: 700;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .report-table tbody tr:nth-child(even) td {
+      background-color: var(--bg-alt);
+    }
+    .text-center { text-align: center !important; }
+    .text-left { text-align: left !important; }
+    .text-right { text-align: right !important; }
+
+    .empty-message {
+      text-align: center;
+      padding: 16px;
+      color: var(--text-muted);
+      font-style: italic;
+      background-color: #ffffff;
+    }
+
+    /* ── Footer ───────────────────────────────────────────── */
+    .footer {
+      border-top: 1px solid var(--border-color);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        {{#if logo}}
+          <img src="{{ logo }}" alt="Logo SIRCA" class="header-logo">
+        {{/if}}
+        <div>
+          <h1>SIRCA - Plan de Salud</h1>
+          <p class="header-subtitle">Reporte de Afiliaciones y Desafiliaciones</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <p><strong>Período:</strong> {{ startDateFormatted }} al {{ endDateFormatted }}</p>
+        <p><strong>Generado:</strong> {{ generatedAt }}</p>
+      </div>
+    </div>
+
+    <!-- KPI Summary Cards -->
+    <div class="kpi-container">
+      <div class="kpi-card affiliations">
+        <div>
+          <div class="kpi-title">Total Afiliaciones</div>
+          <small style="color: #166534; font-size: 9px;">Nuevos ingresos en el período</small>
+        </div>
+        <div class="kpi-value">{{ totalAffiliations }}</div>
+      </div>
+      <div class="kpi-card disaffiliations">
+        <div>
+          <div class="kpi-title">Total Desafiliaciones</div>
+          <small style="color: #991b1b; font-size: 9px;">Retiros o bajas en el período</small>
+        </div>
+        <div class="kpi-value">{{ totalDisaffiliations }}</div>
+      </div>
+    </div>
+
+    <!-- Sección 1: Afiliaciones -->
+    <div class="section-title">
+      <span>1. Afiliaciones Registradas</span>
+      <span class="section-badge">{{ totalAffiliations }} registro(s)</span>
+    </div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 14%;">N° Contrato</th>
+          <th style="width: 16%;">Cédula</th>
+          <th style="width: 32%;">Nombre del Afiliado</th>
+          <th style="width: 24%;">Plan de Salud</th>
+          <th style="width: 14%;">Fecha Afiliación</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#if hasAffiliations}}
+          {{#each affiliations}}
+            <tr>
+              <td class="text-center"><strong>{{ this.contractCode }}</strong></td>
+              <td class="text-center">{{ this.identityCard }}</td>
+              <td class="text-left">{{ this.fullName }}</td>
+              <td class="text-left">{{ this.planName }}</td>
+              <td class="text-center">{{ this.actionDateFormatted }}</td>
+            </tr>
+          {{/each}}
+        {{else}}
+          <tr>
+            <td colspan="5" class="empty-message">
+              No se registraron afiliaciones en el período seleccionado.
+            </td>
+          </tr>
+        {{/if}}
+      </tbody>
+    </table>
+
+    <!-- Sección 2: Desafiliaciones -->
+    <div class="section-title disaffiliation">
+      <span>2. Desafiliaciones Registradas</span>
+      <span class="section-badge">{{ totalDisaffiliations }} registro(s)</span>
+    </div>
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th style="width: 12%;">N° Contrato</th>
+          <th style="width: 14%;">Cédula</th>
+          <th style="width: 26%;">Nombre del Desafiliado</th>
+          <th style="width: 18%;">Plan de Salud</th>
+          <th style="width: 12%;">Fecha Desafiliación</th>
+          <th style="width: 18%;">Motivo / Razón</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#if hasDisaffiliations}}
+          {{#each disaffiliations}}
+            <tr>
+              <td class="text-center"><strong>{{ this.contractCode }}</strong></td>
+              <td class="text-center">{{ this.identityCard }}</td>
+              <td class="text-left">{{ this.fullName }}</td>
+              <td class="text-left">{{ this.planName }}</td>
+              <td class="text-center">{{ this.actionDateFormatted }}</td>
+              <td class="text-left">{{ this.reason }}</td>
+            </tr>
+          {{/each}}
+        {{else}}
+          <tr>
+            <td colspan="6" class="empty-message">
+              No se registraron desafiliaciones en el período seleccionado.
+            </td>
+          </tr>
+        {{/if}}
+      </tbody>
+    </table>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>SIRCA - Sistema Integral de Gestión de Planes de Salud</span>
+      <span>Documento confidencial generado automáticamente</span>
+    </div>
+  </div>
+</body>
+</html>

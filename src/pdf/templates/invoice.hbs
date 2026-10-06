@@ -152,6 +152,36 @@
       box-sizing: border-box;
     }
 
+    /* ── Signatures ── */
+    .signatures-section {
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-start;
+      margin-top: 30px;
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+    .signature-box {
+      width: 220px;
+      text-align: center;
+    }
+    .signature-line {
+      border-top: 1px solid #333333;
+      margin-bottom: 6px;
+    }
+    .signature-box strong {
+      display: block;
+      font-size: 11px;
+      color: var(--text-color);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .signature-box .signature-name {
+      font-size: 10px;
+      color: #555555;
+      margin-top: 3px;
+    }
+
     /* ── Footer ── */
     .footer {
       margin-top: 16px;
@@ -324,6 +354,21 @@
         </div>
       </div>
       {{/if}}
+    </div>
+
+    <!-- Signatures -->
+    <div class="signatures-section">
+      <div class="signature-box">
+        <div class="signature-line"></div>
+        <strong>Titular del Contrato</strong>
+        {{#if personName}}
+        <div class="signature-name">{{ personName }}</div>
+        {{/if}}
+      </div>
+      <div class="signature-box">
+        <div class="signature-line"></div>
+        <strong>SIRCA</strong>
+      </div>
     </div>
 
     <div class="footer">
