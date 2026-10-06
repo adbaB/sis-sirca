@@ -6,7 +6,9 @@ import { ContractPerson } from '../contracts/entities/contract-person.entity';
 import { Contract } from '../contracts/entities/contract.entity';
 import { PdfModule } from '../pdf/pdf.module';
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
+import { AffiliationHistory } from '../contracts/entities/affiliation-history.entity';
 import { AdvisorPaymentsService } from './advisor-payments.service';
+import { AffiliationsReportService } from './affiliations-report.service';
 import { ProjectionReportService } from './projection-report.service';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
@@ -14,7 +16,7 @@ import { SipCommissionsService } from './sip-commissions.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Invoice, Contract, ContractPerson, Payment]),
+    TypeOrmModule.forFeature([Invoice, Contract, ContractPerson, Payment, AffiliationHistory]),
     PdfModule,
     ExchangeRateModule,
   ],
@@ -24,6 +26,14 @@ import { SipCommissionsService } from './sip-commissions.service';
     SipCommissionsService,
     AdvisorPaymentsService,
     ProjectionReportService,
+    AffiliationsReportService,
+  ],
+  exports: [
+    ReportsService,
+    SipCommissionsService,
+    AdvisorPaymentsService,
+    ProjectionReportService,
+    AffiliationsReportService,
   ],
 })
 export class ReportsModule {}

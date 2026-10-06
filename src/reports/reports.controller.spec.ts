@@ -5,6 +5,7 @@ import { ReportsService } from './reports.service';
 import { SipCommissionsService } from './sip-commissions.service';
 import { AdvisorPaymentsService } from './advisor-payments.service';
 import { ProjectionReportService } from './projection-report.service';
+import { AffiliationsReportService } from './affiliations-report.service';
 
 describe('ReportsController', () => {
   let controller: ReportsController;
@@ -12,6 +13,7 @@ describe('ReportsController', () => {
   let sipCommissionsService: SipCommissionsService;
   let advisorPaymentsService: AdvisorPaymentsService;
   let projectionReportService: ProjectionReportService;
+  let affiliationsReportService: AffiliationsReportService;
 
   const mockResponse = () => {
     const res: Partial<Response> = {};
@@ -52,6 +54,13 @@ describe('ReportsController', () => {
             generatePdf: jest.fn().mockResolvedValue(Buffer.from('projection-pdf')),
           },
         },
+        {
+          provide: AffiliationsReportService,
+          useValue: {
+            generateExcel: jest.fn().mockResolvedValue(Buffer.from('affiliations-excel')),
+            generatePdf: jest.fn().mockResolvedValue(Buffer.from('affiliations-pdf')),
+          },
+        },
       ],
     }).compile();
 
@@ -60,6 +69,7 @@ describe('ReportsController', () => {
     sipCommissionsService = module.get<SipCommissionsService>(SipCommissionsService);
     advisorPaymentsService = module.get<AdvisorPaymentsService>(AdvisorPaymentsService);
     projectionReportService = module.get<ProjectionReportService>(ProjectionReportService);
+    affiliationsReportService = module.get<AffiliationsReportService>(AffiliationsReportService);
   });
 
   it('should be defined', () => {
@@ -221,6 +231,52 @@ describe('ReportsController', () => {
         }),
       );
       expect(res.end).toHaveBeenCalledWith(Buffer.from('projection-pdf'));
+    });
+  });
+
+  describe('downloadAffiliationsExcel', () => {
+    it('should generate and return affiliations Excel file with headers', async () => {
+      const res = mockResponse();
+      await controller.downloadAffiliationsExcel(
+        { startDate: '2026-01-01', endDate: '2026-01-31' },
+        res,
+      );
+
+      expect(affiliationsReportService.generateExcel).toHaveBeenCalledWith(
+        '2026-01-01',
+        '2026-01-31',
+      );
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition':
+            'attachment; filename="reporte-afiliaciones-desafiliaciones-2026-01-01-a-2026-01-31.xlsx"',
+        }),
+      );
+      expect(res.end).toHaveBeenCalledWith(Buffer.from('affiliations-excel'));
+    });
+  });
+
+  describe('downloadAffiliationsPdf', () => {
+    it('should generate and return affiliations PDF file with headers', async () => {
+      const res = mockResponse();
+      await controller.downloadAffiliationsPdf(
+        { startDate: '2026-01-01', endDate: '2026-01-31' },
+        res,
+      );
+
+      expect(affiliationsReportService.generatePdf).toHaveBeenCalledWith(
+        '2026-01-01',
+        '2026-01-31',
+      );
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Type': 'application/pdf',
+          'Content-Disposition':
+            'attachment; filename="reporte-afiliaciones-desafiliaciones-2026-01-01-a-2026-01-31.pdf"',
+        }),
+      );
+      expect(res.end).toHaveBeenCalledWith(Buffer.from('affiliations-pdf'));
     });
   });
 });

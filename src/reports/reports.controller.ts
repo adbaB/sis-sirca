@@ -2,6 +2,8 @@ import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common
 import { Response } from 'express';
 import { RequirePermissions } from '../auth/decorators';
 import { AdvisorPaymentsService } from './advisor-payments.service';
+import { AffiliationsReportService } from './affiliations-report.service';
+import { AffiliationsReportQueryDto } from './dto/affiliations-report-query.dto';
 import { ProjectionReportService } from './projection-report.service';
 import { ReportsService } from './reports.service';
 import { SipCommissionsService } from './sip-commissions.service';
@@ -13,6 +15,7 @@ export class ReportsController {
     private readonly sipCommissionsService: SipCommissionsService,
     private readonly advisorPaymentsService: AdvisorPaymentsService,
     private readonly projectionReportService: ProjectionReportService,
+    private readonly affiliationsReportService: AffiliationsReportService,
   ) {}
 
   private validatePeriod(year: number, month: number): void {
@@ -182,6 +185,36 @@ export class ReportsController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'attachment; filename="proyeccion-ingresos.pdf"',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('affiliations/excel')
+  @RequirePermissions('read:reports')
+  async downloadAffiliationsExcel(
+    @Query() query: AffiliationsReportQueryDto,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.affiliationsReportService.generateExcel(
+      query.startDate,
+      query.endDate,
+    );
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="reporte-afiliaciones-desafiliaciones-${query.startDate}-a-${query.endDate}.xlsx"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('affiliations/pdf')
+  @RequirePermissions('read:reports')
+  async downloadAffiliationsPdf(@Query() query: AffiliationsReportQueryDto, @Res() res: Response) {
+    const buffer = await this.affiliationsReportService.generatePdf(query.startDate, query.endDate);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="reporte-afiliaciones-desafiliaciones-${query.startDate}-a-${query.endDate}.pdf"`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);
