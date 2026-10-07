@@ -172,6 +172,93 @@ describe('ContractPdfService', () => {
         }),
       );
     });
+
+    it('should set titularRow to null when titular has no plan assigned, and not inherit beneficiary plan', async () => {
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        contractPersons: [
+          {
+            id: 'cp-titular',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+            plan: null,
+            person: {
+              id: 'p-titular',
+              name: 'Carlos Titular Sin Plan',
+              typeIdentityCard: 'V',
+              identityCard: '12345678',
+              birthDate: new Date('1985-05-10'),
+              plan: null,
+            },
+          } as unknown as NonNullable<Contract['contractPersons']>[0],
+          {
+            id: 'cp-beneficiary',
+            role: PersonRole.AFILIADO,
+            relationship: 'HIJO',
+            plan: { id: 'plan-beneficiary', name: 'Plan Dorado', coverage: 10000, amount: 80 },
+            person: {
+              id: 'p-beneficiary',
+              name: 'Hijo Beneficiario',
+              typeIdentityCard: 'V',
+              identityCard: '87654321',
+              birthDate: new Date('2015-01-01'),
+            },
+          } as unknown as NonNullable<Contract['contractPersons']>[0],
+        ],
+      } as unknown as Contract);
+
+      await service.generateContractPdfBuffer('contract-1');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'contract-affiliation',
+        expect.objectContaining({
+          titularRow: null,
+          beneficiariesRow: [
+            expect.objectContaining({
+              name: 'Hijo Beneficiario',
+              planName: 'Plan Dorado',
+              coverage: '10,000.00',
+              monthlyCost: '80.00',
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('should include titularRow when titular has their own plan assigned', async () => {
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        contractPersons: [
+          {
+            id: 'cp-titular',
+            role: PersonRole.TITULAR,
+            isBillingOwner: true,
+            plan: { id: 'plan-titular', name: 'Plan Platino', coverage: 15000, amount: 120 },
+            person: {
+              id: 'p-titular',
+              name: 'Carlos Titular Con Plan',
+              typeIdentityCard: 'V',
+              identityCard: '12345678',
+              birthDate: new Date('1985-05-10'),
+            },
+          } as unknown as NonNullable<Contract['contractPersons']>[0],
+        ],
+      } as unknown as Contract);
+
+      await service.generateContractPdfBuffer('contract-1');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'contract-affiliation',
+        expect.objectContaining({
+          titularRow: expect.objectContaining({
+            name: 'Carlos Titular Con Plan',
+            planName: 'Plan Platino',
+            coverage: '15,000.00',
+            monthlyCost: '120.00',
+          }),
+        }),
+      );
+    });
   });
 
   describe('generateAndUploadContractPdf', () => {

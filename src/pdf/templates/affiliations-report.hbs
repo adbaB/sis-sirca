@@ -220,11 +220,12 @@
     <table class="report-table">
       <thead>
         <tr>
-          <th style="width: 14%;">N° Contrato</th>
-          <th style="width: 16%;">Cédula</th>
-          <th style="width: 32%;">Nombre del Afiliado</th>
-          <th style="width: 24%;">Plan de Salud</th>
-          <th style="width: 14%;">Fecha Afiliación</th>
+          <th style="width: 13%;">N° Contrato</th>
+          <th style="width: 14%;">Cédula</th>
+          <th style="width: 25%;">Nombre del Afiliado</th>
+          <th style="width: 18%;">Plan de Salud</th>
+          <th style="width: 18%;">Asesor</th>
+          <th style="width: 12%;">Fecha Afiliación</th>
         </tr>
       </thead>
       <tbody>
@@ -235,12 +236,13 @@
               <td class="text-center">{{ this.identityCard }}</td>
               <td class="text-left">{{ this.fullName }}</td>
               <td class="text-left">{{ this.planName }}</td>
+              <td class="text-left">{{ this.advisorName }}</td>
               <td class="text-center">{{ this.actionDateFormatted }}</td>
             </tr>
           {{/each}}
         {{else}}
           <tr>
-            <td colspan="5" class="empty-message">
+            <td colspan="6" class="empty-message">
               No se registraron afiliaciones en el período seleccionado.
             </td>
           </tr>
@@ -256,12 +258,13 @@
     <table class="report-table">
       <thead>
         <tr>
-          <th style="width: 12%;">N° Contrato</th>
-          <th style="width: 14%;">Cédula</th>
-          <th style="width: 26%;">Nombre del Desafiliado</th>
-          <th style="width: 18%;">Plan de Salud</th>
-          <th style="width: 12%;">Fecha Desafiliación</th>
-          <th style="width: 18%;">Motivo / Razón</th>
+          <th style="width: 11%;">N° Contrato</th>
+          <th style="width: 12%;">Cédula</th>
+          <th style="width: 21%;">Nombre del Desafiliado</th>
+          <th style="width: 16%;">Plan de Salud</th>
+          <th style="width: 16%;">Asesor</th>
+          <th style="width: 10%;">Fecha Desafiliación</th>
+          <th style="width: 14%;">Motivo / Razón</th>
         </tr>
       </thead>
       <tbody>
@@ -272,13 +275,14 @@
               <td class="text-center">{{ this.identityCard }}</td>
               <td class="text-left">{{ this.fullName }}</td>
               <td class="text-left">{{ this.planName }}</td>
+              <td class="text-left">{{ this.advisorName }}</td>
               <td class="text-center">{{ this.actionDateFormatted }}</td>
               <td class="text-left">{{ this.reason }}</td>
             </tr>
           {{/each}}
         {{else}}
           <tr>
-            <td colspan="6" class="empty-message">
+            <td colspan="7" class="empty-message">
               No se registraron desafiliaciones en el período seleccionado.
             </td>
           </tr>

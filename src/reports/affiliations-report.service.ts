@@ -22,6 +22,7 @@ export interface AffiliationItem {
   identityCard: string;
   fullName: string;
   planName: string;
+  advisorName: string;
   actionDateFormatted: string;
   actionDateRaw: Date;
 }
@@ -98,6 +99,7 @@ export class AffiliationsReportService {
     const histories = await this.affiliationHistoryRepository
       .createQueryBuilder('h')
       .leftJoinAndSelect('h.contract', 'contract')
+      .leftJoinAndSelect('contract.advisor', 'advisor')
       .leftJoinAndSelect('h.person', 'person')
       .leftJoinAndSelect('h.plan', 'plan')
       .where('h.action_date >= :startOfDay AND h.action_date <= :endOfDay', {
@@ -108,7 +110,8 @@ export class AffiliationsReportService {
       .andWhere('h.action IN (:...actions)', {
         actions: [AffiliationAction.AFILIACION, AffiliationAction.DESAFILIACION],
       })
-      .orderBy('h.action_date', 'DESC')
+      .orderBy('contract.code', 'ASC')
+      .addOrderBy('h.action_date', 'DESC')
       .getMany();
 
     const affiliations: AffiliationItem[] = [];
@@ -122,6 +125,12 @@ export class AffiliationsReportService {
       const fullName = h.person?.name || 'N/A';
       const planName = h.plan?.name || 'Sin plan asignado';
       const actionDateFormatted = formatDateES(h.actionDate, 'dd/MM/yyyy');
+      const advisor = h.contract?.advisor;
+      const advisorName = advisor
+        ? advisor.code
+          ? `${advisor.name} (${advisor.code})`
+          : advisor.name
+        : 'Sin asesor';
 
       if (h.action === AffiliationAction.AFILIACION) {
         affiliations.push({
@@ -129,6 +138,7 @@ export class AffiliationsReportService {
           identityCard,
           fullName,
           planName,
+          advisorName,
           actionDateFormatted,
           actionDateRaw: h.actionDate,
         });
@@ -138,12 +148,24 @@ export class AffiliationsReportService {
           identityCard,
           fullName,
           planName,
+          advisorName,
           actionDateFormatted,
           actionDateRaw: h.actionDate,
           reason: h.reason || 'Sin motivo especificado',
         });
       }
     }
+
+    affiliations.sort(
+      (a, b) =>
+        a.contractCode.localeCompare(b.contractCode, undefined, { numeric: true }) ||
+        b.actionDateRaw.getTime() - a.actionDateRaw.getTime(),
+    );
+    disaffiliations.sort(
+      (a, b) =>
+        a.contractCode.localeCompare(b.contractCode, undefined, { numeric: true }) ||
+        b.actionDateRaw.getTime() - a.actionDateRaw.getTime(),
+    );
 
     return {
       startDate: startDateStr,
@@ -185,7 +207,7 @@ export class AffiliationsReportService {
       data.endDateFormatted,
       data.generatedAt,
       `Total de Afiliaciones: ${data.totalAffiliations}`,
-      5,
+      6,
     );
 
     // Encabezados de columnas
@@ -195,9 +217,10 @@ export class AffiliationsReportService {
       'Cédula de Identidad',
       'Nombre del Afiliado',
       'Plan de Salud',
+      'Asesor',
       'Fecha de Afiliación',
     ];
-    for (let c = 1; c <= 5; c++) {
+    for (let c = 1; c <= 6; c++) {
       applyTableHeaderStyle(affHeaderRow.getCell(c));
     }
     affHeaderRow.height = 24;
@@ -205,7 +228,7 @@ export class AffiliationsReportService {
     // Filas de datos
     let affCurrentRow = 6;
     if (data.affiliations.length === 0) {
-      wsAfiliaciones.mergeCells('A6:E6');
+      wsAfiliaciones.mergeCells('A6:F6');
       const emptyCell = wsAfiliaciones.getCell('A6');
       emptyCell.value = 'No se registraron afiliaciones en el período seleccionado.';
       emptyCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -220,12 +243,13 @@ export class AffiliationsReportService {
           item.identityCard,
           item.fullName,
           item.planName,
+          item.advisorName,
           item.actionDateFormatted,
         ];
-        for (let c = 1; c <= 5; c++) {
+        for (let c = 1; c <= 6; c++) {
           const cell = row.getCell(c);
           applyDataCellStyle(cell);
-          if (c === 1 || c === 2 || c === 5) {
+          if (c === 1 || c === 2 || c === 6) {
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
           } else {
             cell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -236,7 +260,7 @@ export class AffiliationsReportService {
       }
     }
 
-    this.autoFitColumnWidths(wsAfiliaciones, 5);
+    this.autoFitColumnWidths(wsAfiliaciones, 6);
 
     // ─────────────────────────────────────────────────────────
     // Pestaña 2: Desafiliaciones
@@ -253,7 +277,7 @@ export class AffiliationsReportService {
       data.endDateFormatted,
       data.generatedAt,
       `Total de Desafiliaciones: ${data.totalDisaffiliations}`,
-      6,
+      7,
     );
 
     // Encabezados de columnas
@@ -263,10 +287,11 @@ export class AffiliationsReportService {
       'Cédula de Identidad',
       'Nombre del Desafiliado',
       'Plan de Salud',
+      'Asesor',
       'Fecha de Desafiliación',
       'Motivo / Razón',
     ];
-    for (let c = 1; c <= 6; c++) {
+    for (let c = 1; c <= 7; c++) {
       applyTableHeaderStyle(desafHeaderRow.getCell(c));
     }
     desafHeaderRow.height = 24;
@@ -274,7 +299,7 @@ export class AffiliationsReportService {
     // Filas de datos
     let desafCurrentRow = 6;
     if (data.disaffiliations.length === 0) {
-      wsDesafiliaciones.mergeCells('A6:F6');
+      wsDesafiliaciones.mergeCells('A6:G6');
       const emptyCell = wsDesafiliaciones.getCell('A6');
       emptyCell.value = 'No se registraron desafiliaciones en el período seleccionado.';
       emptyCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -289,13 +314,14 @@ export class AffiliationsReportService {
           item.identityCard,
           item.fullName,
           item.planName,
+          item.advisorName,
           item.actionDateFormatted,
           item.reason,
         ];
-        for (let c = 1; c <= 6; c++) {
+        for (let c = 1; c <= 7; c++) {
           const cell = row.getCell(c);
           applyDataCellStyle(cell);
-          if (c === 1 || c === 2 || c === 5) {
+          if (c === 1 || c === 2 || c === 6) {
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
           } else {
             cell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -306,7 +332,7 @@ export class AffiliationsReportService {
       }
     }
 
-    this.autoFitColumnWidths(wsDesafiliaciones, 6);
+    this.autoFitColumnWidths(wsDesafiliaciones, 7);
 
     return finishWorkbook(workbook);
   }

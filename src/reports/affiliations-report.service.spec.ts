@@ -6,6 +6,7 @@ import { AffiliationsReportService } from './affiliations-report.service';
 import { AffiliationHistory } from '../contracts/entities/affiliation-history.entity';
 import { AffiliationAction } from '../contracts/enums/affiliation-action.enum';
 import { PdfService } from '../pdf/services/pdf.service';
+import { Advisor } from '../advisors/entities/advisor.entity';
 
 describe('AffiliationsReportService', () => {
   let service: AffiliationsReportService;
@@ -14,11 +15,30 @@ describe('AffiliationsReportService', () => {
 
   const mockHistories: Partial<AffiliationHistory>[] = [
     {
+      id: 'h2',
+      action: AffiliationAction.AFILIACION,
+      actionDate: new Date('2026-02-15T10:00:00Z'),
+      reason: null,
+      contract: {
+        code: 'SIR-2026-002',
+        advisor: { name: 'Maria Asesora', codeNumber: 2, code: '002' } as unknown as Advisor,
+      } as AffiliationHistory['contract'],
+      person: {
+        name: 'Pedro Gomez',
+        typeIdentityCard: 'V',
+        identityCard: '99887766',
+      } as AffiliationHistory['person'],
+      plan: { name: 'Plan Premium' } as AffiliationHistory['plan'],
+    },
+    {
       id: 'h1',
       action: AffiliationAction.AFILIACION,
       actionDate: new Date('2026-02-10T12:00:00Z'),
       reason: null,
-      contract: { code: 'SIR-2026-001' } as AffiliationHistory['contract'],
+      contract: {
+        code: 'SIR-2026-001',
+        advisor: { name: 'Carlos Asesor', codeNumber: 1, code: '001' } as unknown as Advisor,
+      } as AffiliationHistory['contract'],
       person: {
         name: 'Juan Perez',
         typeIdentityCard: 'V',
@@ -27,11 +47,14 @@ describe('AffiliationsReportService', () => {
       plan: { name: 'Plan Clásico' } as AffiliationHistory['plan'],
     },
     {
-      id: 'h2',
+      id: 'h3',
       action: AffiliationAction.DESAFILIACION,
-      actionDate: new Date('2026-02-15T15:30:00Z'),
+      actionDate: new Date('2026-02-18T15:30:00Z'),
       reason: 'Solicitud del titular',
-      contract: { code: 'SIR-2026-002' } as AffiliationHistory['contract'],
+      contract: {
+        code: 'SIR-2026-003',
+        advisor: null,
+      } as AffiliationHistory['contract'],
       person: {
         name: 'Maria Lopez',
         typeIdentityCard: 'V',
@@ -47,6 +70,7 @@ describe('AffiliationsReportService', () => {
       where: vi.fn().mockReturnThis(),
       andWhere: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
+      addOrderBy: vi.fn().mockReturnThis(),
       getMany: vi.fn().mockResolvedValue(mockHistories as AffiliationHistory[]),
     } as unknown as SelectQueryBuilder<AffiliationHistory>;
 
@@ -105,24 +129,32 @@ describe('AffiliationsReportService', () => {
   });
 
   describe('getReportData', () => {
-    it('debe clasificar correctamente afiliaciones y desafiliaciones', async () => {
+    it('debe clasificar correctamente afiliaciones y desafiliaciones con asesor y ordenadas por número de contrato', async () => {
       const result = await service.getReportData('2026-02-01', '2026-02-28');
 
-      expect(result.totalAffiliations).toBe(1);
+      expect(result.totalAffiliations).toBe(2);
       expect(result.totalDisaffiliations).toBe(1);
+
+      // Verificamos que se ordenaron por número de contrato ascendente
       expect(result.affiliations[0].contractCode).toBe('SIR-2026-001');
       expect(result.affiliations[0].fullName).toBe('Juan Perez');
       expect(result.affiliations[0].identityCard).toBe('V-12345678');
       expect(result.affiliations[0].planName).toBe('Plan Clásico');
+      expect(result.affiliations[0].advisorName).toBe('Carlos Asesor (001)');
 
-      expect(result.disaffiliations[0].contractCode).toBe('SIR-2026-002');
+      expect(result.affiliations[1].contractCode).toBe('SIR-2026-002');
+      expect(result.affiliations[1].fullName).toBe('Pedro Gomez');
+      expect(result.affiliations[1].advisorName).toBe('Maria Asesora (002)');
+
+      expect(result.disaffiliations[0].contractCode).toBe('SIR-2026-003');
       expect(result.disaffiliations[0].fullName).toBe('Maria Lopez');
       expect(result.disaffiliations[0].reason).toBe('Solicitud del titular');
+      expect(result.disaffiliations[0].advisorName).toBe('Sin asesor');
     });
   });
 
   describe('generateExcel', () => {
-    it('debe generar un Buffer de Excel válido con ambas pestañas', async () => {
+    it('debe generar un Buffer de Excel válido con ambas pestañas incluyendo la columna Asesor', async () => {
       const buffer = await service.generateExcel('2026-02-01', '2026-02-28');
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThan(0);
@@ -136,7 +168,7 @@ describe('AffiliationsReportService', () => {
       expect(pdfService.generatePdf).toHaveBeenCalledWith(
         'affiliations-report',
         expect.objectContaining({
-          totalAffiliations: 1,
+          totalAffiliations: 2,
           totalDisaffiliations: 1,
           startDate: '2026-02-01',
           endDate: '2026-02-28',

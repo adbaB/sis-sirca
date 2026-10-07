@@ -113,8 +113,8 @@ export class ContractPdfService {
       const titularData = this.buildTitularData(titularCp, referenceDate);
 
       // Find primary plan
-      const planPerson = fullContract.contractPersons.find((cp) => cp.person?.plan)?.person;
-      const contractPlan = planPerson?.plan;
+      const primaryPlanCp = fullContract.contractPersons.find((cp) => cp.plan || cp.person?.plan);
+      const contractPlan = primaryPlanCp?.plan || primaryPlanCp?.person?.plan || null;
       const planName = contractPlan?.name || '';
 
       const beneficiaries = this.buildBeneficiariesList(
@@ -125,7 +125,7 @@ export class ContractPdfService {
       );
       const emptyRows = this.buildEmptyRows(beneficiaries.length);
       const healthQuestions = this.buildHealthQuestions(fullContract.contractPersons);
-      const titularRow = this.buildTitularRow(titularCp, contractPlan, referenceDate);
+      const titularRow = this.buildTitularRow(titularCp, referenceDate);
       const beneficiariesRow = this.buildBeneficiariesSummary(
         affiliateCps,
         titularCp,
@@ -249,7 +249,7 @@ export class ContractPdfService {
         ? beneficiariesCps
         : affiliateCps.length > 0
           ? affiliateCps
-          : titularCp
+          : titularCp && (titularCp.plan || titularCp.person?.plan)
             ? [titularCp]
             : [];
 
@@ -328,11 +328,11 @@ export class ContractPdfService {
 
   private buildTitularRow(
     titularCp: ContractPerson | undefined,
-    contractPlan?: Plan | null,
     referenceDate?: Date | string | null,
   ): TitularSummaryRow | null {
     if (!titularCp || !titularCp.person) return null;
-    const titularPlan = titularCp.plan || titularCp.person?.plan || contractPlan;
+    const titularPlan = titularCp.plan || titularCp.person?.plan;
+    if (!titularPlan) return null;
     return {
       name: titularCp.person.name,
       typeIdentityCard: titularCp.person.typeIdentityCard,
@@ -341,14 +341,14 @@ export class ContractPdfService {
         withUnitForYears: true,
         referenceDate,
       }),
-      planName: titularPlan?.name || 'TITULAR',
-      coverage: titularPlan?.coverage
+      planName: titularPlan.name,
+      coverage: titularPlan.coverage
         ? Number(titularPlan.coverage).toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })
         : '0.00',
-      monthlyCost: titularPlan?.amount ? Number(titularPlan.amount).toFixed(2) : '0.00',
+      monthlyCost: titularPlan.amount ? Number(titularPlan.amount).toFixed(2) : '0.00',
     };
   }
 
