@@ -34,6 +34,7 @@ import { StatisticsModule } from './statistics/statistics.module';
 import { UsersModule } from './users/users.module';
 import { PortfoliosModule } from './portfolios/portfolios.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { EventualitiesModule } from './eventualities/eventualities.module';
 
 interface RequestWithUser extends IncomingMessage {
   user?: { userId?: string; roleId?: string };
@@ -73,6 +74,7 @@ interface RequestWithUser extends IncomingMessage {
     ReportsModule,
     PortfoliosModule,
     SystemSettingsModule,
+    EventualitiesModule,
     LoggerModule.forRootAsync({
       inject: [config.KEY],
       useFactory: (configService: ReturnType<typeof config>) => {

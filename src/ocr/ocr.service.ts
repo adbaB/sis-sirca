@@ -65,7 +65,7 @@ export class OcrService {
         imageUrl = `data:image/jpeg;base64,${base64Image}`;
       }
 
-      this.logger.log('Sending image to OpenRouter (openai/gpt-4o)...');
+      this.logger.log('Sending image to OpenRouter (anthropic/claude-sonnet-5.5)...');
 
       const prompt = `Extrae los datos del comprobante de pago adjunto. Puede ser una transferencia bancaria venezolana O un pago Zelle desde un banco estadounidense.
 
@@ -167,7 +167,7 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
 
       const completion = await this.openai.chat.completions.create(
         {
-          model: 'openai/gpt-4o',
+          model: 'anthropic/claude-sonnet-5.5',
           messages: [
             {
               role: 'system',

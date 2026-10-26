@@ -41,6 +41,80 @@ export class ContractVerificationService {
     const person = await this.personsService.findByIdentityCard(cleanNumber, typeIdentityCard);
 
     if (!person) {
+      if (typeIdentityCard === TypeIdentityCard.PN && !cleanNumber.includes('-')) {
+        const rawCandidates = await this.personsService.findByIdentityCardOnly(cleanNumber);
+        const candidates: Person[] = Array.isArray(rawCandidates)
+          ? rawCandidates
+          : rawCandidates
+            ? [rawCandidates]
+            : [];
+
+        if (candidates.length > 0) {
+          for (const candidate of candidates) {
+            if (
+              candidate.typeIdentityCard === typeIdentityCard &&
+              candidate.identityCard === cleanNumber
+            ) {
+              continue;
+            }
+            const hasContracts = await this.contractPersonsRepository.count({
+              where: [
+                { person: { id: candidate.id }, isBillingOwner: true },
+                { person: { id: candidate.id }, role: PersonRole.TITULAR },
+              ],
+            });
+            if (hasContracts > 0) {
+              return this.verifyPersonAffiliation(
+                candidate.typeIdentityCard,
+                candidate.identityCard,
+              );
+            }
+          }
+          const validCandidates = candidates.filter(
+            (c) => !(c.typeIdentityCard === typeIdentityCard && c.identityCard === cleanNumber),
+          );
+          if (validCandidates.length > 0) {
+            const preferred =
+              validCandidates.find((c) => c.typeIdentityCard === TypeIdentityCard.V) ??
+              validCandidates[0];
+            return this.verifyPersonAffiliation(preferred.typeIdentityCard, preferred.identityCard);
+          }
+        }
+
+        const pnPersons = await this.personsService.findPNsByTitularIdentityCard(cleanNumber);
+        if (Array.isArray(pnPersons) && pnPersons.length > 0) {
+          const cps = await this.contractPersonsRepository.find({
+            where: { person: { id: In(pnPersons.map((p) => p.id)) } },
+            relations: ['contract'],
+          });
+          const safeCps = Array.isArray(cps) ? cps : [];
+          const contractIds = Array.from(
+            new Set(
+              safeCps.map((cp) => cp?.contract?.id).filter((id): id is string => Boolean(id)),
+            ),
+          );
+          if (contractIds.length > 0) {
+            const ownerCp = await this.contractPersonsRepository.findOne({
+              where: [
+                { contract: { id: In(contractIds) }, isBillingOwner: true },
+                { contract: { id: In(contractIds) }, role: PersonRole.TITULAR },
+              ],
+              relations: ['person'],
+            });
+            if (
+              ownerCp?.person &&
+              (ownerCp.person.typeIdentityCard !== typeIdentityCard ||
+                ownerCp.person.identityCard !== cleanNumber)
+            ) {
+              return this.verifyPersonAffiliation(
+                ownerCp.person.typeIdentityCard,
+                ownerCp.person.identityCard,
+              );
+            }
+          }
+        }
+      }
+
       throw new NotFoundException(
         `No se encontró ninguna persona registrada con la cédula ${typeIdentityCard}-${cleanNumber}.`,
       );
@@ -95,6 +169,8 @@ export class ContractVerificationService {
         isEligible,
         affiliationDate: cp.affiliationDate ?? cp.contract.affiliationDate,
         planName: cp.plan?.name ?? cp.person?.plan?.name ?? null,
+        contractPersonId: cp.id,
+        personId: person.id,
       });
     }
 
@@ -185,6 +261,7 @@ export class ContractVerificationService {
           titular: titularPerson
             ? {
                 id: titularPerson.id,
+                contractPersonId: titularCp?.id,
                 name: titularPerson.name,
                 typeIdentityCard: titularPerson.typeIdentityCard,
                 identityCard: titularPerson.identityCard,
@@ -349,6 +426,36 @@ export class ContractVerificationService {
     // 2b. Si el usuario buscó con prefijo PN explícito pero omitió el correlativo (ej. "PN-12345678")
     if (type === TypeIdentityCard.PN && !cleanNumber.includes('-')) {
       const pnPersons = await this.personsService.findPNsByTitularIdentityCard(cleanNumber);
+      if (Array.isArray(pnPersons) && pnPersons.length > 0) {
+        const cps = await this.contractPersonsRepository.find({
+          where: { person: { id: In(pnPersons.map((p) => p.id)) } },
+          relations: ['contract'],
+        });
+        const safeCps = Array.isArray(cps) ? cps : [];
+        const contractIds = Array.from(
+          new Set(safeCps.map((cp) => cp?.contract?.id).filter((id): id is string => Boolean(id))),
+        );
+        if (contractIds.length > 0) {
+          const ownerCp = await this.contractPersonsRepository.findOne({
+            where: [
+              { contract: { id: In(contractIds) }, isBillingOwner: true },
+              { contract: { id: In(contractIds) }, role: PersonRole.TITULAR },
+            ],
+            relations: ['person'],
+          });
+          if (ownerCp?.person) {
+            try {
+              return await this.verifyPersonAffiliation(
+                ownerCp.person.typeIdentityCard,
+                ownerCp.person.identityCard,
+              );
+            } catch {
+              // Continuar con fallback
+            }
+          }
+        }
+      }
+
       if (pnPersons.length === 1) {
         return this.verifyPersonAffiliation(TypeIdentityCard.PN, pnPersons[0].identityCard);
       } else if (pnPersons.length > 1) {
@@ -400,9 +507,39 @@ export class ContractVerificationService {
       return this.verifyPersonAffiliation(preferred.typeIdentityCard, preferred.identityCard);
     }
 
-    // 2d. Fallback para cédulas sin guión que pudieran tener un PN asociado único
+    // 2d. Fallback para cédulas sin guión que pudieran tener un PN asociado único o múltiple
     if (!cleanNumber.includes('-')) {
       const pnPersons = await this.personsService.findPNsByTitularIdentityCard(cleanNumber);
+      if (Array.isArray(pnPersons) && pnPersons.length > 0) {
+        const cps = await this.contractPersonsRepository.find({
+          where: { person: { id: In(pnPersons.map((p) => p.id)) } },
+          relations: ['contract'],
+        });
+        const safeCps = Array.isArray(cps) ? cps : [];
+        const contractIds = Array.from(
+          new Set(safeCps.map((cp) => cp?.contract?.id).filter((id): id is string => Boolean(id))),
+        );
+        if (contractIds.length > 0) {
+          const ownerCp = await this.contractPersonsRepository.findOne({
+            where: [
+              { contract: { id: In(contractIds) }, isBillingOwner: true },
+              { contract: { id: In(contractIds) }, role: PersonRole.TITULAR },
+            ],
+            relations: ['person'],
+          });
+          if (ownerCp?.person) {
+            try {
+              return await this.verifyPersonAffiliation(
+                ownerCp.person.typeIdentityCard,
+                ownerCp.person.identityCard,
+              );
+            } catch {
+              // Continuar
+            }
+          }
+        }
+      }
+
       if (pnPersons.length === 1) {
         return this.verifyPersonAffiliation(TypeIdentityCard.PN, pnPersons[0].identityCard);
       }

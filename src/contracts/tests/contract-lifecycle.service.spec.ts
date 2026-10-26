@@ -8,6 +8,7 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractAffiliationService } from '../services/contract-affiliation.service';
 import { ContractLifecycleService } from '../services/contract-lifecycle.service';
 import { ContractReactivationService } from '../services/contract-reactivation.service';
+import { CoveragePeriodService } from '../services/coverage-period.service';
 import { InactivateContractDto } from '../dto/inactivate-contract.dto';
 import { UpdateContractDto } from '../dto/update-contract.dto';
 import { RenewContractDto } from '../dto/renew-contract.dto';
@@ -69,6 +70,13 @@ describe('ContractLifecycleService', () => {
       providers: [
         ContractLifecycleService,
         ContractReactivationService,
+        {
+          provide: CoveragePeriodService,
+          useValue: {
+            closeCurrentAndOpenNewPeriod: jest.fn().mockResolvedValue(undefined),
+            getOrCreateActivePeriod: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           provide: ContractAffiliationService,
           useValue: {

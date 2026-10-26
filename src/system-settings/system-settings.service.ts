@@ -78,6 +78,22 @@ export class SystemSettingsService {
     return saved;
   }
 
+  async set(key: string, value: string, description?: string): Promise<SystemSetting> {
+    let setting = await this.repository.findOne({ where: { key } });
+    if (!setting) {
+      setting = this.repository.create({ key, value, description: description ?? key });
+    } else {
+      setting.value = value;
+      if (description !== undefined) {
+        setting.description = description;
+      }
+    }
+
+    const saved = await this.repository.save(setting);
+    this.cache.set(key, saved.value);
+    return saved;
+  }
+
   clearCache(key?: string): void {
     if (key) {
       this.cache.delete(key);

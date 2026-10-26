@@ -16,8 +16,15 @@ export class PdfService {
   async generatePdf(
     templateName: string,
     data: Record<string, unknown>,
-    options?: { landscape?: boolean },
+    options?: {
+      landscape?: boolean;
+      margin?: { top?: string; right?: string; bottom?: string; left?: string };
+      displayHeaderFooter?: boolean;
+      headerTemplate?: string;
+      footerTemplate?: string;
+    },
   ): Promise<Buffer> {
+    let browser: puppeteer.Browser | null = null;
     try {
       // 1. Read the template file.
       //    In production (node dist/) the file lives in dist/pdf/templates/.
@@ -50,7 +57,7 @@ export class PdfService {
       const finalHtml = template(data);
 
       // 3. Launch Puppeteer
-      const browser = await puppeteer.launch({
+      browser = await puppeteer.launch({
         headless: true,
         args: [
           '--no-sandbox',
@@ -73,19 +80,24 @@ export class PdfService {
         format: 'Letter',
         landscape: options?.landscape ?? false,
         printBackground: true,
-        margin: { top: '20px', right: '20px', bottom: '50px', left: '20px' },
-        displayHeaderFooter: true,
-        headerTemplate: '<div></div>',
+        margin: options?.margin ?? { top: '20px', right: '20px', bottom: '50px', left: '20px' },
+        displayHeaderFooter: options?.displayHeaderFooter ?? true,
+        headerTemplate: options?.headerTemplate ?? '<div></div>',
         footerTemplate:
+          options?.footerTemplate ??
           '<div style="width: 100%; text-align: right; padding-right: 20px; font-size: 8px; color: #555;">Página <span class="pageNumber"></span> de <span class="totalPages"></span></div>',
       });
-
-      await browser.close();
 
       return Buffer.from(pdfBuffer);
     } catch (error) {
       this.logger.error(`Error generating PDF for template ${templateName}:`, error);
       throw error;
+    } finally {
+      if (browser) {
+        await browser.close().catch((closeErr) => {
+          this.logger.error('Error closing Puppeteer browser instance:', closeErr);
+        });
+      }
     }
   }
 }

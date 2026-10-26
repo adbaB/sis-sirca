@@ -89,5 +89,6 @@ const flowHandlersProvider = {
     FetchPaymentDetailHandler,
     flowHandlersProvider,
   ],
+  exports: [MetaWhatsappService],
 })
 export class ChatbotModule {}

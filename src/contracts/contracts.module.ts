@@ -26,6 +26,9 @@ import { ContractVerificationService } from './services/contract-verification.se
 import { ContractsService } from './services/contracts.service';
 import { HealthExclusionsService } from './services/health-exclusions.service';
 
+import { ContractCoveragePeriod } from './entities/contract-coverage-period.entity';
+import { CoveragePeriodService } from './services/coverage-period.service';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -34,6 +37,7 @@ import { HealthExclusionsService } from './services/health-exclusions.service';
       AffiliationHistory,
       HealthDeclaration,
       ContractPersonExclusion,
+      ContractCoveragePeriod,
     ]),
     PersonsModule,
     InvoiceModule,
@@ -57,7 +61,8 @@ import { HealthExclusionsService } from './services/health-exclusions.service';
     ContractSuspensionCron,
     ContractReactivationCron,
     ContractInactivationCron,
+    CoveragePeriodService,
   ],
-  exports: [ContractsService, HealthExclusionsService, TypeOrmModule],
+  exports: [ContractsService, HealthExclusionsService, CoveragePeriodService, TypeOrmModule],
 })
 export class ContractsModule {}

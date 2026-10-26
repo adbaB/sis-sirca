@@ -36,6 +36,8 @@ export interface BeneficiaryContractItem {
   isEligible: boolean;
   affiliationDate: Date;
   planName: string | null;
+  contractPersonId?: string;
+  personId?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ export interface OwnerContractItem {
   isBillingOwner: boolean;
   titular: {
     id: string;
+    contractPersonId?: string;
     name: string;
     typeIdentityCard: TypeIdentityCard;
     identityCard: string;

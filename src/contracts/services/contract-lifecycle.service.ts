@@ -21,6 +21,8 @@ import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 
+import { CoveragePeriodService } from './coverage-period.service';
+
 @Injectable()
 export class ContractLifecycleService {
   private readonly logger = new Logger(ContractLifecycleService.name);
@@ -35,6 +37,7 @@ export class ContractLifecycleService {
     private readonly dataSource: DataSource,
     private readonly reactivationService: ContractReactivationService,
     private readonly affiliationService: ContractAffiliationService,
+    private readonly coveragePeriodService: CoveragePeriodService,
   ) {}
 
   /**
@@ -218,6 +221,14 @@ export class ContractLifecycleService {
     if (affiliatesToUpdate.length > 0) {
       await this.affiliationService.recalculateMonthlyAmount(id, manager);
     }
+
+    // Cerrar período de cobertura anterior y aperturar el nuevo con 100% de saldo para el nuevo año
+    await this.coveragePeriodService.closeCurrentAndOpenNewPeriod(
+      contract.id,
+      new Date(newStartDate),
+      new Date(newExpirationDate),
+      manager,
+    );
 
     this.logger.log(
       `Contract ${contract.code} renewed: startDate=${newStartDate}, expirationDate=${newExpirationDate}`,
