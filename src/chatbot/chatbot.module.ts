@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ChatbotController } from './chatbot.controller';
 import { ChatbotAnalyticsController } from './chatbot-analytics.controller';
 import { ChatbotService } from './services/chatbot.service';
@@ -6,6 +6,7 @@ import { AwsModule } from '../aws/aws.module';
 import { EmailModule } from '../email/email.module';
 import { OcrModule } from '../ocr/ocr.module';
 import { PersonsModule } from '../persons/persons.module';
+import { EventualitiesModule } from '../eventualities/eventualities.module';
 import { MetaWhatsappService } from './services/meta-whatsapp.service';
 import { ChatbotStateService } from './services/chatbot-state.service';
 import { ChatbotPaymentService } from './services/chatbot-payment.service';
@@ -64,6 +65,7 @@ const flowHandlersProvider = {
     PaymentModule,
     PersonsModule,
     ExchangeRateModule,
+    forwardRef(() => EventualitiesModule),
     TypeOrmModule.forFeature([ChatbotInteraction, Invoice]),
   ],
   controllers: [ChatbotController, ChatbotAnalyticsController],

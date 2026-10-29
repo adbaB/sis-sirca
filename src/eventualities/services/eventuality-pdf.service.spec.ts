@@ -5,11 +5,15 @@ import { PdfService } from '../../pdf/services/pdf.service';
 import { Person } from '../../persons/entities/person.entity';
 import { ContractPerson } from '../../contracts/entities/contract-person.entity';
 import { Eventuality, EventualityStatus, EventualityType } from '../entities/eventuality.entity';
+import { EventualityTreatmentItem } from '../entities/eventuality-treatment-item.entity';
+import { EventualityServiceRequest } from '../entities/eventuality-service-request.entity';
 import { EventualityPdfService } from './eventuality-pdf.service';
 
 describe('EventualityPdfService', () => {
   let service: EventualityPdfService;
   let eventualityRepo: { findOne: ReturnType<typeof vi.fn> };
+  let treatmentItemRepo: { find: ReturnType<typeof vi.fn> };
+  let serviceRequestRepo: { find: ReturnType<typeof vi.fn> };
   let pdfService: { generatePdf: ReturnType<typeof vi.fn> };
 
   const mockEventuality: Partial<Eventuality> = {
@@ -45,6 +49,12 @@ describe('EventualityPdfService', () => {
     eventualityRepo = {
       findOne: vi.fn(),
     };
+    treatmentItemRepo = {
+      find: vi.fn().mockResolvedValue([]),
+    };
+    serviceRequestRepo = {
+      find: vi.fn().mockResolvedValue([]),
+    };
     pdfService = {
       generatePdf: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 mock buffer')),
     };
@@ -55,6 +65,14 @@ describe('EventualityPdfService', () => {
         {
           provide: getRepositoryToken(Eventuality),
           useValue: eventualityRepo,
+        },
+        {
+          provide: getRepositoryToken(EventualityTreatmentItem),
+          useValue: treatmentItemRepo,
+        },
+        {
+          provide: getRepositoryToken(EventualityServiceRequest),
+          useValue: serviceRequestRepo,
         },
         {
           provide: PdfService,

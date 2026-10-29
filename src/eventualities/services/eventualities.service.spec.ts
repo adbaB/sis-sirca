@@ -14,6 +14,10 @@ import {
 } from '../entities/eventuality-medical-report.entity';
 import { EventualityMovement } from '../entities/eventuality-movement.entity';
 import { EventualityProviderInvoice } from '../entities/eventuality-provider-invoice.entity';
+import { EventualityTreatmentItem } from '../entities/eventuality-treatment-item.entity';
+import { EventualityServiceRequest } from '../entities/eventuality-service-request.entity';
+import { Doctor } from '../../doctors/entities/doctor.entity';
+import { MedicalService } from '../../plans/entities/medical-service.entity';
 import { Person } from '../../persons/entities/person.entity';
 import { ContractPerson } from '../../contracts/entities/contract-person.entity';
 import { ContractCoveragePeriod } from '../../contracts/entities/contract-coverage-period.entity';
@@ -176,6 +180,7 @@ describe('EventualitiesService - Emergencias', () => {
           useValue: {
             find: jest.fn(),
             save: jest.fn(),
+            delete: jest.fn().mockResolvedValue({ affected: 0 }),
           },
         },
         {
@@ -193,6 +198,34 @@ describe('EventualitiesService - Emergencias', () => {
         },
         {
           provide: getRepositoryToken(ContractPerson),
+          useValue: {
+            findOne: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(EventualityTreatmentItem),
+          useValue: {
+            find: jest.fn().mockResolvedValue([]),
+            save: jest.fn(),
+            create: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(EventualityServiceRequest),
+          useValue: {
+            find: jest.fn().mockResolvedValue([]),
+            save: jest.fn(),
+            create: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(Doctor),
+          useValue: {
+            findOne: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(MedicalService),
           useValue: {
             findOne: jest.fn(),
           },
@@ -232,6 +265,7 @@ describe('EventualitiesService - Emergencias', () => {
           provide: MetaWhatsappService,
           useValue: {
             sendMessage: jest.fn().mockResolvedValue(undefined),
+            sendTemplateMessage: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -430,7 +464,20 @@ describe('EventualitiesService - Emergencias', () => {
       expect(result.claimNumber).toBeNull();
       expect(result.reservedCoverageAmount).toBe(0);
       expect(coveragePeriodService.lockCoverageAmount).not.toHaveBeenCalled();
-      expect(metaWhatsappService.sendMessage).toHaveBeenCalled();
+      expect(metaWhatsappService.sendTemplateMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({
+          cobertura_restante: expect.any(String),
+          razon_ingreso: expect.any(String),
+        }),
+        undefined,
+        undefined,
+        expect.arrayContaining([
+          expect.stringContaining('APPROVE_'),
+          expect.stringContaining('REJECT_'),
+        ]),
+      );
     });
   });
 
@@ -912,6 +959,8 @@ describe('EventualitiesService - Emergencias', () => {
               find: jest.fn().mockResolvedValue([]),
               findOne: jest.fn().mockResolvedValue(null),
               delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              create: jest.fn().mockImplementation((d) => d),
+              save: jest.fn().mockImplementation(async (d) => d),
             };
           }),
         };
@@ -934,6 +983,7 @@ describe('EventualitiesService - Emergencias', () => {
     it('should throw BadRequestException if no provider invoice has been registered', async () => {
       const mockEv = {
         id: 'eventuality-1',
+        type: EventualityType.EMERGENCY,
         status: EventualityStatus.UNDER_ADMIN_REVIEW,
         extractionDetails: [
           {
@@ -949,7 +999,10 @@ describe('EventualitiesService - Emergencias', () => {
         const mgr = {
           getRepository: jest.fn().mockImplementation((entity) => {
             if (entity === Eventuality) {
-              return { findOne: jest.fn().mockResolvedValue(mockEv) };
+              return {
+                findOne: jest.fn().mockResolvedValue(mockEv),
+                save: jest.fn().mockImplementation(async (d) => d),
+              };
             }
             if (entity === EventualityExtractionDetail) {
               return {
@@ -960,6 +1013,7 @@ describe('EventualitiesService - Emergencias', () => {
                     totalCost: 10,
                   },
                 ]),
+                save: jest.fn().mockImplementation(async (d) => d),
               };
             }
             if (entity === EventualityProviderInvoice) {
@@ -970,6 +1024,9 @@ describe('EventualitiesService - Emergencias', () => {
             return {
               find: jest.fn().mockResolvedValue([]),
               findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              create: jest.fn().mockImplementation((d) => d),
+              save: jest.fn().mockImplementation(async (d) => d),
             };
           }),
         };
@@ -1120,6 +1177,7 @@ describe('EventualitiesService - Emergencias', () => {
       expect(config.consumptionThresholdPercentage).toBe(80);
       expect(config.notificationPhones).toEqual(['584141234567', '584249876543']);
       expect(config.enabled).toBe(true);
+      expect(config.templateName).toBe('alerta_cobertura_paciente');
     });
 
     it('should update consumption alert config', async () => {
@@ -1127,6 +1185,7 @@ describe('EventualitiesService - Emergencias', () => {
         consumptionThresholdPercentage: 85,
         notificationPhones: ['584120001122'],
         enabled: false,
+        templateName: 'custom_coverage_alert',
       });
 
       expect(updated).toBeDefined();

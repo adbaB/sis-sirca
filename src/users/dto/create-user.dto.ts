@@ -6,7 +6,9 @@ import {
   IsString,
   IsUUID,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateUserDto {
   @IsEmail({}, { message: 'El correo electrónico no es válido.' })
@@ -18,13 +20,23 @@ export class CreateUserDto {
   @MinLength(6, { message: 'La contraseña debe tener al menos 6 caracteres.' })
   password: string;
 
-  @IsUUID('4', { message: 'El roleId debe ser un UUID válido.' })
+  @IsUUID('all', { message: 'El roleId debe ser un UUID válido.' })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined && value !== '')
+  @Transform(({ value }) => (value === '' ? null : value))
   roleId?: string;
 
-  @IsUUID('4', { message: 'El advisorId debe ser un UUID válido.' })
+  @IsUUID('all', { message: 'El advisorId debe ser un UUID válido.' })
   @IsOptional()
-  advisorId?: string;
+  @ValidateIf((_, value) => value !== null && value !== undefined && value !== '')
+  @Transform(({ value }) => (value === '' ? null : value))
+  advisorId?: string | null;
+
+  @IsUUID('all', { message: 'El doctorId debe ser un UUID válido.' })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined && value !== '')
+  @Transform(({ value }) => (value === '' ? null : value))
+  doctorId?: string | null;
 
   @IsBoolean()
   @IsOptional()

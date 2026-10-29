@@ -13,6 +13,14 @@ import {
 } from '../entities/eventuality-medical-report.entity';
 import { EventualityMovement, MovementCategory } from '../entities/eventuality-movement.entity';
 import { EventualityProviderInvoice } from '../entities/eventuality-provider-invoice.entity';
+import { EventualityTreatmentItem } from '../entities/eventuality-treatment-item.entity';
+import {
+  EventualityServiceRequest,
+  ServiceRequestStatus,
+} from '../entities/eventuality-service-request.entity';
+import { Doctor } from '../../doctors/entities/doctor.entity';
+import { MedicalService } from '../../plans/entities/medical-service.entity';
+import { User } from '../../users/entities/user.entity';
 import { Person } from '../../persons/entities/person.entity';
 import { ContractPerson } from '../../contracts/entities/contract-person.entity';
 import { ContractStatus } from '../../contracts/entities/contract.entity';
@@ -28,9 +36,20 @@ import {
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { MetaWhatsappService } from '../../chatbot/services/meta-whatsapp.service';
 import { normalizeWhatsappPhone } from '../../chatbot/utils/phone.util';
-import { formatToISODateString, getCaracasTodayJSDate } from '../../common/utils/date.util';
+import { WHATSAPP_TEMPLATES } from '../../chatbot/constants/whatsapp-templates.contants';
+import { DateTime } from 'luxon';
+import {
+  CARACAS_ZONE,
+  formatToISODateString,
+  getCaracasTodayJSDate,
+} from '../../common/utils/date.util';
 import { generateClaimNumber } from '../helpers/claim-number-generator.helper';
 import { CreateEmergencyDto } from '../dto/create-emergency.dto';
+import { CreateApsDto } from '../dto/create-aps.dto';
+import { CreateFromRequestsDto } from '../dto/create-from-requests.dto';
+import { CreateGeneralEventualityDto } from '../dto/create-general-eventuality.dto';
+import { SaveApsConsultationDto } from '../dto/save-aps-consultation.dto';
+import { FindServiceRequestsDto } from '../dto/find-service-requests.dto';
 import { UploadMedicalReportDto } from '../dto/upload-medical-report.dto';
 import { UpdateMedicalReportDataDto } from '../dto/update-medical-report-data.dto';
 import { UpdateExtractionDetailsDto } from '../dto/update-extraction-details.dto';
@@ -64,6 +83,14 @@ export class EventualitiesService {
     private readonly personRepo: Repository<Person>,
     @InjectRepository(ContractPerson)
     private readonly contractPersonRepo: Repository<ContractPerson>,
+    @InjectRepository(EventualityTreatmentItem)
+    private readonly treatmentItemRepo: Repository<EventualityTreatmentItem>,
+    @InjectRepository(EventualityServiceRequest)
+    private readonly serviceRequestRepo: Repository<EventualityServiceRequest>,
+    @InjectRepository(Doctor)
+    private readonly doctorRepo: Repository<Doctor>,
+    @InjectRepository(MedicalService)
+    private readonly medicalServiceRepo: Repository<MedicalService>,
     private readonly coveragePeriodService: CoveragePeriodService,
     private readonly systemSettingsService: SystemSettingsService,
     private readonly awsService: AwsService,
@@ -199,7 +226,7 @@ export class EventualitiesService {
         reservedCoverageAmount: lockedAmount,
         totalCost: estimatedCost,
         totalCoverageDeducted: lockedAmount,
-        notes: dto.notes,
+        notes: dto.admissionReason || dto.notes,
         parentEventualityId: dto.parentEventualityId,
       });
 
@@ -212,28 +239,29 @@ export class EventualitiesService {
 
     if (result.requiresApproval) {
       const alertConfig = await this.getConsumptionAlertConfig();
-      const initial = Number(result.coveragePeriod?.initialCoverage || 0);
-      const consumed =
-        Number(result.coveragePeriod?.consumedCoverage || 0) +
-        Number(result.coveragePeriod?.reservedCoverage || 0);
-      const cost = Number(result.totalCost || 0);
-      const coverageProj = Number((cost * (result.appliedFactor || 1)).toFixed(2));
-      const projectedPercentage =
-        initial > 0 ? (((consumed + coverageProj) / initial) * 100).toFixed(1) : '100.0';
+      const remainingCoverage = Number(result.coveragePeriod?.remainingCoverage || 0);
+      const admissionReason = dto.admissionReason || result.notes || 'No especificada';
 
-      const message =
-        `⚠️ ALERTA DE CONSUMO DE COBERTURA - SIRCA\n` +
-        `Se ha registrado una solicitud de Emergencia que supera el umbral configurado (${alertConfig.consumptionThresholdPercentage}%).\n\n` +
-        `• Paciente: ${result.person?.name ?? 'Afiliado'} (${result.person?.typeIdentityCard ? `${result.person.typeIdentityCard}-` : ''}${result.person?.identityCard ?? 'N/A'})\n` +
-        `• Clínica: ${result.clinicName}\n` +
-        `• Cobertura Inicial: $${initial.toFixed(2)}\n` +
-        `• Consumo Acumulado: $${consumed.toFixed(2)}\n` +
-        `• Costo Estimado: $${cost.toFixed(2)} (Cobertura proyectada: $${coverageProj.toFixed(2)})\n` +
-        `• Consumo Proyectado: ${projectedPercentage}%\n` +
-        `• ID Solicitud: ${result.id}\n\n` +
-        `Estado: PENDIENTE DE APROBACIÓN. No se generará nro de eventualidad hasta su aprobación.`;
+      const patientName = result.person?.name ?? 'Afiliado';
+      const patientIdCard = result.person?.identityCard
+        ? `${result.person?.typeIdentityCard ? `${result.person.typeIdentityCard}-` : ''}${result.person.identityCard}`
+        : 'N/A';
 
-      void this.sendWhatsappNotifications(alertConfig.notificationPhones, message);
+      const templateVariables: Record<string, string | number> = {
+        paciente: `${patientName} (${patientIdCard})`,
+        clinica: result.clinicName || 'N/A',
+        razon_ingreso: admissionReason,
+        cobertura_restante: `$${remainingCoverage.toFixed(2)}`,
+      };
+
+      const buttonPayloads = [`APPROVE_${result.id}`, `REJECT_${result.id}`];
+
+      void this.sendWhatsappTemplateNotifications(
+        alertConfig.notificationPhones,
+        alertConfig.templateName,
+        templateVariables,
+        buttonPayloads,
+      );
     }
 
     return result;
@@ -456,6 +484,26 @@ export class EventualitiesService {
     if (dto.dischargeDiagnosis !== undefined) report.dischargeDiagnosis = dto.dischargeDiagnosis;
     if (dto.reportDate !== undefined) report.reportDate = dto.reportDate;
     if (dto.reportTime !== undefined) report.reportTime = dto.reportTime;
+
+    if (dto.primaryCie10Code !== undefined) report.primaryCie10Code = dto.primaryCie10Code;
+    if (dto.secondaryCie10Codes !== undefined)
+      report.secondaryCie10Codes = dto.secondaryCie10Codes ?? [];
+    if (dto.reasonForConsultation !== undefined)
+      report.reasonForConsultation = dto.reasonForConsultation;
+    if (dto.currentIllness !== undefined) report.currentIllness = dto.currentIllness;
+    if (dto.physicalExam !== undefined) report.physicalExam = dto.physicalExam;
+    if (dto.generalTreatmentNotes !== undefined)
+      report.generalTreatmentNotes = dto.generalTreatmentNotes;
+    if (dto.doctorId !== undefined) {
+      report.doctorId = dto.doctorId;
+      if (dto.doctorId && !eventuality.doctorId) {
+        eventuality.doctorId = dto.doctorId;
+        await this.eventualityRepo.save(eventuality);
+      }
+    }
+    if (dto.signedAt !== undefined) {
+      report.signedAt = dto.signedAt ? new Date(dto.signedAt) : null;
+    }
 
     if (dto.medicalReportNotes !== undefined) {
       eventuality.medicalReportNotes = dto.medicalReportNotes;
@@ -1078,11 +1126,14 @@ export class EventualitiesService {
         );
       }
 
-      // 0. Validar existencia de factura fiscal de la clínica proveedora
+      // 0. Validar existencia de factura fiscal de la clínica proveedora (obligatoria para Emergencia y Hospitalización)
       const providerInvoices = await manager.getRepository(EventualityProviderInvoice).find({
         where: { eventualityId: id },
       });
-      if (!providerInvoices || providerInvoices.length === 0) {
+      const isInvoiceMandatory =
+        eventuality.type === EventualityType.EMERGENCY ||
+        eventuality.type === EventualityType.HOSPITALIZATION;
+      if (isInvoiceMandatory && (!providerInvoices || providerInvoices.length === 0)) {
         throw new BadRequestException(
           'Debe registrar al menos una factura fiscal del proveedor antes de liquidar la eventualidad.',
         );
@@ -1220,6 +1271,10 @@ export class EventualitiesService {
         'movements',
         'providerInvoices',
         'parentEventuality',
+        'doctor',
+        'treatmentItems',
+        'serviceRequests',
+        'childEventualities',
       ],
     });
 
@@ -1242,6 +1297,8 @@ export class EventualitiesService {
       .leftJoinAndSelect('cp.plan', 'plan')
       .leftJoinAndSelect('e.coveragePeriod', 'ccp')
       .leftJoinAndSelect('e.medicalReport', 'emr')
+      .leftJoinAndSelect('e.doctor', 'doc')
+      .leftJoinAndSelect('e.parentEventuality', 'parentEvt')
       .orderBy('e.createdAt', 'DESC');
 
     if (query.type) {
@@ -1404,6 +1461,11 @@ export class EventualitiesService {
     const phonesStr = (await this.systemSettingsService.get('EVENTUALITY_ALERT_PHONES', '')) || '';
     const enabledStr =
       (await this.systemSettingsService.get('EVENTUALITY_ALERT_ENABLED', 'true')) || 'true';
+    const templateName =
+      (await this.systemSettingsService.get(
+        'EVENTUALITY_ALERT_TEMPLATE',
+        WHATSAPP_TEMPLATES.LOW_COVERAGE_ALERT,
+      )) || WHATSAPP_TEMPLATES.LOW_COVERAGE_ALERT;
 
     const notificationPhones = phonesStr
       .split(',')
@@ -1414,6 +1476,7 @@ export class EventualitiesService {
       consumptionThresholdPercentage: threshold,
       notificationPhones,
       enabled: enabledStr.toLowerCase() !== 'false',
+      templateName,
     };
   }
 
@@ -1448,7 +1511,51 @@ export class EventualitiesService {
       );
     }
 
+    if (dto.templateName !== undefined) {
+      await this.systemSettingsService.set(
+        'EVENTUALITY_ALERT_TEMPLATE',
+        dto.templateName.trim(),
+        'Nombre de la plantilla de WhatsApp para alertas de cobertura de siniestros',
+      );
+    }
+
     return this.getConsumptionAlertConfig();
+  }
+
+  /**
+   * Envía notificaciones de WhatsApp vía plantilla a una lista de números.
+   * No propaga errores para no comprometer transacciones del negocio.
+   */
+  private async sendWhatsappTemplateNotifications(
+    phones: string[],
+    templateName: string,
+    variables: Record<string, string | number>,
+    buttonPayloads?: string[],
+  ): Promise<void> {
+    if (!phones || phones.length === 0) return;
+
+    for (const rawPhone of phones) {
+      const phone = normalizeWhatsappPhone(rawPhone);
+      if (!phone) {
+        this.logger.warn(`Número de teléfono inválido para WhatsApp: ${rawPhone}`);
+        continue;
+      }
+      try {
+        await this.metaWhatsappService.sendTemplateMessage(
+          phone,
+          templateName,
+          variables,
+          undefined,
+          undefined,
+          buttonPayloads,
+        );
+        this.logger.log(`Plantilla WhatsApp "${templateName}" enviada con éxito a ${phone}`);
+      } catch (error) {
+        this.logger.error(
+          `Error enviando plantilla WhatsApp "${templateName}" a ${phone}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 
   /**
@@ -1473,5 +1580,676 @@ export class EventualitiesService {
         );
       }
     }
+  }
+
+  /**
+   * Crea una eventualidad de tipo APS (Atención Primaria en Salud).
+   * Se inicia en estado DOCTOR_QUEUE para atención médica.
+   */
+  async createAps(dto: CreateApsDto): Promise<Eventuality> {
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const person = await manager.getRepository(Person).findOne({ where: { id: dto.personId } });
+      if (!person) {
+        throw new NotFoundException(`Persona con ID "${dto.personId}" no encontrada.`);
+      }
+
+      const cp = await manager.getRepository(ContractPerson).findOne({
+        where: { id: dto.contractPersonId },
+        relations: ['contract', 'plan', 'person', 'person.plan'],
+      });
+      if (!cp) {
+        throw new NotFoundException(`Afiliación con ID "${dto.contractPersonId}" no encontrada.`);
+      }
+
+      if (cp.person?.id !== person.id) {
+        throw new BadRequestException(
+          'La afiliación contractual no corresponde a la persona indicada.',
+        );
+      }
+
+      const contract = cp.contract;
+      if (!contract) {
+        throw new BadRequestException('La afiliación no tiene un contrato asociado.');
+      }
+
+      if (contract.status !== ContractStatus.ACTIVE) {
+        throw new BadRequestException(
+          `El contrato "${contract.code}" no se encuentra activo (estado: ${contract.status}). No se pueden aperturar eventualidades.`,
+        );
+      }
+
+      const period = await this.coveragePeriodService.getOrCreateActivePeriod(cp.id, manager);
+      if (Number(period.remainingCoverage) <= 0) {
+        throw new BadRequestException(
+          'El afiliado no posee cobertura disponible en su período anual vigente ($0.00 restante).',
+        );
+      }
+
+      const effectivePlan = cp.plan ?? cp.person?.plan;
+      const planFactor = effectivePlan?.profitFactor ? Number(effectivePlan.profitFactor) : null;
+      const globalFactor = await this.systemSettingsService.getNumeric(
+        'DEFAULT_SERVICE_PRICE_FACTOR',
+        2.0,
+      );
+      const appliedFactor = planFactor ?? globalFactor;
+
+      const estimatedCost = Number(dto.estimatedCost || 0);
+      const estimatedCoverageToLock = Number((estimatedCost * appliedFactor).toFixed(2));
+
+      let lockedAmount = 0;
+      let claimNumber: string | null = null;
+      let status: EventualityStatus = EventualityStatus.DOCTOR_QUEUE;
+
+      const alertConfig = await this.getConsumptionAlertConfig();
+      const initialCoverage = Number(period.initialCoverage) || 0;
+      const consumedCoverage = Number(period.consumedCoverage) || 0;
+      const reservedCoverage = Number(period.reservedCoverage) || 0;
+      const projectedPercentage =
+        initialCoverage > 0
+          ? Number(
+              (
+                ((consumedCoverage + reservedCoverage + estimatedCoverageToLock) /
+                  initialCoverage) *
+                100
+              ).toFixed(2),
+            )
+          : 100;
+
+      const requiresApproval =
+        alertConfig.enabled && projectedPercentage >= alertConfig.consumptionThresholdPercentage;
+
+      if (requiresApproval) {
+        status = EventualityStatus.PENDING_APPROVAL;
+      } else {
+        if (estimatedCoverageToLock > 0) {
+          await this.coveragePeriodService.lockCoverageAmount(
+            period.id,
+            estimatedCoverageToLock,
+            manager,
+          );
+          lockedAmount = estimatedCoverageToLock;
+        }
+        const claimResult = await generateClaimNumber(manager);
+        claimNumber = claimResult.claimNumber;
+      }
+
+      let doctorId: string | null = null;
+      if (dto.doctorId) {
+        const doctor = await manager.getRepository(Doctor).findOne({ where: { id: dto.doctorId } });
+        if (doctor) doctorId = doctor.id;
+      }
+
+      const eventuality = manager.getRepository(Eventuality).create({
+        claimNumber,
+        type: EventualityType.APS,
+        status,
+        requiresApproval,
+        personId: person.id,
+        contractPersonId: cp.id,
+        coveragePeriodId: period.id,
+        clinicName: dto.clinicName || 'Centro Médico SIRCA',
+        admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : new Date(),
+        appliedFactor,
+        reservedCoverageAmount: lockedAmount,
+        totalCost: estimatedCost,
+        totalCoverageDeducted: lockedAmount,
+        notes: dto.notes,
+        parentEventualityId: dto.parentEventualityId || null,
+        doctorId,
+      });
+
+      const saved = await manager.getRepository(Eventuality).save(eventuality);
+
+      // Crear informe médico inicial en borrador
+      const initialReport = manager.getRepository(EventualityMedicalReport).create({
+        eventualityId: saved.id,
+        status: MedicalReportExtractionStatus.PROCESSING,
+        reportType: 'INFORME DE ATENCIÓN PRIMARIA EN SALUD (APS)',
+        reportDate: formatToISODateString(saved.admissionDate || new Date()),
+        reportTime: DateTime.fromJSDate(saved.admissionDate || new Date())
+          .setZone(CARACAS_ZONE)
+          .toFormat('HH:mm'),
+        doctorId,
+      });
+      await manager.getRepository(EventualityMedicalReport).save(initialReport);
+
+      saved.person = person;
+      saved.contractPerson = cp;
+      saved.coveragePeriod = period;
+      return saved;
+    });
+  }
+
+  /**
+   * Crea una eventualidad derivada (STUDY, CONSULTATION, HOSPITALIZATION) a partir de solicitudes pendientes.
+   */
+  async createFromRequests(dto: CreateFromRequestsDto): Promise<Eventuality> {
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const requests = await manager.getRepository(EventualityServiceRequest).find({
+        where: dto.requestIds.map((id) => ({ id })),
+        relations: ['medicalService'],
+      });
+
+      if (requests.length === 0) {
+        throw new NotFoundException('No se encontraron las solicitudes especificadas.');
+      }
+
+      // Validar que todas estén PENDING
+      for (const req of requests) {
+        if (req.status !== ServiceRequestStatus.PENDING) {
+          throw new BadRequestException(
+            `La solicitud "${req.serviceName}" ya fue procesada o cancelada.`,
+          );
+        }
+      }
+
+      const first = requests[0];
+      const personId = first.personId;
+      const contractPersonId = first.contractPersonId;
+      const parentEventualityId = first.eventualityId;
+
+      // Verificar que pertenezcan a la misma persona
+      for (const req of requests) {
+        if (req.personId !== personId || req.contractPersonId !== contractPersonId) {
+          throw new BadRequestException(
+            'Todas las solicitudes a agrupar deben pertenecer al mismo paciente.',
+          );
+        }
+      }
+
+      const person = await manager.getRepository(Person).findOne({ where: { id: personId } });
+      const cp = await manager.getRepository(ContractPerson).findOne({
+        where: { id: contractPersonId },
+        relations: ['contract', 'plan', 'person', 'person.plan'],
+      });
+
+      if (!person || !cp || !cp.contract || cp.contract.status !== ContractStatus.ACTIVE) {
+        throw new BadRequestException('El afiliado no posee contrato activo vigente.');
+      }
+
+      const period = await this.coveragePeriodService.getOrCreateActivePeriod(cp.id, manager);
+      const effectivePlan = cp.plan ?? cp.person?.plan;
+      const planFactor = effectivePlan?.profitFactor ? Number(effectivePlan.profitFactor) : null;
+      const globalFactor = await this.systemSettingsService.getNumeric(
+        'DEFAULT_SERVICE_PRICE_FACTOR',
+        2.0,
+      );
+      const appliedFactor = planFactor ?? globalFactor;
+
+      // Calcular costo pre-cargado de los servicios
+      let calculatedTotalCost = 0;
+      const itemsToPreload: Array<{ name: string; cost: number; salePrice: number }> = [];
+
+      for (const req of requests) {
+        const srv = req.medicalService;
+        const itemCost = srv && Number(srv.cost) > 0 ? Number(srv.cost) : 0;
+        const itemSale =
+          srv && Number(srv.salePrice) > 0
+            ? Number(srv.salePrice)
+            : Number((itemCost * appliedFactor).toFixed(2));
+        calculatedTotalCost += itemCost;
+        itemsToPreload.push({
+          name: req.serviceName,
+          cost: itemCost,
+          salePrice: itemSale,
+        });
+      }
+
+      const estimatedCost =
+        dto.estimatedCost !== undefined ? Number(dto.estimatedCost) : calculatedTotalCost;
+      const coverageToLock = Number((estimatedCost * appliedFactor).toFixed(2));
+
+      const claimResult = await generateClaimNumber(manager);
+      const claimNumber = claimResult.claimNumber;
+
+      if (coverageToLock > 0 && Number(period.remainingCoverage) >= coverageToLock) {
+        await this.coveragePeriodService.lockCoverageAmount(period.id, coverageToLock, manager);
+      }
+
+      const childEventuality = manager.getRepository(Eventuality).create({
+        claimNumber,
+        type: dto.type,
+        status:
+          dto.type === EventualityType.HOSPITALIZATION
+            ? EventualityStatus.CLINIC_PROCESS
+            : EventualityStatus.SCHEDULED,
+        requiresApproval: false,
+        personId,
+        contractPersonId,
+        coveragePeriodId: period.id,
+        clinicName: dto.clinicName || 'Centro Médico Prestador',
+        admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : new Date(),
+        appliedFactor,
+        reservedCoverageAmount: coverageToLock,
+        totalCost: estimatedCost,
+        totalCoverageDeducted: coverageToLock,
+        notes: dto.notes || `Derivado de la atención APS #${parentEventualityId}`,
+        parentEventualityId,
+        doctorId: dto.doctorId || null,
+      });
+
+      const savedChild = await manager.getRepository(Eventuality).save(childEventuality);
+
+      // Pre-cargar servicios en la Hoja de Consumo
+      if (itemsToPreload.length > 0) {
+        const detailRepo = manager.getRepository(EventualityExtractionDetail);
+        const details = itemsToPreload.map((it) =>
+          detailRepo.create({
+            eventualityId: savedChild.id,
+            category: ConsumptionCategory.SERVICIO,
+            itemName: it.name,
+            quantity: 1,
+            unitCost: it.cost,
+            totalCost: it.cost,
+            calculatedSalePrice: it.salePrice,
+            status: ExtractionStatus.ADDED,
+          }),
+        );
+        await detailRepo.save(details);
+      }
+
+      // Marcar las solicitudes como CONVERTED
+      const now = new Date();
+      for (const req of requests) {
+        req.status = ServiceRequestStatus.CONVERTED;
+        req.childEventualityId = savedChild.id;
+        req.convertedAt = now;
+      }
+      await manager.getRepository(EventualityServiceRequest).save(requests);
+
+      savedChild.person = person;
+      savedChild.contractPerson = cp;
+      savedChild.coveragePeriod = period;
+      return savedChild;
+    });
+  }
+
+  /**
+   * Crea una eventualidad de forma general (STUDY, CONSULTATION, HOSPITALIZATION, etc.).
+   */
+  async createGeneralEventuality(dto: CreateGeneralEventualityDto): Promise<Eventuality> {
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const person = await manager.getRepository(Person).findOne({ where: { id: dto.personId } });
+      if (!person) throw new NotFoundException(`Persona con ID "${dto.personId}" no encontrada.`);
+
+      const cp = await manager.getRepository(ContractPerson).findOne({
+        where: { id: dto.contractPersonId },
+        relations: ['contract', 'plan', 'person', 'person.plan'],
+      });
+      if (!cp || !cp.contract || cp.contract.status !== ContractStatus.ACTIVE) {
+        throw new BadRequestException('El afiliado no posee un contrato activo.');
+      }
+
+      const period = await this.coveragePeriodService.getOrCreateActivePeriod(cp.id, manager);
+      const effectivePlan = cp.plan ?? cp.person?.plan;
+      const planFactor = effectivePlan?.profitFactor ? Number(effectivePlan.profitFactor) : null;
+      const globalFactor = await this.systemSettingsService.getNumeric(
+        'DEFAULT_SERVICE_PRICE_FACTOR',
+        2.0,
+      );
+      const appliedFactor = planFactor ?? globalFactor;
+
+      const estimatedCost = Number(dto.estimatedCost || 0);
+      const coverageToLock = Number((estimatedCost * appliedFactor).toFixed(2));
+
+      if (coverageToLock > 0 && Number(period.remainingCoverage) < coverageToLock) {
+        throw new BadRequestException(
+          'Saldo insuficiente en la póliza para reservar este servicio.',
+        );
+      }
+
+      const claimResult = await generateClaimNumber(manager);
+      if (coverageToLock > 0) {
+        await this.coveragePeriodService.lockCoverageAmount(period.id, coverageToLock, manager);
+      }
+
+      const initialStatus =
+        dto.type === EventualityType.APS
+          ? EventualityStatus.DOCTOR_QUEUE
+          : dto.type === EventualityType.EMERGENCY || dto.type === EventualityType.HOSPITALIZATION
+            ? EventualityStatus.CLINIC_PROCESS
+            : EventualityStatus.SCHEDULED;
+
+      const evt = manager.getRepository(Eventuality).create({
+        claimNumber: claimResult.claimNumber,
+        type: dto.type,
+        status: initialStatus,
+        requiresApproval: false,
+        personId: person.id,
+        contractPersonId: cp.id,
+        coveragePeriodId: period.id,
+        clinicName: dto.clinicName || 'Centro Médico Prestador',
+        admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : new Date(),
+        appliedFactor,
+        reservedCoverageAmount: coverageToLock,
+        totalCost: estimatedCost,
+        totalCoverageDeducted: coverageToLock,
+        notes: dto.notes,
+        parentEventualityId: dto.parentEventualityId || null,
+        doctorId: dto.doctorId || null,
+      });
+
+      return manager.getRepository(Eventuality).save(evt);
+    });
+  }
+
+  /**
+   * Obtiene estadísticas para el Dashboard del Médico.
+   */
+  async getDoctorDashboardStats(userId: string) {
+    const user = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
+    const doctorId = user?.doctorId || null;
+
+    // Pacientes en cola APS
+    const pendingInQueueCount = await this.eventualityRepo.count({
+      where: {
+        type: EventualityType.APS,
+        status: EventualityStatus.DOCTOR_QUEUE,
+      },
+    });
+
+    // Asignados específicamente a este médico en cola
+    const assignedToMeCount = doctorId
+      ? await this.eventualityRepo.count({
+          where: {
+            type: EventualityType.APS,
+            status: EventualityStatus.DOCTOR_QUEUE,
+            doctorId,
+          },
+        })
+      : 0;
+
+    // Atendidos hoy por este médico
+    const todayStr = getCaracasTodayJSDate();
+    const todayStart = new Date(todayStr);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const attendedTodayCount = doctorId
+      ? await this.eventualityRepo
+          .createQueryBuilder('e')
+          .where('e.type = :type', { type: EventualityType.APS })
+          .andWhere('e.doctorId = :doctorId', { doctorId })
+          .andWhere('e.dischargeDate >= :todayStart', { todayStart })
+          .getCount()
+      : 0;
+
+    // Total histórico atendidos
+    const attendedTotalCount = doctorId
+      ? await this.eventualityRepo
+          .createQueryBuilder('e')
+          .where('e.type = :type', { type: EventualityType.APS })
+          .andWhere('e.doctorId = :doctorId', { doctorId })
+          .andWhere('e.status != :queueStatus', { queueStatus: EventualityStatus.DOCTOR_QUEUE })
+          .getCount()
+      : 0;
+
+    return {
+      pendingInQueueCount,
+      assignedToMeCount,
+      attendedTodayCount,
+      attendedTotalCount,
+    };
+  }
+
+  /**
+   * Obtiene la cola o el historial de pacientes para el médico.
+   */
+  async getDoctorQueue(
+    userId: string,
+    filter: 'QUEUE' | 'ATTENDED' = 'QUEUE',
+    page = 1,
+    limit = 20,
+  ) {
+    const user = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
+    const doctorId = user?.doctorId || null;
+
+    const qb = this.eventualityRepo
+      .createQueryBuilder('e')
+      .leftJoinAndSelect('e.person', 'p')
+      .leftJoinAndSelect('e.contractPerson', 'cp')
+      .leftJoinAndSelect('cp.contract', 'c')
+      .leftJoinAndSelect('cp.plan', 'plan')
+      .leftJoinAndSelect('e.medicalReport', 'mr')
+      .leftJoinAndSelect('e.doctor', 'doc')
+      .where('e.type = :type', { type: EventualityType.APS });
+
+    if (filter === 'QUEUE') {
+      qb.andWhere('e.status = :status', { status: EventualityStatus.DOCTOR_QUEUE });
+      if (doctorId) {
+        // Primero los asignados a él, luego los sin asignar
+        qb.addSelect('CASE WHEN e.doctorId = :doctorId THEN 0 ELSE 1 END', 'doc_prio')
+          .setParameter('doctorId', doctorId)
+          .orderBy('doc_prio', 'ASC')
+          .addOrderBy('e.admissionDate', 'ASC');
+      } else {
+        qb.orderBy('e.admissionDate', 'ASC');
+      }
+    } else {
+      qb.andWhere('e.status != :status', { status: EventualityStatus.DOCTOR_QUEUE });
+      if (doctorId) {
+        qb.andWhere('e.doctorId = :doctorId', { doctorId });
+      }
+      qb.orderBy('e.dischargeDate', 'DESC').addOrderBy('e.updatedAt', 'DESC');
+    }
+
+    const skip = (Math.max(1, page) - 1) * limit;
+    qb.skip(skip).take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Asigna un paciente de la cola general al médico que lo toma.
+   */
+  async claimPatient(eventualityId: string, userId: string): Promise<Eventuality> {
+    const user = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
+    if (!user || !user.doctorId) {
+      throw new BadRequestException(
+        'Tu usuario no tiene un perfil médico vinculado para atender pacientes.',
+      );
+    }
+
+    const eventuality = await this.eventualityRepo.findOne({ where: { id: eventualityId } });
+    if (!eventuality) throw new NotFoundException(`Eventualidad no encontrada.`);
+
+    eventuality.doctorId = user.doctorId;
+    return this.eventualityRepo.save(eventuality);
+  }
+
+  /**
+   * Guarda o completa la evaluación médica APS (Diagnóstico CIE-10, Tratamiento, Solicitudes).
+   */
+  async saveApsConsultation(
+    eventualityId: string,
+    dto: SaveApsConsultationDto,
+    userId: string,
+  ): Promise<Eventuality> {
+    return this.dataSource.transaction(async (manager: EntityManager) => {
+      const eventuality = await manager.getRepository(Eventuality).findOne({
+        where: { id: eventualityId },
+        relations: ['person', 'contractPerson'],
+      });
+      if (!eventuality)
+        throw new NotFoundException(`Eventualidad con ID "${eventualityId}" no encontrada.`);
+
+      const user = await manager.getRepository(User).findOne({ where: { id: userId } });
+      const doctorId = dto.doctorId || eventuality.doctorId || user?.doctorId || null;
+
+      let doctor: Doctor | null = null;
+      if (doctorId) {
+        doctor = await manager.getRepository(Doctor).findOne({ where: { id: doctorId } });
+      }
+
+      // 1. Upsert informe médico
+      let report = await manager.getRepository(EventualityMedicalReport).findOne({
+        where: { eventualityId },
+      });
+
+      if (!report) {
+        report = manager.getRepository(EventualityMedicalReport).create({ eventualityId });
+      }
+
+      if (dto.primaryCie10Code !== undefined) report.primaryCie10Code = dto.primaryCie10Code;
+      if (dto.secondaryCie10Codes !== undefined)
+        report.secondaryCie10Codes = dto.secondaryCie10Codes;
+      if (dto.reasonForConsultation !== undefined)
+        report.reasonForConsultation = dto.reasonForConsultation;
+      if (dto.currentIllness !== undefined) report.currentIllness = dto.currentIllness;
+      if (dto.physicalExam !== undefined) report.physicalExam = dto.physicalExam;
+      if (dto.medicalReport !== undefined) report.medicalReport = dto.medicalReport;
+      if (dto.admissionDiagnosis !== undefined) report.admissionDiagnosis = dto.admissionDiagnosis;
+      if (dto.dischargeDiagnosis !== undefined) report.dischargeDiagnosis = dto.dischargeDiagnosis;
+      if (dto.generalTreatmentNotes !== undefined)
+        report.generalTreatmentNotes = dto.generalTreatmentNotes;
+
+      if (doctor) {
+        report.doctorId = doctor.id;
+        report.doctorFullName = `${doctor.firstName} ${doctor.lastName}`;
+        report.doctorIdentityCard = `${doctor.typeIdentityCard || 'V'}-${doctor.identityCard}`;
+        report.doctorMs = doctor.mpps;
+        report.doctorComezu = doctor.comezu;
+        report.doctorSpecialty = doctor.specialty;
+      }
+
+      if (dto.completeConsultation) {
+        report.signedAt = new Date();
+        report.status = MedicalReportExtractionStatus.EXTRACTED;
+        report.reportType = 'INFORME DE ATENCIÓN PRIMARIA EN SALUD (APS)';
+      }
+
+      await manager.getRepository(EventualityMedicalReport).save(report);
+
+      // 2. Renglones de tratamiento (Récipe)
+      if (dto.treatmentItems !== undefined) {
+        await manager.getRepository(EventualityTreatmentItem).delete({ eventualityId });
+        if (dto.treatmentItems.length > 0) {
+          const items = dto.treatmentItems.map((it, idx) =>
+            manager.getRepository(EventualityTreatmentItem).create({
+              eventualityId,
+              medicationName: it.medicationName,
+              presentation: it.presentation || null,
+              dosage: it.dosage,
+              frequency: it.frequency,
+              duration: it.duration,
+              administrationRoute: it.administrationRoute || null,
+              instructions: it.instructions || null,
+              sortOrder: it.sortOrder !== undefined ? it.sortOrder : idx,
+            }),
+          );
+          await manager.getRepository(EventualityTreatmentItem).save(items);
+        }
+      }
+
+      // 3. Solicitudes de servicios
+      if (dto.serviceRequests !== undefined && dto.serviceRequests.length > 0) {
+        const requests = dto.serviceRequests.map((sr) =>
+          manager.getRepository(EventualityServiceRequest).create({
+            eventualityId,
+            personId: eventuality.personId,
+            contractPersonId: eventuality.contractPersonId,
+            doctorId: doctor?.id || null,
+            requestType: sr.requestType,
+            status: ServiceRequestStatus.PENDING,
+            medicalServiceId: sr.medicalServiceId || null,
+            serviceName: sr.serviceName,
+            specialty: sr.specialty || null,
+            clinicalJustification: sr.clinicalJustification || null,
+            priority: sr.priority || 'NORMAL',
+          }),
+        );
+        await manager.getRepository(EventualityServiceRequest).save(requests);
+      }
+
+      // 4. Si se completa la consulta, avanzar estado a WAITING_INVOICE
+      if (dto.completeConsultation) {
+        eventuality.status = EventualityStatus.WAITING_INVOICE;
+        eventuality.dischargeDate = new Date();
+        if (doctor) eventuality.doctorId = doctor.id;
+        await manager.getRepository(Eventuality).save(eventuality);
+      } else if (doctor && !eventuality.doctorId) {
+        eventuality.doctorId = doctor.id;
+        await manager.getRepository(Eventuality).save(eventuality);
+      }
+
+      return this.findOne(eventualityId);
+    });
+  }
+
+  /**
+   * Consulta las solicitudes médicas generadas.
+   */
+  async getServiceRequests(dto: FindServiceRequestsDto) {
+    const page = dto.page ? parseInt(dto.page, 10) : 1;
+    const limit = dto.limit ? parseInt(dto.limit, 10) : 20;
+    const skip = (page - 1) * limit;
+
+    const qb = this.serviceRequestRepo
+      .createQueryBuilder('sr')
+      .leftJoinAndSelect('sr.person', 'p')
+      .leftJoinAndSelect('sr.doctor', 'doc')
+      .leftJoinAndSelect('sr.eventuality', 'evt')
+      .leftJoinAndSelect('sr.childEventuality', 'childEvt')
+      .leftJoinAndSelect('sr.medicalService', 'ms')
+      .orderBy('sr.createdAt', 'DESC');
+
+    if (dto.personId) qb.andWhere('sr.personId = :personId', { personId: dto.personId });
+    if (dto.status) qb.andWhere('sr.status = :status', { status: dto.status });
+    if (dto.requestType)
+      qb.andWhere('sr.requestType = :requestType', { requestType: dto.requestType });
+    if (dto.eventualityId)
+      qb.andWhere('sr.eventualityId = :eventualityId', { eventualityId: dto.eventualityId });
+
+    if (dto.search) {
+      const q = `%${dto.search.trim()}%`;
+      qb.andWhere(
+        '(sr.serviceName ILIKE :q OR p.name ILIKE :q OR p.identityCard ILIKE :q OR evt.claimNumber ILIKE :q)',
+        { q },
+      );
+    }
+
+    qb.skip(skip).take(limit);
+    const [items, total] = await qb.getManyAndCount();
+
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Cancela una solicitud médica pendiente.
+   */
+  async cancelServiceRequest(
+    requestId: string,
+    reason?: string,
+  ): Promise<EventualityServiceRequest> {
+    const request = await this.serviceRequestRepo.findOne({ where: { id: requestId } });
+    if (!request) throw new NotFoundException(`Solicitud con ID "${requestId}" no encontrada.`);
+
+    if (request.status !== ServiceRequestStatus.PENDING) {
+      throw new BadRequestException(`Solo se pueden cancelar solicitudes en estado pendiente.`);
+    }
+
+    request.status = ServiceRequestStatus.CANCELLED;
+    if (reason) {
+      request.clinicalJustification =
+        `${request.clinicalJustification || ''}\n[CANCELADA]: ${reason}`.trim();
+    }
+
+    return this.serviceRequestRepo.save(request);
   }
 }

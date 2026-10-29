@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Orden de Servicios Médicos - {{ claimNumber }}</title>
+  <style>
+    :root {
+      --primary-color: #065f46;
+      --primary-dark: #022c22;
+      --primary-light: #ecfdf5;
+      --text-dark: #111827;
+      --text-muted: #4b5563;
+      --border-color: #e5e7eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-dark);
+      background-color: #ffffff;
+      padding: 24px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .order-card {
+      max-width: 780px;
+      margin: 0 auto;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2.5px solid var(--primary-color);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .brand-section { display: flex; align-items: center; gap: 12px; }
+    .brand-logo { height: 42px; max-width: 140px; object-fit: contain; }
+    .brand-info h1 {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+    }
+    .brand-info p { font-size: 10px; color: var(--text-muted); }
+    .order-badge {
+      background: var(--primary-light);
+      border: 1px solid #a7f3d0;
+      color: var(--primary-color);
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 6px;
+      text-align: right;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--primary-color);
+      background-color: var(--primary-light);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 14px;
+      margin-bottom: 8px;
+      border-left: 3px solid var(--primary-color);
+    }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+    .info-box { background: #f9fafb; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; }
+    .info-label { font-size: 9px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .info-value { font-size: 11px; font-weight: 600; color: var(--text-dark); margin-top: 1px; }
+
+    .service-card {
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      background-color: #ffffff;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .badge-lab { background-color: #dbeafe; color: #1e40af; }
+    .badge-img { background-color: #f3e8ff; color: #6b21a8; }
+    .badge-study { background-color: #e0e7ff; color: #3730a3; }
+    .badge-cons { background-color: #fef3c7; color: #92400e; }
+    .badge-hosp { background-color: #fee2e2; color: #991b1b; }
+
+    .signature-section {
+      margin-top: 30px;
+      display: flex;
+      justify-content: flex-end;
+      page-break-inside: avoid;
+    }
+    .signature-box {
+      width: 260px;
+      text-align: center;
+      border-top: 1px solid #9ca3af;
+      padding-top: 8px;
+    }
+    .signature-img {
+      max-height: 70px;
+      max-width: 200px;
+      object-fit: contain;
+      margin-bottom: 4px;
+    }
+    .footer {
+      margin-top: 20px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+      text-align: center;
+      font-size: 8.5px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="order-card">
+    <div class="header">
+      <div class="brand-section">
+        {{#if logo}}
+          <img src="{{ logo }}" alt="SIRCA" class="brand-logo" />
+        {{/if}}
+        <div class="brand-info">
+          <h1>SIRCA PLANES DE SALUD</h1>
+          <p>Orden de Servicios Médicos y Procedimientos</p>
+        </div>
+      </div>
+      <div class="order-badge">
+        <div style="font-size: 9px; text-transform: uppercase;">Atención Origen</div>
+        <div style="font-size: 14px; color: #065f46;">{{ claimNumber }}</div>
+      </div>
+    </div>
+
+    <!-- Paciente -->
+    <div class="grid-3">
+      <div class="info-box">
+        <div class="info-label">Paciente</div>
+        <div class="info-value">{{ patientName }}</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Cédula</div>
+        <div class="info-value">{{ patientIdCard }}</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Contrato / Plan</div>
+        <div class="info-value">{{ contractCode }} • {{ planName }}</div>
+      </div>
+    </div>
+
+    {{#if primaryCie10Formatted}}
+      <div class="info-box" style="margin-bottom: 12px; background: #f0fdf4; border-color: #bbf7d0;">
+        <div class="info-label" style="color: #166534;">Diagnóstico (CIE-10)</div>
+        <div class="info-value" style="color: #14532d;">{{ primaryCie10Formatted }}</div>
+      </div>
+    {{/if}}
+
+    <!-- Solicitudes -->
+    <div class="section-title">Estudios y Servicios Solicitados</div>
+    {{#if serviceRequests.length}}
+      {{#each serviceRequests}}
+        <div class="service-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              {{#if this.badgeClass}}
+                <span class="{{ this.badgeClass }}">{{ this.typeLabel }}</span>
+              {{else if (eq this.requestType "LABORATORY")}}
+                <span class="badge badge-lab">Laboratorio</span>
+              {{else if (eq this.requestType "IMAGING")}}
+                <span class="badge badge-img">Imágenes</span>
+              {{else if (eq this.requestType "SPECIAL_STUDY")}}
+                <span class="badge badge-study">Estudio Especial</span>
+              {{else if (eq this.requestType "CONSULTATION")}}
+                <span class="badge badge-cons">Interconsulta</span>
+              {{else if (eq this.requestType "HOSPITALIZATION")}}
+                <span class="badge badge-hosp">Hospitalización</span>
+              {{else}}
+                <span class="badge">{{ this.requestType }}</span>
+              {{/if}}
+              <span style="font-size: 12px; font-weight: 700; color: var(--text-dark);">{{ this.serviceName }}</span>
+            </div>
+            {{#if (or this.isUrgent (eq this.priority "URGENT"))}}
+              <span style="background-color: #fee2e2; color: #dc2626; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">URGENTE</span>
+            {{/if}}
+          </div>
+
+          {{#if this.specialty}}
+            <div style="font-size: 10px; color: #4b5563; margin-bottom: 2px;">
+              <strong>Especialidad:</strong> {{ this.specialty }}
+            </div>
+          {{/if}}
+
+          {{#if this.clinicalJustification}}
+            <div style="font-size: 10px; color: #4b5563;">
+              <strong>Justificación Clínica:</strong> {{ this.clinicalJustification }}
+            </div>
+          {{/if}}
+        </div>
+      {{/each}}
+    {{else}}
+      <p style="padding: 10px; color: #6b7280; font-style: italic;">No se registraron estudios ni servicios adicionales.</p>
+    {{/if}}
+
+    <!-- Firma Digital -->
+    <div class="signature-section">
+      <div class="signature-box">
+        {{#if doctorSignatureUrl}}
+          <img src="{{ doctorSignatureUrl }}" alt="Firma Médico" class="signature-img" />
+        {{/if}}
+        <div style="font-weight: 700; font-size: 11px;">Dr(a). {{ doctorFullName }}</div>
+        <div style="font-size: 9.5px; color: var(--text-muted);">{{ doctorSpecialty }}</div>
+        <div style="font-size: 9px; color: var(--text-muted);">C.I.: {{ doctorIdCard }} • MPPS: {{ doctorMs }} {{#if doctorComezu}}• COMEZU: {{ doctorComezu }}{{/if}}</div>
+        {{#if signedAtFormatted}}
+          <div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">Firmado digitalmente el {{ signedAtFormatted }}</div>
+        {{/if}}
+      </div>
+    </div>
+
+    <div class="footer">
+      Esta orden médica autoriza la tramitación de cartas aval y servicios asistenciales en SIRCA Planes de Salud C.A.
+    </div>
+  </div>
+</body>
+</html>

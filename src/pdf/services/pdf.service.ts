@@ -4,6 +4,35 @@ import * as handlebars from 'handlebars';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+// Register standard Handlebars comparison and logical helpers
+if (!handlebars.helpers['eq']) {
+  handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b);
+}
+if (!handlebars.helpers['ne']) {
+  handlebars.registerHelper('ne', (a: unknown, b: unknown) => a !== b);
+}
+if (!handlebars.helpers['lt']) {
+  handlebars.registerHelper('lt', (a: number, b: number) => a < b);
+}
+if (!handlebars.helpers['gt']) {
+  handlebars.registerHelper('gt', (a: number, b: number) => a > b);
+}
+if (!handlebars.helpers['lte']) {
+  handlebars.registerHelper('lte', (a: number, b: number) => a <= b);
+}
+if (!handlebars.helpers['gte']) {
+  handlebars.registerHelper('gte', (a: number, b: number) => a >= b);
+}
+if (!handlebars.helpers['and']) {
+  handlebars.registerHelper('and', (...args: unknown[]) => args.slice(0, -1).every(Boolean));
+}
+if (!handlebars.helpers['or']) {
+  handlebars.registerHelper('or', (...args: unknown[]) => args.slice(0, -1).some(Boolean));
+}
+if (!handlebars.helpers['not']) {
+  handlebars.registerHelper('not', (a: unknown) => !a);
+}
+
 @Injectable()
 export class PdfService {
   private readonly logger = new Logger(PdfService.name);

@@ -10,6 +10,7 @@ export interface JwtPayload {
   userId: string;
   roleId: string;
   advisorId?: string | null;
+  doctorId?: string | null;
 }
 
 @Injectable()

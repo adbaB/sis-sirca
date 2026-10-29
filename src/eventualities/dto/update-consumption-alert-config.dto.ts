@@ -13,10 +13,15 @@ export class UpdateConsumptionAlertConfigDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  templateName?: string; // Nombre de la plantilla en Meta WhatsApp para alerta de cobertura
 }
 
 export interface ConsumptionAlertConfigResponse {
   consumptionThresholdPercentage: number;
   notificationPhones: string[];
   enabled: boolean;
+  templateName: string;
 }

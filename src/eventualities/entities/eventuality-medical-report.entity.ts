@@ -81,6 +81,30 @@ export class EventualityMedicalReport {
   @Column({ type: 'text', name: 'error_message', nullable: true })
   errorMessage?: string | null;
 
+  @Column({ type: 'varchar', length: 15, name: 'primary_cie10_code', nullable: true })
+  primaryCie10Code?: string | null;
+
+  @Column({ type: 'jsonb', name: 'secondary_cie10_codes', default: '[]' })
+  secondaryCie10Codes?: Array<{ code: string; description: string }>;
+
+  @Column({ type: 'text', name: 'reason_for_consultation', nullable: true })
+  reasonForConsultation?: string | null;
+
+  @Column({ type: 'text', name: 'current_illness', nullable: true })
+  currentIllness?: string | null;
+
+  @Column({ type: 'text', name: 'physical_exam', nullable: true })
+  physicalExam?: string | null;
+
+  @Column({ type: 'text', name: 'general_treatment_notes', nullable: true })
+  generalTreatmentNotes?: string | null;
+
+  @Column({ type: 'uuid', name: 'doctor_id', nullable: true })
+  doctorId?: string | null;
+
+  @Column({ type: 'timestamptz', name: 'signed_at', nullable: true })
+  signedAt?: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 

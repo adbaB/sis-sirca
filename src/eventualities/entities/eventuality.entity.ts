@@ -19,6 +19,9 @@ import type { EventualityExtractionDetail } from './eventuality-extraction-detai
 import type { EventualityMedicalReport } from './eventuality-medical-report.entity';
 import type { EventualityMovement } from './eventuality-movement.entity';
 import type { EventualityProviderInvoice } from './eventuality-provider-invoice.entity';
+import type { EventualityTreatmentItem } from './eventuality-treatment-item.entity';
+import type { EventualityServiceRequest } from './eventuality-service-request.entity';
+import type { Doctor } from '../../doctors/entities/doctor.entity';
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 
 export enum EventualityType {
@@ -112,6 +115,14 @@ export class Eventuality {
 
   @Column({ type: 'uuid', name: 'parent_eventuality_id', nullable: true })
   parentEventualityId?: string | null;
+
+  @Index('IDX_eventualities_doctor_id')
+  @Column({ type: 'uuid', name: 'doctor_id', nullable: true })
+  doctorId?: string | null;
+
+  @ManyToOne('Doctor', { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'doctor_id', foreignKeyConstraintName: 'FK_eventualities_doctor' })
+  doctor?: Doctor | null;
 
   @Column({ type: 'text', name: 'clinic_name', nullable: true })
   clinicName?: string | null;
@@ -216,6 +227,15 @@ export class Eventuality {
 
   @OneToMany('EventualityProviderInvoice', (inv: EventualityProviderInvoice) => inv.eventuality)
   providerInvoices?: EventualityProviderInvoice[];
+
+  @OneToMany('EventualityTreatmentItem', (item: EventualityTreatmentItem) => item.eventuality)
+  treatmentItems?: EventualityTreatmentItem[];
+
+  @OneToMany('EventualityServiceRequest', (req: EventualityServiceRequest) => req.eventuality)
+  serviceRequests?: EventualityServiceRequest[];
+
+  @OneToMany('Eventuality', (evt: Eventuality) => evt.parentEventuality)
+  childEventualities?: Eventuality[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

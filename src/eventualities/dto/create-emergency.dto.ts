@@ -24,6 +24,10 @@ export class CreateEmergencyDto {
   notes?: string;
 
   @IsOptional()
+  @IsString()
+  admissionReason?: string; // Motivo o razón por la cual ingresó el paciente
+
+  @IsOptional()
   @IsUUID()
   parentEventualityId?: string;
 }

@@ -31,7 +31,7 @@ export class Cie10Code {
   isTerminal: boolean;
 
   @Column({ type: 'jsonb', nullable: true, default: () => "'{}'" })
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
 
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;

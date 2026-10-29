@@ -38,8 +38,23 @@ export class Cie10Service implements OnModuleInit {
     this.logger.log(
       `Preloading complete enriched CIE-10 catalog (current count: ${count}, target: 11286)...`,
     );
-    const rawList: Array<any> =
-      (cie10RichData as unknown as { default: Array<any> }).default || cie10RichData;
+    interface RawCie10Item {
+      code: string;
+      cleanCode?: string;
+      description: string;
+      chapterTitle?: string;
+      chapter?: string;
+      blockTitle?: string;
+      blockCode?: string;
+      categoryCode?: string;
+      level?: string;
+      isTerminal?: boolean;
+      metadata?: Record<string, unknown>;
+    }
+
+    const rawList: RawCie10Item[] =
+      (cie10RichData as unknown as { default: RawCie10Item[] }).default ||
+      (cie10RichData as unknown as RawCie10Item[]);
 
     const values = rawList.map((item) => ({
       code: item.code.trim().toUpperCase(),

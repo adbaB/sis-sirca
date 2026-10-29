@@ -203,6 +203,7 @@ export class MetaWhatsappService {
     variables: MetaTemplateVariables = {},
     languageCode?: string,
     flowToken?: string,
+    buttonPayloads?: string[],
   ): Promise<void> {
     const accessToken = this.configService.meta.accessToken;
     const phoneNumberId = this.configService.meta.phoneNumberId;
@@ -218,11 +219,17 @@ export class MetaWhatsappService {
 
     const resolvedLanguageCode = languageCode || this.configService.meta.templateLanguage || 'es';
 
-    const parameters: MetaTemplateParameter[] = Object.entries(variables).map(([key, value]) => ({
-      type: 'text',
-      parameter_name: key,
-      text: String(value),
-    }));
+    const parameters: MetaTemplateParameter[] = Array.isArray(variables)
+      ? variables.map((val) => ({
+          type: 'text' as const,
+          text: String(val),
+        }))
+      : Object.entries(variables).map(([key, value]) => {
+          const isNumericKey = /^\d+$/.test(key);
+          return isNumericKey
+            ? { type: 'text' as const, text: String(value) }
+            : { type: 'text' as const, parameter_name: key, text: String(value) };
+        });
 
     const components: MetaTemplateComponent[] =
       parameters.length > 0 ? [{ type: 'body', parameters }] : [];
@@ -243,6 +250,22 @@ export class MetaWhatsappService {
             },
           },
         ],
+      });
+    }
+
+    if (buttonPayloads && buttonPayloads.length > 0) {
+      buttonPayloads.forEach((payload, idx) => {
+        components.push({
+          type: 'button',
+          sub_type: 'quick_reply',
+          index: String(idx),
+          parameters: [
+            {
+              type: 'payload',
+              payload,
+            },
+          ],
+        });
       });
     }
 
@@ -270,6 +293,24 @@ export class MetaWhatsappService {
         timeout: 15000,
       });
     } catch (error) {
+      if (buttonPayloads && buttonPayloads.length > 0) {
+        // Fallback: If template in Meta was created without dynamic quick_reply payloads, retry without button payload components
+        try {
+          const fallbackComponents = components.filter((c) => c.sub_type !== 'quick_reply');
+          const fallbackPayload: MetaTemplatePayload = {
+            ...templatePayload,
+            components: fallbackComponents.length > 0 ? fallbackComponents : undefined,
+          };
+          await axios.post(
+            this.baseUrl,
+            { ...requestBody, template: fallbackPayload },
+            { headers: this.getHeaders(), timeout: 15000 },
+          );
+          return;
+        } catch {
+          // If fallback fails, fall through to log & rethrow original error
+        }
+      }
       const errorDetails = this.formatAxiosError(error);
       this.logger.error(
         `Error sending template "${templateName}" (${resolvedLanguageCode}) to ${to} (${cleanTo}): ${errorDetails}`,

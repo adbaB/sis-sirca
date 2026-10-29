@@ -4,6 +4,7 @@ import axios from 'axios';
 import { AwsService } from '../../aws/aws.service';
 import { EmailService } from '../../email/email.service';
 import { ChatbotService } from './chatbot.service';
+import { EventualitiesService } from '../../eventualities/services/eventualities.service';
 import { OcrService } from '../../ocr/ocr.service';
 import { InvoiceService } from '../../billing/invoices/services/invoice.service';
 import { PersonsService } from '../../persons/services/persons.service';
@@ -112,6 +113,13 @@ describe('ChatbotService', () => {
         { provide: InvoiceService, useValue: mockInvoiceService },
         { provide: PersonsService, useValue: mockPersonsService },
         { provide: DataSource, useValue: mockDataSource },
+        {
+          provide: EventualitiesService,
+          useValue: {
+            approveEmergency: jest.fn(),
+            rejectEmergency: jest.fn(),
+          },
+        },
         MetaWhatsappService,
         { provide: ChatbotPaymentService, useValue: { processPaymentForInvoices: jest.fn() } },
         {
@@ -603,6 +611,115 @@ describe('ChatbotService', () => {
         expect.objectContaining({
           to: '456',
           text: { body: expect.stringContaining('comprobante de pago') },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should handle APPROVE_ button reply and approve eventuality', async () => {
+      const eventualitiesService = (
+        service as unknown as {
+          eventualitiesService: {
+            approveEmergency: ReturnType<typeof vi.fn>;
+            rejectEmergency: ReturnType<typeof vi.fn>;
+          };
+        }
+      ).eventualitiesService;
+      eventualitiesService.approveEmergency.mockResolvedValueOnce({
+        claimNumber: '2026000099',
+        person: { name: 'Juan Paciente' },
+        clinicName: 'Clínica Caracas',
+        reservedCoverageAmount: 200,
+      });
+
+      const message = {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    {
+                      from: '584140001122',
+                      type: 'button',
+                      button: {
+                        text: 'Aprobar',
+                        payload: 'APPROVE_ev-12345',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      await service.handleIncomingMessage(message);
+
+      expect(eventualitiesService.approveEmergency).toHaveBeenCalledWith(
+        'ev-12345',
+        expect.objectContaining({ userId: 'WHATSAPP:584140001122' }),
+      );
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v25.0/phoneid/messages',
+        expect.objectContaining({
+          to: '584140001122',
+          text: { body: expect.stringContaining('SOLICITUD APROBADA EXITOSAMENTE') },
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should handle REJECT_ button reply and reject eventuality', async () => {
+      const eventualitiesService = (
+        service as unknown as {
+          eventualitiesService: {
+            approveEmergency: ReturnType<typeof vi.fn>;
+            rejectEmergency: ReturnType<typeof vi.fn>;
+          };
+        }
+      ).eventualitiesService;
+      eventualitiesService.rejectEmergency.mockResolvedValueOnce({
+        person: { name: 'Maria Paciente' },
+        clinicName: 'Clínica Ávila',
+      });
+
+      const message = {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    {
+                      from: '584140001122',
+                      type: 'button',
+                      button: {
+                        text: 'Negar',
+                        payload: 'REJECT_ev-67890',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      await service.handleIncomingMessage(message);
+
+      expect(eventualitiesService.rejectEmergency).toHaveBeenCalledWith(
+        'ev-67890',
+        expect.objectContaining({ reason: expect.any(String) }),
+        expect.objectContaining({ userId: 'WHATSAPP:584140001122' }),
+      );
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v25.0/phoneid/messages',
+        expect.objectContaining({
+          to: '584140001122',
+          text: { body: expect.stringContaining('SOLICITUD RECHAZADA') },
         }),
         expect.any(Object),
       );

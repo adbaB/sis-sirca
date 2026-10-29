@@ -1,10 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { MetaWhatsappService } from './meta-whatsapp.service';
 import { UserState } from '../interfaces/userState.interface';
 import { ChatbotStateService } from './chatbot-state.service';
 import { Steps } from '../enums/steps.enum';
 import { MetaMessage, MetaStatus, WebhookBody } from '../interfaces/webhook.interface';
 import { IStepHandler } from '../steps/step-handler.interface';
+import { EventualitiesService } from '../../eventualities/services/eventualities.service';
 
 @Injectable()
 export class ChatbotService {
@@ -14,6 +15,8 @@ export class ChatbotService {
     private readonly metaWhatsappService: MetaWhatsappService,
     private readonly stateService: ChatbotStateService,
     @Inject('STEP_HANDLERS') private readonly stepHandlers: IStepHandler[],
+    @Inject(forwardRef(() => EventualitiesService))
+    private readonly eventualitiesService: EventualitiesService,
   ) {}
 
   async handleIncomingMessage(body: WebhookBody): Promise<void> {
@@ -65,6 +68,18 @@ export class ChatbotService {
           state = { step: Steps.AWAITING_FLOW_INTERACTION };
         }
         return this.handleFlowCompletion(fromNumber, message, state);
+      }
+
+      // ── PRIORITY: Eventuality Approval / Rejection via WhatsApp ──
+      const buttonPayload = message.button?.payload || '';
+      if (
+        incomingText?.startsWith('APPROVE_') ||
+        incomingText?.startsWith('REJECT_') ||
+        buttonPayload.startsWith('APPROVE_') ||
+        buttonPayload.startsWith('REJECT_')
+      ) {
+        const payload = buttonPayload || incomingText;
+        return this.handleEventualityApprovalAction(fromNumber, payload);
       }
 
       // If no state or user wants to restart, initialize state.
@@ -124,7 +139,56 @@ export class ChatbotService {
   private extractText(message: MetaMessage): string {
     if (message.text?.body) return message.text.body.trim();
     if (message.interactive?.button_reply?.id) return message.interactive.button_reply.id;
+    if (message.button?.payload) return message.button.payload;
+    if (message.button?.text) return message.button.text;
     return '';
+  }
+
+  private async handleEventualityApprovalAction(
+    fromNumber: string,
+    payload: string,
+  ): Promise<void> {
+    const isApprove = payload.startsWith('APPROVE_');
+    const eventualityId = payload.replace(isApprove ? 'APPROVE_' : 'REJECT_', '').trim();
+
+    try {
+      if (isApprove) {
+        const approved = await this.eventualitiesService.approveEmergency(eventualityId, {
+          userId: `WHATSAPP:${fromNumber}`,
+        });
+        await this.metaWhatsappService.sendMessage(
+          fromNumber,
+          `✅ *SOLICITUD APROBADA EXITOSAMENTE*\n\n` +
+            `• Nro. de Eventualidad: *${approved.claimNumber}*\n` +
+            `• Paciente: ${approved.person?.name || 'Afiliado'}\n` +
+            `• Clínica: ${approved.clinicName}\n` +
+            `• Cobertura Reservada: $${Number(approved.reservedCoverageAmount || 0).toFixed(2)}\n\n` +
+            `El caso ha pasado a estado *Proceso Clínico* y ya cuenta con cobertura autorizada.`,
+        );
+      } else {
+        const rejected = await this.eventualitiesService.rejectEmergency(
+          eventualityId,
+          { reason: 'Rechazado por el coordinador vía WhatsApp.' },
+          { userId: `WHATSAPP:${fromNumber}` },
+        );
+        await this.metaWhatsappService.sendMessage(
+          fromNumber,
+          `❌ *SOLICITUD RECHAZADA*\n\n` +
+            `• Paciente: ${rejected.person?.name || 'Afiliado'}\n` +
+            `• Clínica: ${rejected.clinicName}\n` +
+            `• Estado: *RECHAZADO*\n\n` +
+            `La atención solicitada ha sido denegada. No se reservó cobertura en la póliza.`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Error procesando acción de eventualidad desde WhatsApp: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      await this.metaWhatsappService.sendMessage(
+        fromNumber,
+        `⚠️ No se pudo procesar la acción: ${error instanceof Error ? error.message : 'Error desconocido'}. Puede que la eventualidad ya haya sido gestionada previamente.`,
+      );
+    }
   }
 
   private async handleGreeting(phone: string) {

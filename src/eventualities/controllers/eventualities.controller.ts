@@ -21,6 +21,11 @@ import { EventualitiesService } from '../services/eventualities.service';
 import { EventualityPdfService } from '../services/eventuality-pdf.service';
 import { EventualityStatisticsService } from '../services/eventuality-statistics.service';
 import { CreateEmergencyDto } from '../dto/create-emergency.dto';
+import { CreateApsDto } from '../dto/create-aps.dto';
+import { CreateFromRequestsDto } from '../dto/create-from-requests.dto';
+import { CreateGeneralEventualityDto } from '../dto/create-general-eventuality.dto';
+import { SaveApsConsultationDto } from '../dto/save-aps-consultation.dto';
+import { FindServiceRequestsDto } from '../dto/find-service-requests.dto';
 import { UploadMedicalReportDto } from '../dto/upload-medical-report.dto';
 import { UpdateMedicalReportDataDto } from '../dto/update-medical-report-data.dto';
 import {
@@ -91,14 +96,69 @@ export class EventualitiesController {
     return this.eventualitiesService.createEmergency(dto);
   }
 
+  @Post('aps')
+  @RequirePermissions('create:eventualities')
+  async createAps(@Body() dto: CreateApsDto) {
+    return this.eventualitiesService.createAps(dto);
+  }
+
+  @Post('from-requests')
+  @RequirePermissions('create:eventualities')
+  async createFromRequests(@Body() dto: CreateFromRequestsDto) {
+    return this.eventualitiesService.createFromRequests(dto);
+  }
+
+  @Post('general')
+  @RequirePermissions('create:eventualities')
+  async createGeneralEventuality(@Body() dto: CreateGeneralEventualityDto) {
+    return this.eventualitiesService.createGeneralEventuality(dto);
+  }
+
+  @Get('doctor/dashboard')
+  @RequirePermissions('attend:aps', 'read:eventualities')
+  async getDoctorDashboardStats(@CurrentUser() user: JwtPayload) {
+    return this.eventualitiesService.getDoctorDashboardStats(user.userId);
+  }
+
+  @Get('doctor/queue')
+  @RequirePermissions('attend:aps', 'read:eventualities')
+  async getDoctorQueue(
+    @CurrentUser() user: JwtPayload,
+    @Query('filter') filter?: 'QUEUE' | 'ATTENDED',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.eventualitiesService.getDoctorQueue(
+      user.userId,
+      filter || 'QUEUE',
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Get('service-requests')
+  @RequirePermissions('read:eventualities')
+  async getServiceRequests(@Query() query: FindServiceRequestsDto) {
+    return this.eventualitiesService.getServiceRequests(query);
+  }
+
+  @Patch('service-requests/:requestId/cancel')
+  @RequirePermissions('update:eventualities')
+  async cancelServiceRequest(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.eventualitiesService.cancelServiceRequest(requestId, reason);
+  }
+
   @Post(':id/approve')
-  @RequirePermissions('approve:eventualities')
+  @RequirePermissions('approve:eventualities', 'manage:eventualities', 'update:eventualities')
   async approveEmergency(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user?: JwtPayload) {
     return this.eventualitiesService.approveEmergency(id, user);
   }
 
   @Post(':id/reject')
-  @RequirePermissions('reject:eventualities')
+  @RequirePermissions('reject:eventualities', 'manage:eventualities', 'update:eventualities')
   async rejectEmergency(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RejectEventualityDto,
@@ -114,7 +174,7 @@ export class EventualitiesController {
   }
 
   @Get(':id')
-  @RequirePermissions('read:eventualities')
+  @RequirePermissions('read:eventualities', 'attend:aps')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.eventualitiesService.findOne(id);
   }
@@ -129,6 +189,58 @@ export class EventualitiesController {
       'Content-Length': pdfBuffer.length,
     });
     res.end(pdfBuffer);
+  }
+
+  @Get(':id/medical-report/pdf')
+  @RequirePermissions('read:eventualities', 'attend:aps')
+  async downloadMedicalReportPdf(@Param('id') id: string, @Res() res: Response): Promise<void> {
+    const { pdfBuffer, filename } = await this.eventualityPdfService.generateMedicalReportPdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  }
+
+  @Get(':id/prescription/pdf')
+  @RequirePermissions('read:eventualities', 'attend:aps')
+  async downloadPrescriptionPdf(@Param('id') id: string, @Res() res: Response): Promise<void> {
+    const { pdfBuffer, filename } = await this.eventualityPdfService.generatePrescriptionPdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  }
+
+  @Get(':id/service-orders/pdf')
+  @RequirePermissions('read:eventualities', 'attend:aps')
+  async downloadServiceOrdersPdf(@Param('id') id: string, @Res() res: Response): Promise<void> {
+    const { pdfBuffer, filename } = await this.eventualityPdfService.generateServiceOrdersPdf(id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  }
+
+  @Post(':id/claim-patient')
+  @RequirePermissions('attend:aps', 'update:eventualities')
+  async claimPatient(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.eventualitiesService.claimPatient(id, user.userId);
+  }
+
+  @Put(':id/aps-consultation')
+  @RequirePermissions('attend:aps', 'update:eventualities')
+  async saveApsConsultation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SaveApsConsultationDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.eventualitiesService.saveApsConsultation(id, dto, user.userId);
   }
 
   @Post(':id/medical-report')
@@ -148,13 +260,18 @@ export class EventualitiesController {
   }
 
   @Get(':id/medical-report')
-  @RequirePermissions('read:eventualities', 'update:eventualities', 'manage:eventualities')
+  @RequirePermissions(
+    'read:eventualities',
+    'update:eventualities',
+    'manage:eventualities',
+    'attend:aps',
+  )
   async getMedicalReport(@Param('id', ParseUUIDPipe) id: string) {
     return this.eventualitiesService.getMedicalReport(id);
   }
 
   @Patch(':id/medical-report')
-  @RequirePermissions('update:eventualities', 'manage:eventualities')
+  @RequirePermissions('update:eventualities', 'manage:eventualities', 'attend:aps')
   async updateMedicalReportData(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateMedicalReportDataDto,

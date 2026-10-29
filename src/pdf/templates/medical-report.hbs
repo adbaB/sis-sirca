@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Informe Médico - {{ claimNumber }}</title>
+  <style>
+    :root {
+      --primary-color: #065f46;
+      --primary-dark: #022c22;
+      --primary-light: #ecfdf5;
+      --text-dark: #111827;
+      --text-muted: #4b5563;
+      --border-color: #e5e7eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-dark);
+      background-color: #ffffff;
+      padding: 24px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .report-card {
+      max-width: 780px;
+      margin: 0 auto;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2.5px solid var(--primary-color);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .brand-section { display: flex; align-items: center; gap: 12px; }
+    .brand-logo { height: 42px; max-width: 140px; object-fit: contain; }
+    .brand-info h1 {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+    }
+    .brand-info p { font-size: 10px; color: var(--text-muted); }
+    .claim-badge {
+      background: var(--primary-light);
+      border: 1px solid #a7f3d0;
+      color: var(--primary-color);
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 6px;
+      text-align: right;
+    }
+    .claim-number { font-size: 14px; color: var(--primary-dark); }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--primary-color);
+      background-color: var(--primary-light);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 14px;
+      margin-bottom: 8px;
+      border-left: 3px solid var(--primary-color);
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+    .info-box { background: #f9fafb; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; }
+    .info-label { font-size: 9px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .info-value { font-size: 11px; font-weight: 600; color: var(--text-dark); margin-top: 1px; }
+    .cie10-box {
+      border: 1px solid #d1fae5;
+      background-color: #f0fdf4;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+    }
+    .markdown-content {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .markdown-content p { margin-bottom: 6px; }
+    .markdown-content ul, .markdown-content ol { margin-left: 18px; margin-bottom: 6px; }
+    .markdown-content h1, .markdown-content h2, .markdown-content h3 { font-size: 12px; font-weight: 700; margin: 6px 0; color: var(--primary-dark); }
+    .signature-section {
+      margin-top: 30px;
+      display: flex;
+      justify-content: flex-end;
+      page-break-inside: avoid;
+    }
+    .signature-box {
+      width: 260px;
+      text-align: center;
+      border-top: 1px solid #9ca3af;
+      padding-top: 8px;
+    }
+    .signature-img {
+      max-height: 70px;
+      max-width: 200px;
+      object-fit: contain;
+      margin-bottom: 4px;
+    }
+    .footer {
+      margin-top: 20px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+      text-align: center;
+      font-size: 8.5px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="report-card">
+    <div class="header">
+      <div class="brand-section">
+        {{#if logo}}
+          <img src="{{ logo }}" alt="SIRCA" class="brand-logo" />
+        {{/if}}
+        <div class="brand-info">
+          <h1>SIRCA PLANES DE SALUD</h1>
+          <p>Informe Médico de Atención Médica (APS)</p>
+        </div>
+      </div>
+      <div class="claim-badge">
+        <div style="font-size: 9px; text-transform: uppercase;">Siniestro / Atención</div>
+        <div class="claim-number">{{ claimNumber }}</div>
+      </div>
+    </div>
+
+    <!-- Paciente y Contrato -->
+    <div class="section-title">Datos del Afiliado y Contrato</div>
+    <div class="grid-3">
+      <div class="info-box">
+        <div class="info-label">Nombre del Paciente</div>
+        <div class="info-value">{{ patientName }}</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Cédula de Identidad</div>
+        <div class="info-value">{{ patientIdCard }}</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Contrato / Plan</div>
+        <div class="info-value">{{ contractCode }} • {{ planName }}</div>
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="info-box">
+        <div class="info-label">Centro Médico / Sede</div>
+        <div class="info-value">{{ clinicName }}</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Fecha y Hora de Atención</div>
+        <div class="info-value">{{ admissionDateFormatted }}</div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Médico Tratante</div>
+        <div class="info-value">{{ doctorFullName }} ({{ doctorSpecialty }})</div>
+      </div>
+    </div>
+
+    <!-- Diagnósticos CIE-10 -->
+    <div class="section-title">Diagnóstico Clínico (Clasificación CIE-10)</div>
+    <div class="cie10-box">
+      <div style="font-size: 10px; font-weight: 700; color: #065f46; margin-bottom: 2px;">
+        DIAGNÓSTICO PRINCIPAL: <span style="font-size: 12px; color: #022c22;">{{ primaryCie10Formatted }}</span>
+      </div>
+      {{#if secondaryCie10List.length}}
+        <div style="margin-top: 6px; font-size: 9.5px; color: #374151;">
+          <strong>Diagnósticos Secundarios:</strong>
+          <ul style="margin-left: 16px; margin-top: 2px;">
+            {{#each secondaryCie10List}}
+              <li><strong>{{ this.code }}</strong> - {{ this.description }}</li>
+            {{/each}}
+          </ul>
+        </div>
+      {{/if}}
+    </div>
+
+    <!-- Motivo de Consulta y Enfermedad Actual -->
+    {{#if reasonForConsultation}}
+      <div class="section-title">Motivo de Consulta</div>
+      <div class="info-box" style="margin-bottom: 8px;">
+        <div class="info-value" style="font-weight: 500;">{{ reasonForConsultation }}</div>
+      </div>
+    {{/if}}
+
+    {{#if currentIllnessHtml}}
+      <div class="section-title">Enfermedad Actual</div>
+      <div class="markdown-content">{{{ currentIllnessHtml }}}</div>
+    {{/if}}
+
+    {{#if physicalExamHtml}}
+      <div class="section-title">Examen Físico y Signos Vitales</div>
+      <div class="markdown-content">{{{ physicalExamHtml }}}</div>
+    {{/if}}
+
+    {{#if medicalReportHtml}}
+      <div class="section-title">Evolución y Resumen del Caso</div>
+      <div class="markdown-content">{{{ medicalReportHtml }}}</div>
+    {{/if}}
+
+    <!-- Firma Digital -->
+    <div class="signature-section">
+      <div class="signature-box">
+        {{#if doctorSignatureUrl}}
+          <img src="{{ doctorSignatureUrl }}" alt="Firma Médico" class="signature-img" />
+        {{/if}}
+        <div style="font-weight: 700; font-size: 11px;">Dr(a). {{ doctorFullName }}</div>
+        <div style="font-size: 9.5px; color: var(--text-muted);">{{ doctorSpecialty }}</div>
+        <div style="font-size: 9px; color: var(--text-muted);">C.I.: {{ doctorIdCard }} • MPPS: {{ doctorMs }} {{#if doctorComezu}}• COMEZU: {{ doctorComezu }}{{/if}}</div>
+        {{#if signedAtFormatted}}
+          <div style="font-size: 8px; color: #9ca3af; margin-top: 2px;">Firmado digitalmente el {{ signedAtFormatted }}</div>
+        {{/if}}
+      </div>
+    </div>
+
+    <div class="footer">
+      Documento clínico generado y validado electrónicamente por SIRCA Planes de Salud C.A. • Validez legal médica.
+    </div>
+  </div>
+</body>
+</html>

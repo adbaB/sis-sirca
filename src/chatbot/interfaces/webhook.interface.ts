@@ -33,6 +33,10 @@ export interface MetaMessage {
       title: string;
     };
   };
+  button?: {
+    text: string;
+    payload?: string;
+  };
 }
 
 export interface MetaStatus {

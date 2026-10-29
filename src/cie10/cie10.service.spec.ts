@@ -2,11 +2,32 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Cie10Service } from './cie10.service';
 import { Cie10Code } from './entities/cie10-code.entity';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 describe('Cie10Service', () => {
+  type MockFn = Mock<(...args: unknown[]) => unknown>;
+
+  type MockQueryBuilder = {
+    where: MockFn;
+    andWhere: MockFn;
+    orderBy: MockFn;
+    addOrderBy: MockFn;
+    setParameter: MockFn;
+    take: MockFn;
+    getMany: MockFn;
+    insert: MockFn;
+    into: MockFn;
+    values: MockFn;
+    orUpdate: MockFn;
+    execute: MockFn;
+  };
+
   let service: Cie10Service;
-  let mockRepo: any;
+  let mockRepo: {
+    count: MockFn;
+    findOne: MockFn;
+    createQueryBuilder: Mock<() => MockQueryBuilder>;
+  };
 
   const sampleCodes: Cie10Code[] = [
     {
@@ -60,7 +81,7 @@ describe('Cie10Service', () => {
   ];
 
   beforeEach(async () => {
-    const qb: any = {
+    const qb: MockQueryBuilder = {
       where: vi.fn().mockReturnThis(),
       andWhere: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
+import { Doctor } from '../doctors/entities/doctor.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Role } from '../roles/entities/role.entity';
@@ -16,6 +17,8 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Role)
     private readonly roleRepository: Repository<Role>,
+    @InjectRepository(Doctor)
+    private readonly doctorRepository: Repository<Doctor>,
   ) {}
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -31,6 +34,13 @@ export class UsersService {
       }
     }
 
+    if (dto.doctorId) {
+      const doctor = await this.doctorRepository.findOneBy({ id: dto.doctorId });
+      if (!doctor) {
+        throw new NotFoundException(`Médico con ID "${dto.doctorId}" no encontrado.`);
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = this.userRepository.create({
       ...dto,
@@ -42,7 +52,7 @@ export class UsersService {
 
   findAll(): Promise<User[]> {
     return this.userRepository.find({
-      relations: ['role', 'role.permissions', 'advisor'],
+      relations: ['role', 'role.permissions', 'advisor', 'doctor'],
       order: { email: 'ASC' },
     });
   }
@@ -50,7 +60,7 @@ export class UsersService {
   async findOne(id: string): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id },
-      relations: ['role', 'role.permissions', 'advisor'],
+      relations: ['role', 'role.permissions', 'advisor', 'doctor'],
     });
     if (!user) {
       throw new NotFoundException(`Usuario con ID "${id}" no encontrado.`);
@@ -61,7 +71,7 @@ export class UsersService {
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepository.findOne({
       where: { email },
-      relations: ['role', 'role.permissions', 'advisor'],
+      relations: ['role', 'role.permissions', 'advisor', 'doctor'],
     });
   }
 
@@ -81,6 +91,13 @@ export class UsersService {
       const role = await this.roleRepository.findOneBy({ id: dto.roleId });
       if (!role) {
         throw new NotFoundException(`Rol con ID "${dto.roleId}" no encontrado.`);
+      }
+    }
+
+    if (dto.doctorId) {
+      const doctor = await this.doctorRepository.findOneBy({ id: dto.doctorId });
+      if (!doctor) {
+        throw new NotFoundException(`Médico con ID "${dto.doctorId}" no encontrado.`);
       }
     }
 

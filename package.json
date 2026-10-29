@@ -22,6 +22,7 @@
     "check-format": "prettier --check .",
     "check-types": "tsc --pretty --noEmit",
     "check-lint": "pnpm exec eslint .",
+    "audit:lines": "node script/audit-code-quality.cjs",
     "cie10:extract": "ts-node -T script/parse-cie10-volume1.ts",
     "typeorm": "typeorm-ts-node-commonjs -d src/config/ormconfig.ts",
     "migrations:run:prod": "typeorm -d dist/config/ormconfig.js migration:run",

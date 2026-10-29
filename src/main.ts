@@ -47,3 +47,4 @@ async function bootstrap(): Promise<void> {
   app.get(PinoLogger).log(`Application is running on: ${await app.getUrl()}`, 'Bootstrap');
 }
 bootstrap();
+// Live reload trigger

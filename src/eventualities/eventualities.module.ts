@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AwsModule } from '../aws/aws.module';
 import { ContractsModule } from '../contracts/contracts.module';
@@ -10,6 +10,12 @@ import { EventualityExtractionDetail } from './entities/eventuality-extraction-d
 import { EventualityMedicalReport } from './entities/eventuality-medical-report.entity';
 import { EventualityMovement } from './entities/eventuality-movement.entity';
 import { EventualityProviderInvoice } from './entities/eventuality-provider-invoice.entity';
+import { EventualityTreatmentItem } from './entities/eventuality-treatment-item.entity';
+import { EventualityServiceRequest } from './entities/eventuality-service-request.entity';
+import { Doctor } from '../doctors/entities/doctor.entity';
+import { MedicalService } from '../plans/entities/medical-service.entity';
+import { DoctorsModule } from '../doctors/doctors.module';
+import { Cie10Module } from '../cie10/cie10.module';
 import { EventualitiesController } from './controllers/eventualities.controller';
 import { EventualitiesService } from './services/eventualities.service';
 import { EventualityOcrService } from './services/eventuality-ocr.service';
@@ -27,15 +33,21 @@ import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
       EventualityMedicalReport,
       EventualityMovement,
       EventualityProviderInvoice,
+      EventualityTreatmentItem,
+      EventualityServiceRequest,
+      Doctor,
+      MedicalService,
       Person,
       ContractPerson,
     ]),
     ContractsModule,
     SystemSettingsModule,
     AwsModule,
-    ChatbotModule,
+    forwardRef(() => ChatbotModule),
     PdfModule,
     ExchangeRateModule,
+    DoctorsModule,
+    Cie10Module,
   ],
   controllers: [EventualitiesController],
   providers: [

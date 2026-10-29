@@ -11,6 +11,7 @@ import {
 import { Exclude } from 'class-transformer';
 import type { Role } from '../../roles/entities/role.entity';
 import type { Advisor } from '../../advisors/entities/advisor.entity';
+import type { Doctor } from '../../doctors/entities/doctor.entity';
 
 @Entity('users')
 export class User {
@@ -51,6 +52,19 @@ export class User {
   })
   @JoinColumn({ name: 'advisor_id', foreignKeyConstraintName: 'FK_users_advisor' })
   advisor: Advisor;
+
+  @Index('IDX_users_doctor_id')
+  @Column({ type: 'uuid', name: 'doctor_id', nullable: true })
+  doctorId: string | null;
+
+  @ManyToOne('Doctor', {
+    nullable: true,
+    eager: true,
+    onUpdate: 'NO ACTION',
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'doctor_id', foreignKeyConstraintName: 'FK_users_doctor' })
+  doctor: Doctor | null;
 
   @Exclude()
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })

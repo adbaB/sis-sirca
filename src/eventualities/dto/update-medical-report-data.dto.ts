@@ -1,4 +1,5 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsArray, IsDateString, IsOptional, IsString, IsUUID, ValidateIf } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class UpdateMedicalReportDataDto {
   @IsOptional()
@@ -52,4 +53,39 @@ export class UpdateMedicalReportDataDto {
   @IsOptional()
   @IsString()
   medicalReportNotes?: string | null;
+
+  @IsOptional()
+  @IsString()
+  primaryCie10Code?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  secondaryCie10Codes?: Array<{ code: string; description: string }> | null;
+
+  @IsOptional()
+  @IsString()
+  reasonForConsultation?: string | null;
+
+  @IsOptional()
+  @IsString()
+  currentIllness?: string | null;
+
+  @IsOptional()
+  @IsString()
+  physicalExam?: string | null;
+
+  @IsOptional()
+  @IsString()
+  generalTreatmentNotes?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== '')
+  @IsUUID('all')
+  @Transform(({ value }) => (value === '' ? null : value))
+  doctorId?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== '')
+  @IsDateString()
+  signedAt?: string | null;
 }
