@@ -30,7 +30,7 @@ jobs:
           pnpm run build
           
       - name: Comprimir archivos
-        run: tar -czf deploy.tar.gz dist package.json pnpm-lock.yaml script
+        run: tar -czf deploy.tar.gz dist package.json pnpm-lock.yaml pnpm-workspace.yaml script
 
       - name: Enviar archivos al servidor por SCP
         uses: appleboy/scp-action@master
@@ -66,6 +66,7 @@ jobs:
             # 5. Instalar dependencias de producción y Migraciones
             cd /tmp/sirca_staging
             pnpm install --prod --frozen-lockfile --ignore-scripts
+            pnpm exec puppeteer browsers install chrome
             pnpm run migrations:run:prod
           
             # 6. Mover a Producción
