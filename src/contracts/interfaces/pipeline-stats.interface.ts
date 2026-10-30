@@ -2,6 +2,12 @@ export interface PipelineTotals {
   totalPipeline: number;
   totalCollected: number;
   totalPending: number;
+  totalRetention?: number;
+  baseRecurring?: number;
+  inclusionAmount?: number;
+  inclusionCount?: number;
+  subscriptionAmount?: number;
+  subscriptionCount?: number;
 }
 
 export interface PipelineCounts {

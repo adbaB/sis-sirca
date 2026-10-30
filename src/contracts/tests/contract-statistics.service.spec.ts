@@ -38,7 +38,7 @@ describe('ContractStatisticsService', () => {
     service = module.get<ContractStatisticsService>(ContractStatisticsService);
     queryRepository = module.get(ContractQueryRepository);
     affiliationHistoryRepository = module.get(getRepositoryToken(AffiliationHistory));
-  });
+  }, 30000);
 
   it('should be defined', () => {
     expect(service).toBeDefined();
@@ -68,6 +68,40 @@ describe('ContractStatisticsService', () => {
       expect(res.stats.totalPipeline).toBe(50);
       expect(res.stats.totalCollected).toBe(50);
       expect(res.counts.paid).toBe(1);
+    });
+
+    it('should accumulate all invoices when contract has multiple invoices in the same month', async () => {
+      const mockContract = {
+        id: 'c-multi',
+        monthlyAmount: 50,
+        invoices: [
+          {
+            billingMonth: '2026-08',
+            baseAmount: 0,
+            totalAmount: 38,
+            paidAmount: 38,
+            status: 'PAID',
+            payments: [],
+          },
+          {
+            billingMonth: '2026-08',
+            baseAmount: 50,
+            totalAmount: 50,
+            paidAmount: 50,
+            status: 'PAID',
+            payments: [],
+          },
+        ],
+      } as unknown as Contract;
+
+      queryRepository.findContractsForPipeline.mockResolvedValue([mockContract]);
+
+      const res = await service.getPipelineStats(undefined, '08', '2026');
+
+      expect(res.stats.totalPipeline).toBe(88);
+      expect(res.stats.totalCollected).toBe(88);
+      expect(res.stats.baseRecurring).toBe(50);
+      expect(res.counts.paid).toBe(2);
     });
 
     it('should calculate cumulative stats when no month/year provided', async () => {

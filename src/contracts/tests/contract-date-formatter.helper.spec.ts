@@ -1,5 +1,6 @@
 import {
   calculateContractExpirationDate,
+  calculateContractStartDate,
   formatContractDate,
   formatContractPersonAge,
   getCalendarDateComponents,
@@ -8,6 +9,14 @@ import {
 } from '../helpers/contract-date-formatter.helper';
 
 describe('contract-date-formatter.helper', () => {
+  describe('calculateContractStartDate', () => {
+    it('should calculate start date as exactly 7 days after affiliation date', () => {
+      expect(calculateContractStartDate('2026-10-01')).toBe('2026-10-08');
+      expect(calculateContractStartDate('2026-10-25')).toBe('2026-11-01');
+      expect(calculateContractStartDate('2026-12-28')).toBe('2027-01-04');
+    });
+  });
+
   describe('calculateContractExpirationDate', () => {
     it('should calculate expiration date for June 28 (month 6) as May 31 of next year', () => {
       const expiration = calculateContractExpirationDate('2026-06-28');

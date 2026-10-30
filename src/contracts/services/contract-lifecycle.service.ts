@@ -16,7 +16,10 @@ import { ContractPerson, PersonRole } from '../entities/contract-person.entity';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { ContractAffiliationService } from './contract-affiliation.service';
 import { ContractReactivationService } from './contract-reactivation.service';
-import { calculateContractExpirationDate } from '../helpers/contract-date-formatter.helper';
+import {
+  calculateContractExpirationDate,
+  calculateContractStartDate,
+} from '../helpers/contract-date-formatter.helper';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { PersonStatus } from '../../persons/entities/person.entity';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
@@ -49,6 +52,9 @@ export class ContractLifecycleService {
         'contractPersons.person',
         'contractPersons.person.plan',
         'contractPersons.healthDeclarations',
+        'contractPersons.exclusions',
+        'contractPersons.exclusions.medicalService',
+        'contractPersons.exclusions.serviceCategory',
         'invoices',
         'invoices.payments',
         'surpluses',
@@ -76,6 +82,9 @@ export class ContractLifecycleService {
         'contractPersons.person',
         'contractPersons.person.plan',
         'contractPersons.healthDeclarations',
+        'contractPersons.exclusions',
+        'contractPersons.exclusions.medicalService',
+        'contractPersons.exclusions.serviceCategory',
         'invoices',
         'invoices.payments',
         'surpluses',
@@ -106,6 +115,8 @@ export class ContractLifecycleService {
 
     if (startDate !== undefined) {
       contract.startDate = startDate ? new Date(startDate) : null;
+    } else if (rest.affiliationDate) {
+      contract.startDate = new Date(calculateContractStartDate(rest.affiliationDate));
     }
 
     if (expirationDate !== undefined) {
@@ -231,6 +242,9 @@ export class ContractLifecycleService {
         'contractPersons.person',
         'contractPersons.person.plan',
         'contractPersons.healthDeclarations',
+        'contractPersons.exclusions',
+        'contractPersons.exclusions.medicalService',
+        'contractPersons.exclusions.serviceCategory',
         'advisor',
         'portfolio',
       ],

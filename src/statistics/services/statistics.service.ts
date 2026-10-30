@@ -5,39 +5,12 @@ import {
   StatisticsResponse,
   StatisticsSummary,
 } from '../interfaces/response.interface';
-
-/* ── Raw shapes devueltas por las queries SQL ─────────────────────────── */
-
-interface VerificationKpiRaw {
-  facturas_verificadas: string;
-  monto_verificado: string;
-  monto_verificado_bs: string;
-  facturas_pendientes_verificar: string;
-  monto_sin_verificar: string;
-  monto_sin_verificar_bs: string;
-}
-
-interface InvoiceSummaryRaw {
-  invoices_paid: string;
-  total_paid: string;
-  invoices_partial: string;
-  total_partial: string;
-  total_partial_to_paid: string;
-  invoices_pending: string;
-  total_pending: string;
-  /** SUM(total_amount) for all invoices — the grand billing total */
-  grand_total_amount: string;
-  /** SUM(paid_amount) for PAID + PARTIAL invoices — everything collected so far */
-  total_collected: string;
-}
-
-interface MonthlyTrendRaw {
-  month: string;
-  verified: string;
-  pending: string;
-}
-
-/* ────────────────────────────────────────────────────────────────────── */
+import {
+  VerificationKpiRaw,
+  InvoiceSummaryRaw,
+  AffiliatesSummaryRaw,
+  MonthlyTrendRaw,
+} from '../interfaces/raw-query.interface';
 
 @Injectable()
 export class StatisticsService {
@@ -52,13 +25,13 @@ export class StatisticsService {
    * @param advisorUuid – opcional; si se omite, incluye todos los asesores.
    */
   async getStatistics(billingMonth: string, advisorUuid?: string): Promise<StatisticsResponse> {
-    const [kpiRaw, summaryRaw, totalAffiliates] = await Promise.all([
+    const [kpiRaw, summaryRaw, affRaw] = await Promise.all([
       this.queryVerificationKpi(billingMonth, advisorUuid),
       this.queryInvoiceSummary(billingMonth, advisorUuid),
-      this.queryTotalAffiliates(billingMonth, advisorUuid),
+      this.queryAffiliatesAndSubscriptions(billingMonth, advisorUuid),
     ]);
 
-    const summary = this.buildSummary(kpiRaw, summaryRaw, totalAffiliates);
+    const summary = this.buildSummary(kpiRaw, summaryRaw, affRaw);
     const breakdown = this.buildBreakdown(kpiRaw, summaryRaw);
 
     return { summary, breakdown };
@@ -147,6 +120,8 @@ export class StatisticsService {
         ) THEN 1 ELSE 0 END) AS invoices_pending,
         SUM(CASE WHEN i.status = 'PENDING' THEN i.total_amount ELSE 0 END) AS total_pending,
         COALESCE(SUM(i.total_amount), 0)                                    AS grand_total_amount,
+        COALESCE(SUM(i.base_amount), 0)                                     AS total_base_amount,
+        COALESCE(SUM(i.retention_amount), 0)                                AS total_retention,
         COALESCE(SUM(CASE WHEN i.status IN ('PAID', 'PARTIAL') THEN i.paid_amount ELSE 0 END), 0) AS total_collected
       FROM invoices i
       INNER JOIN contracts c ON c.id = i.contract_id
@@ -167,6 +142,8 @@ export class StatisticsService {
         invoices_pending: '0',
         total_pending: '0',
         grand_total_amount: '0',
+        total_base_amount: '0',
+        total_retention: '0',
         total_collected: '0',
       }
     );
@@ -200,27 +177,42 @@ export class StatisticsService {
   }
 
   /* ──────────────────────────────────────────────────────────────────────
-     Query 4 — Total de afiliados (sumatoria de quantity en lines MENSUALIDAD e INCLUSION)
+     Query 4 — Total de afiliados y métricas de cuotas de suscripción
      ────────────────────────────────────────────────────────────────────── */
-  private async queryTotalAffiliates(billingMonth: string, advisorUuid?: string): Promise<number> {
+  private async queryAffiliatesAndSubscriptions(
+    billingMonth: string,
+    advisorUuid?: string,
+  ): Promise<AffiliatesSummaryRaw> {
     const params: unknown[] = [billingMonth];
     const advisorFilter = advisorUuid ? `AND c.advisor_id = $${params.push(advisorUuid)}` : '';
 
     const sql = `
-      SELECT COALESCE(SUM(il.quantity), 0) AS total_affiliates
+      SELECT 
+        COALESCE(SUM(CASE WHEN il.category IN ('INCLUSION', 'MENSUALIDAD') THEN il.quantity ELSE 0 END), 0) AS total_affiliates,
+        COALESCE(SUM(CASE WHEN il.category = 'INCLUSION' THEN il.quantity ELSE 0 END), 0)                   AS inclusion_count,
+        COALESCE(SUM(CASE WHEN il.category = 'INCLUSION' THEN il.amount * il.quantity ELSE 0 END), 0)       AS inclusion_amount,
+        COALESCE(SUM(CASE WHEN il.category = 'SUSCRIPCION' THEN il.quantity ELSE 0 END), 0)                 AS subscription_count,
+        COALESCE(SUM(CASE WHEN il.category = 'SUSCRIPCION' THEN il.amount * il.quantity ELSE 0 END), 0)     AS subscription_amount
       FROM invoice_lines il
       INNER JOIN invoices i ON i.id = il.invoice_id
       INNER JOIN contracts c ON c.id = i.contract_id
-      WHERE il.category IN ('INCLUSION', 'MENSUALIDAD')
-        AND i.billing_month = $1
+      WHERE i.billing_month = $1
         AND c.status IN ('ACTIVE', 'SUSPENDED')
         AND c.deleted_at IS NULL
         AND i.deleted_at IS NULL
         AND il.deleted_at IS NULL
         ${advisorFilter};
     `;
-    const rows = await this.datasource.query<{ total_affiliates: string | number }[]>(sql, params);
-    return Number(rows[0]?.total_affiliates ?? 0);
+    const rows = await this.datasource.query<AffiliatesSummaryRaw[]>(sql, params);
+    return (
+      rows[0] ?? {
+        total_affiliates: 0,
+        inclusion_count: 0,
+        inclusion_amount: 0,
+        subscription_count: 0,
+        subscription_amount: 0,
+      }
+    );
   }
 
   /* ──────────────────────────────────────────────────────────────────────
@@ -230,9 +222,13 @@ export class StatisticsService {
   private buildSummary(
     kpi: VerificationKpiRaw,
     inv: InvoiceSummaryRaw,
-    totalAffiliates: number,
+    aff: AffiliatesSummaryRaw,
   ): StatisticsSummary {
-    const partialRemaining = Number(inv.total_partial_to_paid) - Number(inv.total_partial);
+    const totalRetention = Number(inv.total_retention);
+    const totalInvoice = Number(inv.grand_total_amount);
+    const totalCollected = Number(inv.total_collected);
+    const netDue = Math.max(0, totalInvoice - totalRetention);
+    const realPending = Math.max(0, netDue - totalCollected);
 
     return {
       totalPaymentsVerified: Number(kpi.facturas_verificadas),
@@ -241,13 +237,17 @@ export class StatisticsService {
       totalPaymentsPending: Number(inv.invoices_pending),
       totalAmountVerifiedUsd: Number(kpi.monto_verificado),
       totalAmountUnverifiedUsd: Number(kpi.monto_sin_verificar),
-      totalPendingUsd: Number(inv.total_pending),
-      totalToPayUsd: partialRemaining + Number(inv.total_pending),
-      /** Grand total of ALL invoice total_amounts for the billing month */
-      totalInvoiceAmount: Number(inv.grand_total_amount),
-      /** Total actually collected: paid_amount of PAID + PARTIAL invoices */
-      totalCollected: Number(inv.total_collected),
-      totalAffiliates,
+      totalPendingUsd: realPending,
+      totalToPayUsd: realPending,
+      totalInvoiceAmount: totalInvoice,
+      totalBaseAmount: Number(inv.total_base_amount),
+      totalRetentionAmount: totalRetention,
+      totalCollected,
+      totalAffiliates: Number(aff.total_affiliates),
+      inclusionCount: Number(aff.inclusion_count),
+      inclusionAmount: Number(aff.inclusion_amount),
+      subscriptionFeesCount: Number(aff.subscription_count),
+      subscriptionFeesAmount: Number(aff.subscription_amount),
     };
   }
 
