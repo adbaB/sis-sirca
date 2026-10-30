@@ -61,7 +61,17 @@ export class ContractStatisticsService {
       targetBillingMonth,
     );
 
-    const totals: PipelineTotals = { totalPipeline: 0, totalCollected: 0, totalPending: 0 };
+    const totals: PipelineTotals = {
+      totalPipeline: 0,
+      totalCollected: 0,
+      totalPending: 0,
+      totalRetention: 0,
+      baseRecurring: 0,
+      inclusionAmount: 0,
+      inclusionCount: 0,
+      subscriptionAmount: 0,
+      subscriptionCount: 0,
+    };
     const counts: PipelineCounts = { pending: 0, rejected: 0, partial: 0, paid: 0 };
 
     for (const contract of contracts) {
@@ -104,9 +114,9 @@ export class ContractStatisticsService {
       .createQueryBuilder('h')
       .select([
         `SUM(CASE WHEN h.action = 'AFILIACION' THEN 1 ELSE 0 END) AS new_affiliations`,
-        `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN 1 ELSE 0 END) AS disaffiliations`,
+        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN 1 ELSE 0 END) AS disaffiliations`,
         `SUM(CASE WHEN h.action = 'AFILIACION' THEN h.amount ELSE 0 END) AS revenue_gained`,
-        `SUM(CASE WHEN h.action IN ('DESAFILIACION', 'CAMBIO_CONTRATO') THEN h.amount ELSE 0 END) AS revenue_lost`,
+        `SUM(CASE WHEN h.action = 'DESAFILIACION' THEN h.amount ELSE 0 END) AS revenue_lost`,
       ])
       .where('h.action_date BETWEEN :startDateStr AND :endDateStr', { startDateStr, endDateStr })
       .andWhere('h.is_reverted = false')
@@ -138,26 +148,45 @@ export class ContractStatisticsService {
     totals: PipelineTotals,
     counts: PipelineCounts,
   ): void {
-    const targetInvoice = contract.invoices?.find((inv) => inv.billingMonth === targetBillingMonth);
-    if (!targetInvoice) return;
+    const targetInvoices =
+      contract.invoices?.filter((inv) => inv.billingMonth === targetBillingMonth) ?? [];
+    if (targetInvoices.length === 0) return;
 
-    totals.totalPipeline += Number(targetInvoice.baseAmount ?? targetInvoice.totalAmount);
+    for (const targetInvoice of targetInvoices) {
+      totals.totalPipeline += Number(targetInvoice.totalAmount ?? targetInvoice.baseAmount ?? 0);
+      if (totals.baseRecurring !== undefined) {
+        totals.baseRecurring += Number(targetInvoice.baseAmount ?? targetInvoice.totalAmount ?? 0);
+      }
 
-    const hasRejection = targetInvoice.payments?.some((p) => p.status === 'REJECTED');
-    if (
-      hasRejection &&
-      (targetInvoice.status === 'PENDING' || targetInvoice.status === 'PARTIAL')
-    ) {
-      counts.rejected++;
-    } else if (targetInvoice.status === 'PARTIAL') {
-      counts.partial++;
-    } else if (targetInvoice.status === 'PAID' || targetInvoice.status === 'CANCELLED') {
-      counts.paid++;
-    } else {
-      counts.pending++;
+      if (targetInvoice.lines && targetInvoice.lines.length > 0) {
+        for (const line of targetInvoice.lines) {
+          const lineTotal = Number(line.amount) * (line.quantity || 1);
+          if (line.category === 'INCLUSION') {
+            totals.inclusionAmount = (totals.inclusionAmount ?? 0) + lineTotal;
+            totals.inclusionCount = (totals.inclusionCount ?? 0) + (line.quantity || 1);
+          } else if (line.category === 'SUSCRIPCION') {
+            totals.subscriptionAmount = (totals.subscriptionAmount ?? 0) + lineTotal;
+            totals.subscriptionCount = (totals.subscriptionCount ?? 0) + (line.quantity || 1);
+          }
+        }
+      }
+
+      const hasRejection = targetInvoice.payments?.some((p) => p.status === 'REJECTED');
+      if (
+        hasRejection &&
+        (targetInvoice.status === 'PENDING' || targetInvoice.status === 'PARTIAL')
+      ) {
+        counts.rejected++;
+      } else if (targetInvoice.status === 'PARTIAL') {
+        counts.partial++;
+      } else if (targetInvoice.status === 'PAID' || targetInvoice.status === 'CANCELLED') {
+        counts.paid++;
+      } else {
+        counts.pending++;
+      }
+
+      this.accumulateInvoiceStats(targetInvoice, totals);
     }
-
-    this.accumulateInvoiceStats(targetInvoice, totals);
   }
 
   private classifyContractCumulative(
@@ -202,7 +231,10 @@ export class ContractStatisticsService {
     totals: PipelineTotals,
   ): void {
     const retention = Number(inv.retentionAmount || 0);
-    const amountDue = Math.max(0, Number(inv.baseAmount ?? inv.totalAmount) - retention);
+    if (totals.totalRetention !== undefined) {
+      totals.totalRetention += retention;
+    }
+    const amountDue = Math.max(0, Number(inv.totalAmount ?? inv.baseAmount) - retention);
 
     if (inv.status === 'PAID') {
       totals.totalCollected += Number(inv.paidAmount);

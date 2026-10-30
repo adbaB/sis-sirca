@@ -19,7 +19,10 @@ import { Contract, ContractStatus } from '../entities/contract.entity';
 import { HealthDeclaration } from '../entities/health-declaration.entity';
 import { AffiliationAction } from '../enums/affiliation-action.enum';
 import { generateContractCode } from '../helpers/contract-code-generator.helper';
-import { calculateContractExpirationDate } from '../helpers/contract-date-formatter.helper';
+import {
+  calculateContractExpirationDate,
+  calculateContractStartDate,
+} from '../helpers/contract-date-formatter.helper';
 import { migrateFromInactiveContracts } from '../helpers/contract-migration.helper';
 import { validateContractAffiliates } from '../helpers/contract-validator.helper';
 import { ContractAffiliationService } from './contract-affiliation.service';
@@ -74,7 +77,7 @@ export class ContractCreationService {
     if (dto.startDate && !cleanStartDate) {
       throw new BadRequestException('La fecha de inicio es inválida.');
     }
-    const effectiveStartDate = cleanStartDate || cleanAffiliationDate;
+    const effectiveStartDate = cleanStartDate || calculateContractStartDate(cleanAffiliationDate);
 
     let effectiveExpirationDate: string;
     if (dto.expirationDate) {

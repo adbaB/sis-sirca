@@ -72,12 +72,13 @@ export class ContractQueryRepository {
         'invoices',
         'invoices.billingMonth = :targetBillingMonth',
         { targetBillingMonth },
-      ).leftJoinAndSelect('invoices.payments', 'payments');
+      )
+        .leftJoinAndSelect('invoices.payments', 'payments')
+        .leftJoinAndSelect('invoices.lines', 'lines');
     } else {
-      qb.leftJoinAndSelect('contract.invoices', 'invoices').leftJoinAndSelect(
-        'invoices.payments',
-        'payments',
-      );
+      qb.leftJoinAndSelect('contract.invoices', 'invoices')
+        .leftJoinAndSelect('invoices.payments', 'payments')
+        .leftJoinAndSelect('invoices.lines', 'lines');
     }
 
     return qb.getMany();

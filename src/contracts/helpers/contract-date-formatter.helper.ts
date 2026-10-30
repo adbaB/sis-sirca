@@ -169,6 +169,17 @@ export function formatContractDate(date?: Date | string | null): string {
 }
 
 /**
+ * Calculates the contract start date from the affiliation date.
+ * Business rule: The start date of the contract is 7 days after the affiliation date.
+ * Example: affiliationDate = 2026-10-01 -> startDate = 2026-10-08.
+ */
+export function calculateContractStartDate(affiliationDate: Date | string): string {
+  const { day, monthIndex, year } = getCalendarDateComponents(affiliationDate);
+  const dt = DateTime.fromObject({ year, month: monthIndex + 1, day }, { zone: CARACAS_ZONE });
+  return dt.plus({ days: 7 }).toISODate()!;
+}
+
+/**
  * Calculates the contract expiration date given a start date (or affiliation date).
  * Business rule: The cycle is 1 year minus 1 month, ending on the last day of that month.
  * Example: startDate = 2026-06-28 -> expirationDate = 2027-05-31.

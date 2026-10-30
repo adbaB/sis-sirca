@@ -29,6 +29,14 @@ export class CreateBeneficiaryDto {
   @IsNotEmpty()
   identityCard: string;
 
+  @IsDateString()
+  @IsOptional()
+  birthDate?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  gender?: boolean;
+
   @IsUUID()
   @IsNotEmpty()
   planId: string;
