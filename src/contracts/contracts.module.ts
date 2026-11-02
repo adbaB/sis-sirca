@@ -25,6 +25,7 @@ import { ContractStatisticsService } from './services/contract-statistics.servic
 import { ContractVerificationService } from './services/contract-verification.service';
 import { ContractsService } from './services/contracts.service';
 import { HealthExclusionsService } from './services/health-exclusions.service';
+import { ContractAttachmentService } from './services/contract-attachment.service';
 
 @Module({
   imports: [
@@ -53,11 +54,12 @@ import { HealthExclusionsService } from './services/health-exclusions.service';
     ContractStatisticsService,
     ContractCreationService,
     ContractsService,
+    ContractAttachmentService,
     HealthExclusionsService,
     ContractSuspensionCron,
     ContractReactivationCron,
     ContractInactivationCron,
   ],
-  exports: [ContractsService, HealthExclusionsService, TypeOrmModule],
+  exports: [ContractsService, ContractAttachmentService, HealthExclusionsService, TypeOrmModule],
 })
 export class ContractsModule {}
