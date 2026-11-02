@@ -19,10 +19,11 @@ export class FilesController {
       limits: { fileSize: MAX_UPLOAD_FILE_SIZE },
     }),
   )
-  async uploadReceipt(@UploadedFile() file: Express.Multer.File): Promise<string> {
+  async uploadReceipt(@UploadedFile() file: Express.Multer.File): Promise<{ url: string }> {
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo.');
     }
-    return this.awsService.uploadFile(file);
+    const url = await this.awsService.uploadFile(file);
+    return { url };
   }
 }
