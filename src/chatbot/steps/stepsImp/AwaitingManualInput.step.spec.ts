@@ -144,4 +144,48 @@ describe('AwaitingManualInputStep', () => {
     );
     expect(state.step).toBe(Steps.AWAITING_MANUAL_INPUT);
   });
+
+  it('should parse Venezuelan formatted amount with comma decimal and periods', async () => {
+    const phone = '584121234567';
+    const message: MetaMessage = {
+      from: phone,
+      type: 'text',
+      text: { body: '102653088, BNC, 199.608,64' },
+    };
+    const state: UserState = {
+      step: Steps.AWAITING_MANUAL_INPUT,
+      payment_method: 'transferencia',
+    };
+
+    await step.execute(phone, message, state);
+
+    expect(chatbotPaymentService.processPaymentForInvoices).toHaveBeenCalledWith(
+      phone,
+      state,
+      '102653088',
+      199608.64,
+    );
+  });
+
+  it('should parse manual input when user types space after comma in decimals (4 parts)', async () => {
+    const phone = '584121234567';
+    const message: MetaMessage = {
+      from: phone,
+      type: 'text',
+      text: { body: '102653088, BNC, 199608, 64' },
+    };
+    const state: UserState = {
+      step: Steps.AWAITING_MANUAL_INPUT,
+      payment_method: 'transferencia',
+    };
+
+    await step.execute(phone, message, state);
+
+    expect(chatbotPaymentService.processPaymentForInvoices).toHaveBeenCalledWith(
+      phone,
+      state,
+      '102653088',
+      199608.64,
+    );
+  });
 });

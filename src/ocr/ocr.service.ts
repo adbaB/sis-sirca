@@ -17,6 +17,18 @@ export interface ReceiptData {
   esZelle?: boolean | null;
 }
 
+export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: string): boolean {
+  if (mimeType?.toLowerCase() === 'application/pdf') return true;
+  if (typeof imageBufferOrUrl === 'string') {
+    const lower = imageBufferOrUrl.toLowerCase();
+    return lower.includes('.pdf') || lower.startsWith('data:application/pdf');
+  }
+  if (Buffer.isBuffer(imageBufferOrUrl)) {
+    return imageBufferOrUrl.slice(0, 5).toString('ascii').startsWith('%PDF-');
+  }
+  return false;
+}
+
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
@@ -42,7 +54,10 @@ export class OcrService {
     });
   }
 
-  async extractReceiptData(imageBufferOrUrl: string | Buffer): Promise<ReceiptData> {
+  async extractReceiptData(
+    imageBufferOrUrl: string | Buffer,
+    mimeType?: string,
+  ): Promise<ReceiptData> {
     const apiKey = this.configService.openrouter.apiKey;
     const isTestEnv = this.configService.env === 'test';
 
@@ -51,21 +66,60 @@ export class OcrService {
     }
 
     try {
-      this.logger.log('Preparing image for OpenRouter Vision model...');
+      this.logger.log('Preparing document for OpenRouter (anthropic/claude-sonnet-5.5)...');
 
-      let imageUrl = '';
-      if (typeof imageBufferOrUrl === 'string') {
-        // Prefer URLs to avoid base64 token overhead (~37k tokens vs ~1.4k tokens)
-        imageUrl = imageBufferOrUrl;
+      const isPdf = isPdfDocument(imageBufferOrUrl, mimeType);
+      let contentPart: OpenAI.Chat.Completions.ChatCompletionContentPart;
+
+      if (isPdf) {
+        let fileData = '';
+        if (typeof imageBufferOrUrl === 'string') {
+          fileData = imageBufferOrUrl;
+        } else {
+          this.logger.warn(
+            'Received PDF as Buffer instead of URL. This will increase token usage. Prefer passing a URL.',
+          );
+          const base64Pdf = imageBufferOrUrl.toString('base64');
+          fileData = `data:application/pdf;base64,${base64Pdf}`;
+        }
+
+        contentPart = {
+          type: 'file',
+          file: {
+            filename: 'comprobante.pdf',
+            file_data: fileData,
+          },
+        };
       } else {
-        this.logger.warn(
-          'Received image as Buffer instead of URL. This will increase token usage significantly. Prefer passing a URL.',
-        );
-        const base64Image = imageBufferOrUrl.toString('base64');
-        imageUrl = `data:image/jpeg;base64,${base64Image}`;
+        let imageUrl = '';
+        if (typeof imageBufferOrUrl === 'string') {
+          imageUrl = imageBufferOrUrl;
+        } else {
+          this.logger.warn(
+            'Received image as Buffer instead of URL. This will increase token usage significantly. Prefer passing a URL.',
+          );
+          let imgMime = mimeType || 'image/jpeg';
+          if (!mimeType) {
+            if (imageBufferOrUrl.slice(0, 8).toString('hex') === '89504e470d0a1a0a') {
+              imgMime = 'image/png';
+            } else if (imageBufferOrUrl.slice(0, 4).toString('ascii') === 'RIFF') {
+              imgMime = 'image/webp';
+            }
+          }
+          const base64Image = imageBufferOrUrl.toString('base64');
+          imageUrl = `data:${imgMime};base64,${base64Image}`;
+        }
+
+        contentPart = {
+          type: 'image_url',
+          image_url: {
+            url: imageUrl,
+            detail: 'high',
+          },
+        };
       }
 
-      this.logger.log('Sending image to OpenRouter (openai/gpt-4o)...');
+      this.logger.log('Sending document to OpenRouter (anthropic/claude-sonnet-5.5)...');
 
       const prompt = `Extrae los datos del comprobante de pago adjunto. Puede ser una transferencia bancaria venezolana O un pago Zelle desde un banco estadounidense.
 
@@ -79,10 +133,16 @@ INSTRUCCIONES PARA LA REFERENCIA:
 7. IGNORA íconos de copiar/pegar que puedan aparecer junto a la referencia.
 
 INSTRUCCIONES PARA EL MONTO:
-- Formato venezolano: "1.250,50" → 1250.50 (elimina puntos de miles, coma decimal se convierte en punto).
+- CRÍTICO: En comprobantes venezolanos / en español, el punto (.) separa miles y la coma (,) separa DECIMALES (céntimos).
+  Ejemplo: "199.608,64" representa 199608 con 64 céntimos → DEBES extraerlo como el número 199608.64 (usando punto como separador decimal).
+  NUNCA elimines los decimales ni juntes los céntimos al número entero (por ejemplo, "199.608,64" NUNCA es 19960864).
 - Formato americano/Zelle: "$108.00" → 108.00 (ya usa punto decimal).
 - Si ves "Bs.", "BS", "Bs" o "VES", la moneda es "Bs".
 - Si ves "$", "USD", "US$" o es un pago Zelle, la moneda es "USD".
+
+INSTRUCCIONES PARA LA FECHA:
+- Extrae la fecha de ejecución / fecha del pago en formato DD/MM/YYYY con día y mes de dos dígitos (ej: "3/11/2026" se normaliza a "03/11/2026").
+- Solo incluye la fecha (no incluyas la hora en el campo fecha).
 
 INSTRUCCIONES PARA EL BANCO DESTINO (banco receptor del pago):
 Busca el banco destino bajo estas etiquetas según el banco emisor:
@@ -167,7 +227,7 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
 
       const completion = await this.openai.chat.completions.create(
         {
-          model: 'openai/gpt-4o',
+          model: 'anthropic/claude-sonnet-5.5',
           messages: [
             {
               role: 'system',
@@ -176,20 +236,11 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
             },
             {
               role: 'user',
-              content: [
-                { type: 'text', text: prompt },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: imageUrl,
-                    detail: 'high',
-                  },
-                },
-              ],
+              content: [{ type: 'text', text: prompt }, contentPart],
             },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0,
+          max_tokens: 2000,
         },
         { timeout: 30_000 },
       );
@@ -219,8 +270,35 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
         }
       }
 
+      // Post-OCR validation: sanitize and normalize monto
+      let monto: number | null = null;
+      if (raw.monto !== null && raw.monto !== undefined) {
+        if (typeof raw.monto === 'number') {
+          monto = isNaN(raw.monto) ? null : raw.monto;
+        } else if (typeof raw.monto === 'string') {
+          const s = (raw.monto as string).trim();
+          const clean = s.replace(/[^0-9.,]/g, '');
+          if (clean) {
+            let normalized = clean;
+            if (clean.includes('.') && clean.includes(',')) {
+              if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+                normalized = clean.replace(/\./g, '').replace(',', '.');
+              } else {
+                normalized = clean.replace(/,/g, '');
+              }
+            } else if (clean.includes(',')) {
+              normalized = clean.replace(',', '.');
+            }
+            const parsed = parseFloat(normalized);
+            monto = Number.isFinite(parsed) ? parsed : null;
+          } else {
+            monto = null;
+          }
+        }
+      }
+
       const parsedData: ReceiptData = {
-        monto: raw.monto ?? null,
+        monto,
         referencia,
         beneficiario: raw.beneficiario ?? null,
         bancoDestino: raw.bancoDestino ?? null,

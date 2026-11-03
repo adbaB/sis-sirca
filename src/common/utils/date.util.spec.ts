@@ -75,6 +75,16 @@ describe('Date Utilities', () => {
     expect(dt.isValid).toBe(true);
     expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-07-13');
 
+    // single-digit day d/M/yyyy (e.g. BNC receipt 3/11/2026)
+    dt = parseDateToCaracas('3/11/2026');
+    expect(dt.isValid).toBe(true);
+    expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-11-03');
+
+    // date with time string
+    dt = parseDateToCaracas('3/11/2026 10:26:49 a. m.');
+    expect(dt.isValid).toBe(true);
+    expect(dt.toFormat('yyyy-MM-dd')).toBe('2026-11-03');
+
     // Invalid/Null
     expect(parseDateToCaracas(null as unknown as string).isValid).toBe(false);
     expect(parseDateToCaracas(undefined as unknown as string).isValid).toBe(false);
@@ -117,6 +127,8 @@ describe('Date Utilities', () => {
     expect(parseOcrDateToISO('10/10/2023')).toBe('2023-10-10');
     expect(parseOcrDateToISO('10-10-23')).toBe('2023-10-10');
     expect(parseOcrDateToISO('10.10.2023')).toBe('2023-10-10');
+    expect(parseOcrDateToISO('3/11/2026')).toBe('2026-11-03');
+    expect(parseOcrDateToISO('3/11/2026 10:26:49 a. m.')).toBe('2026-11-03');
     expect(parseOcrDateToISO(null)).toBe('');
     expect(parseOcrDateToISO('')).toBe('');
     expect(parseOcrDateToISO('invalid-date')).toBe('');

@@ -53,7 +53,7 @@ describe('OcrService', () => {
           {
             message: {
               content: JSON.stringify({
-                monto: '100 BS',
+                monto: 100,
                 referencia: '12345',
                 beneficiario: 'Pedro Perez',
                 bancoDestino: 'Banco de Venezuela',
@@ -82,12 +82,13 @@ describe('OcrService', () => {
       expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
 
       const promptCallArg = mockChatCompletionsCreate.mock.calls[0][0];
+      expect(promptCallArg.model).toBe('anthropic/claude-sonnet-5.5');
       // Assert that openrouter / openai receives the image directly
       expect(promptCallArg.messages[1].content[1].image_url.url).toContain(
         'base64,ZHVtbXkgaW1hZ2UgYnVmZmVy',
       );
       expect(result).toEqual({
-        monto: '100 BS',
+        monto: 100,
         referencia: '12345',
         beneficiario: 'Pedro Perez',
         bancoDestino: 'Banco de Venezuela',
@@ -144,6 +145,90 @@ describe('OcrService', () => {
         nombreBanco: 'Wells Fargo',
         esZelle: true,
       });
+    });
+
+    it('should extract data correctly from PDF buffer and send file payload', async () => {
+      const mockChatCompletionsCreate = jest.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                monto: 199608.64,
+                referencia: '102653088',
+                beneficiario: 'Salud Integral El Rosario',
+                bancoDestino: 'Banco Nacional de Crédito',
+                fecha: '03/11/2026',
+                origen: 'Banco Nacional de Crédito',
+                moneda: 'Bs',
+                descripcion: 'Pago Gisela Melendez y flia',
+                nombreBanco: 'Banco Nacional de Crédito',
+                esZelle: false,
+              }),
+            },
+          },
+        ],
+      });
+
+      const openAiInstance = service['openai'];
+      openAiInstance.chat = {
+        completions: {
+          create: mockChatCompletionsCreate,
+        },
+      } as unknown as typeof openAiInstance.chat;
+
+      const pdfBuffer = Buffer.from('%PDF-1.4 dummy pdf content');
+      const result = await service.extractReceiptData(pdfBuffer);
+
+      expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
+      const callArgs = mockChatCompletionsCreate.mock.calls[0][0];
+      expect(callArgs.model).toBe('anthropic/claude-sonnet-5.5');
+      expect(callArgs.messages[1].content[1].type).toBe('file');
+      expect(callArgs.messages[1].content[1].file.filename).toBe('comprobante.pdf');
+      expect(callArgs.messages[1].content[1].file.file_data).toContain(
+        'data:application/pdf;base64,',
+      );
+      expect(result.monto).toBe(199608.64);
+      expect(result.referencia).toBe('102653088');
+    });
+
+    it('should extract data correctly from PDF URL and normalize formatted Venezuelan amount string', async () => {
+      const mockChatCompletionsCreate = jest.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                monto: '199.608,64',
+                referencia: '102653088',
+                beneficiario: 'Salud Integral El Rosario',
+                bancoDestino: 'Banco Nacional de Crédito',
+                fecha: '03/11/2026',
+                origen: 'Banco Nacional de Crédito',
+                moneda: 'Bs',
+                descripcion: 'Transferencia',
+                nombreBanco: 'Banco Nacional de Crédito',
+                esZelle: false,
+              }),
+            },
+          },
+        ],
+      });
+
+      const openAiInstance = service['openai'];
+      openAiInstance.chat = {
+        completions: {
+          create: mockChatCompletionsCreate,
+        },
+      } as unknown as typeof openAiInstance.chat;
+
+      const pdfUrl = 'https://s3.amazonaws.com/receipts/comprobante.pdf';
+      const result = await service.extractReceiptData(pdfUrl, 'application/pdf');
+
+      expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
+      const callArgs = mockChatCompletionsCreate.mock.calls[0][0];
+      expect(callArgs.messages[1].content[1].type).toBe('file');
+      expect(callArgs.messages[1].content[1].file.file_data).toBe(pdfUrl);
+      // Normalized from "199.608,64" string to number 199608.64
+      expect(result.monto).toBe(199608.64);
     });
 
     it('should throw error if OCR fails', async () => {
