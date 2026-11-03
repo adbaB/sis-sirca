@@ -33,13 +33,13 @@ export class ContractInactivationCron {
   ) {}
 
   /**
-   * Runs on the 1st of every month at 12:00 PM.
+   * Runs on the 1st of every month at 01:00.
    * Checks all ACTIVE contracts for delinquency (3+ unpaid invoices,
    * meaning 2+ months without paying) and inactivates them.
    * Sends a summary email to sircapagos@gmail.com with the list of
    * inactivated contracts.
    */
-  @Cron('0 12 1 * *')
+  @Cron('0 1 1 * *')
   async processContractInactivations(): Promise<void> {
     this.logger.log('Starting contract inactivation check for delinquency...');
 
