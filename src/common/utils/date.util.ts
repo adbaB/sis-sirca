@@ -65,28 +65,36 @@ export function parseDateToCaracas(dateStr: string | null | undefined, isZelle =
   // Try ISO first (YYYY-MM-DD)
   let dt = DateTime.fromISO(raw, { zone: CARACAS_ZONE });
 
-  // Zelle receipts use US format (MM/DD/YYYY or MM-DD-YYYY)
+  // Extract date part in case raw includes time (e.g. "3/11/2026 10:26:53" or "03/11/2026, 10:26")
+  const dateOnly = raw.split(/[T\s,]+/)[0];
+
+  // Zelle receipts use US format (MM/DD/YYYY or MM-DD-YYYY or M/d/yyyy)
   if (!dt.isValid && isZelle) {
-    dt = DateTime.fromFormat(raw, 'MM/dd/yyyy', { zone: CARACAS_ZONE });
-    if (!dt.isValid) {
-      dt = DateTime.fromFormat(raw, 'MM-dd-yyyy', { zone: CARACAS_ZONE });
+    for (const fmt of ['MM/dd/yyyy', 'MM-dd-yyyy', 'M/d/yyyy', 'M-d-yyyy']) {
+      dt = DateTime.fromFormat(raw, fmt, { zone: CARACAS_ZONE });
+      if (dt.isValid) break;
+      dt = DateTime.fromFormat(dateOnly, fmt, { zone: CARACAS_ZONE });
+      if (dt.isValid) break;
     }
   }
 
-  // DD/MM/YYYY
+  // DD/MM/YYYY, d/M/yyyy, DD-MM-YYYY, d-M-yyyy
   if (!dt.isValid) {
-    dt = DateTime.fromFormat(raw, 'dd/MM/yyyy', { zone: CARACAS_ZONE });
-  }
-  // DD-MM-YYYY
-  if (!dt.isValid) {
-    dt = DateTime.fromFormat(raw, 'dd-MM-yyyy', { zone: CARACAS_ZONE });
+    for (const fmt of ['dd/MM/yyyy', 'd/M/yyyy', 'dd-MM-yyyy', 'd-M-yyyy']) {
+      dt = DateTime.fromFormat(raw, fmt, { zone: CARACAS_ZONE });
+      if (dt.isValid) break;
+      dt = DateTime.fromFormat(dateOnly, fmt, { zone: CARACAS_ZONE });
+      if (dt.isValid) break;
+    }
   }
 
-  // Fallback for non-Zelle if it happens to be MM/DD/YYYY
+  // Fallback for non-Zelle if it happens to be MM/DD/YYYY or M/d/yyyy
   if (!dt.isValid && !isZelle) {
-    dt = DateTime.fromFormat(raw, 'MM/dd/yyyy', { zone: CARACAS_ZONE });
-    if (!dt.isValid) {
-      dt = DateTime.fromFormat(raw, 'MM-dd-yyyy', { zone: CARACAS_ZONE });
+    for (const fmt of ['MM/dd/yyyy', 'MM-dd-yyyy', 'M/d/yyyy', 'M-d-yyyy']) {
+      dt = DateTime.fromFormat(raw, fmt, { zone: CARACAS_ZONE });
+      if (dt.isValid) break;
+      dt = DateTime.fromFormat(dateOnly, fmt, { zone: CARACAS_ZONE });
+      if (dt.isValid) break;
     }
   }
 
@@ -178,7 +186,8 @@ export function excelDateToDateString(serial: number): string | null {
  */
 export function parseOcrDateToISO(fechaStr: string | null | undefined): string {
   if (!fechaStr) return '';
-  const cleaned = fechaStr.replace(/[-.]/g, '/').trim();
+  const datePart = fechaStr.trim().split(/[T\s,]+/)[0];
+  const cleaned = datePart.replace(/[-.]/g, '/').trim();
   const parts = cleaned.split('/');
   if (parts.length === 3) {
     const day = parts[0].padStart(2, '0');

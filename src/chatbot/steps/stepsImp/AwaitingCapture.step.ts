@@ -40,7 +40,7 @@ export class AwaitingCaptureStep implements IStepHandler {
 
         // Process OCR
         try {
-          const extractedData = await this.ocrService.extractReceiptData(receiptUrl);
+          const extractedData = await this.ocrService.extractReceiptData(receiptUrl, contentType);
           state.extracted_data = { ...state.extracted_data, ...extractedData };
 
           const detectedBank =

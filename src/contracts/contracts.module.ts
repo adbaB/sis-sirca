@@ -25,6 +25,7 @@ import { ContractStatisticsService } from './services/contract-statistics.servic
 import { ContractVerificationService } from './services/contract-verification.service';
 import { ContractsService } from './services/contracts.service';
 import { HealthExclusionsService } from './services/health-exclusions.service';
+import { ContractAttachmentService } from './services/contract-attachment.service';
 
 import { ContractCoveragePeriod } from './entities/contract-coverage-period.entity';
 import { CoveragePeriodService } from './services/coverage-period.service';
@@ -57,12 +58,19 @@ import { CoveragePeriodService } from './services/coverage-period.service';
     ContractStatisticsService,
     ContractCreationService,
     ContractsService,
+    ContractAttachmentService,
     HealthExclusionsService,
     ContractSuspensionCron,
     ContractReactivationCron,
     ContractInactivationCron,
     CoveragePeriodService,
   ],
-  exports: [ContractsService, HealthExclusionsService, CoveragePeriodService, TypeOrmModule],
+  exports: [
+    ContractsService,
+    ContractAttachmentService,
+    HealthExclusionsService,
+    CoveragePeriodService,
+    TypeOrmModule,
+  ],
 })
 export class ContractsModule {}

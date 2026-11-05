@@ -65,6 +65,8 @@ export class ContractAffiliationService {
       name: dto.name,
       typeIdentityCard: dto.typeIdentityCard,
       identityCard: dto.identityCard,
+      birthDate: dto.birthDate,
+      gender: dto.gender,
       phone: dto.phone,
       alternatePhone: dto.alternatePhone,
       email: dto.email,
@@ -102,6 +104,27 @@ export class ContractAffiliationService {
 
     if (!person) {
       person = await this.personsService.create(personFields);
+    } else {
+      const hasOptionalUpdates = (
+        [
+          'birthDate',
+          'gender',
+          'phone',
+          'alternatePhone',
+          'email',
+          'address',
+          'city',
+          'state',
+          'postalCode',
+          'weight',
+          'height',
+          'occupation',
+          'legalRepresentative',
+        ] as const
+      ).some((k) => personFields[k] !== undefined);
+      if (hasOptionalUpdates) {
+        person = await this.personsService.update(person.id, personFields, manager);
+      }
     }
 
     // 4. Validar que la persona no esté ya en este contrato
@@ -517,33 +540,35 @@ export class ContractAffiliationService {
     let planChanged = false;
     if (dto.planId !== undefined) {
       if (contractPerson.role === PersonRole.TITULAR) {
-        throw new BadRequestException('El titular no puede tener un plan asignado.');
-      }
+        if (dto.planId) {
+          throw new BadRequestException('El titular no puede tener un plan asignado.');
+        }
+      } else {
+        if (!dto.planId) {
+          throw new BadRequestException('El afiliado debe tener un plan asignado.');
+        }
 
-      if (!dto.planId) {
-        throw new BadRequestException('El afiliado debe tener un plan asignado.');
-      }
+        const newPlan = await this.plansService.findOne(dto.planId);
+        if (!newPlan) {
+          throw new NotFoundException(`Plan with ID "${dto.planId}" not found`);
+        }
 
-      const newPlan = await this.plansService.findOne(dto.planId);
-      if (!newPlan) {
-        throw new NotFoundException(`Plan with ID "${dto.planId}" not found`);
-      }
+        const currentPlanId = contractPerson.plan?.id ?? contractPerson.person?.plan?.id;
+        if (currentPlanId !== newPlan.id) {
+          contractPerson.plan = newPlan;
+          contractPerson.person.plan = newPlan;
+          await manager.getRepository(Person).update(contractPerson.person.id, { plan: newPlan });
 
-      const currentPlanId = contractPerson.plan?.id ?? contractPerson.person?.plan?.id;
-      if (currentPlanId !== newPlan.id) {
-        contractPerson.plan = newPlan;
-        contractPerson.person.plan = newPlan;
-        await manager.getRepository(Person).update(contractPerson.person.id, { plan: newPlan });
-
-        await this.invoiceService.updatePlanLineOnActiveInvoice(
-          contractId,
-          contractPerson.person.id,
-          newPlan.id,
-          Number(newPlan.amount ?? 0),
-          newPlan.name,
-          manager,
-        );
-        planChanged = true;
+          await this.invoiceService.updatePlanLineOnActiveInvoice(
+            contractId,
+            contractPerson.person.id,
+            newPlan.id,
+            Number(newPlan.amount ?? 0),
+            newPlan.name,
+            manager,
+          );
+          planChanged = true;
+        }
       }
     }
 

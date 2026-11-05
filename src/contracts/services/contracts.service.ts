@@ -40,6 +40,7 @@ import { ContractPdfService } from './contract-pdf.service';
 import { ContractReactivationService } from './contract-reactivation.service';
 import { ContractStatisticsService } from './contract-statistics.service';
 import { HealthExclusionsService } from './health-exclusions.service';
+import { ContractAttachmentService } from './contract-attachment.service';
 import {
   EvaluateHealthExclusionsDto,
   HealthExclusionEvaluationResult,
@@ -75,6 +76,7 @@ export class ContractsService {
     private readonly statisticsService: ContractStatisticsService,
     private readonly queryRepository: ContractQueryRepository,
     private readonly healthExclusionsService: HealthExclusionsService,
+    private readonly attachmentService: ContractAttachmentService,
   ) {}
 
   // ── 1. Creation ────────────────────────────────────────────────────────────
@@ -217,5 +219,17 @@ export class ContractsService {
 
   async verifyUnified(query: string): Promise<UnifiedVerificationResult> {
     return this.verificationService.verifyUnified(query);
+  }
+
+  // ── 8. Attachments ─────────────────────────────────────────────────────────
+  async uploadAttachment(file: Express.Multer.File): Promise<{ url: string }> {
+    return this.attachmentService.uploadAttachment(file);
+  }
+
+  async addAttachment(
+    contractId: string,
+    file: Express.Multer.File,
+  ): Promise<{ url: string; attachments: string[] }> {
+    return this.attachmentService.addAttachment(contractId, file);
   }
 }

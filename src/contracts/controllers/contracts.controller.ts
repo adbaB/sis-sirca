@@ -7,12 +7,17 @@ import {
   NotFoundException,
   Param,
   ParseEnumPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { MAX_UPLOAD_FILE_SIZE } from '../../common/constants/upload.constants';
 import { CurrentUser, RequirePermissions } from '../../auth/decorators';
 import type { JwtPayload } from '../../auth/guards/auth.guard';
 import { TypeIdentityCard } from '../../persons/entities/person.entity';
@@ -47,6 +52,32 @@ export class ContractsController {
   @RequirePermissions('create:contracts', 'read:contracts')
   evaluateHealthExclusions(@Body() dto: EvaluateHealthExclusionsDto) {
     return this.contractsService.evaluateHealthExclusions(dto);
+  }
+
+  @Post('upload-attachment')
+  @RequirePermissions('create:contracts', 'update:contracts')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_UPLOAD_FILE_SIZE },
+      fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!allowedMimeTypes.includes(file.mimetype)) {
+          return cb(
+            new BadRequestException(
+              `Tipo de archivo no soportado: ${file.mimetype}. Formatos permitidos: JPG, PNG, WEBP, PDF`,
+            ),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadAttachment(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Debe adjuntar un archivo válido.');
+    }
+    return this.contractsService.uploadAttachment(file);
   }
 
   @Get()
@@ -134,6 +165,32 @@ export class ContractsController {
   @RequirePermissions('delete:contracts')
   remove(@Param('id') id: string) {
     return this.contractsService.remove(id);
+  }
+
+  @Post(':id/attachments')
+  @RequirePermissions('update:contracts')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_UPLOAD_FILE_SIZE },
+      fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!allowedMimeTypes.includes(file.mimetype)) {
+          return cb(
+            new BadRequestException(
+              `Tipo de archivo no soportado: ${file.mimetype}. Formatos permitidos: JPG, PNG, WEBP, PDF`,
+            ),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  addAttachment(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Debe adjuntar un archivo válido.');
+    }
+    return this.contractsService.addAttachment(id, file);
   }
 
   @Patch(':id/inactivate')

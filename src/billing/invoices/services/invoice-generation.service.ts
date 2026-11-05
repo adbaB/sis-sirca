@@ -145,7 +145,7 @@ export class InvoiceGenerationService {
     );
     const daysInMonth = dtMonth.daysInMonth ?? 28;
     const effectiveDay = Math.min(preContract.cutoffDay ?? DEFAULT_CUTOFF_DAY, daysInMonth);
-    let calculatedDueDate = DateTime.fromObject(
+    let calculatedDueDate: DateTime = DateTime.fromObject(
       {
         year: billingYear,
         month: billingMonthNum,

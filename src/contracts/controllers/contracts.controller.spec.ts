@@ -71,6 +71,8 @@ describe('ContractsController', () => {
             verifyPersonAffiliation: jest.fn(),
             verifyUnified: jest.fn(),
             evaluateHealthExclusions: jest.fn(),
+            uploadAttachment: jest.fn(),
+            addAttachment: jest.fn(),
           },
         },
       ],
@@ -416,6 +418,46 @@ describe('ContractsController', () => {
 
       expect(service.verifyUnified).toHaveBeenCalledWith('V-12345678');
       expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('uploadAttachment', () => {
+    it('should throw BadRequestException if no file is provided', () => {
+      expect(() =>
+        controller.uploadAttachment(undefined as unknown as Express.Multer.File),
+      ).toThrow(BadRequestException);
+    });
+
+    it('should delegate to service.uploadAttachment and return url', async () => {
+      const mockFile = { originalname: 'doc.pdf' } as Express.Multer.File;
+      jest.spyOn(service, 'uploadAttachment').mockResolvedValue({ url: 'https://s3/doc.pdf' });
+
+      const result = await controller.uploadAttachment(mockFile);
+      expect(service.uploadAttachment).toHaveBeenCalledWith(mockFile);
+      expect(result).toEqual({ url: 'https://s3/doc.pdf' });
+    });
+  });
+
+  describe('addAttachment', () => {
+    it('should throw BadRequestException if no file is provided', () => {
+      expect(() =>
+        controller.addAttachment('1', undefined as unknown as Express.Multer.File),
+      ).toThrow(BadRequestException);
+    });
+
+    it('should delegate to service.addAttachment and return result', async () => {
+      const mockFile = { originalname: 'doc.pdf' } as Express.Multer.File;
+      jest.spyOn(service, 'addAttachment').mockResolvedValue({
+        url: 'https://s3/doc.pdf',
+        attachments: ['https://s3/doc.pdf'],
+      });
+
+      const result = await controller.addAttachment('1', mockFile);
+      expect(service.addAttachment).toHaveBeenCalledWith('1', mockFile);
+      expect(result).toEqual({
+        url: 'https://s3/doc.pdf',
+        attachments: ['https://s3/doc.pdf'],
+      });
     });
   });
 });

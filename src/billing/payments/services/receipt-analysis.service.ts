@@ -40,7 +40,7 @@ export class ReceiptAnalysisService {
     }
 
     const s3Url = await this.awsService.uploadFile(file);
-    const ocrResult = await this.ocrService.extractReceiptData(s3Url);
+    const ocrResult = await this.ocrService.extractReceiptData(s3Url, file.mimetype);
     const formattedDate = parseOcrDateToISO(ocrResult.fecha);
 
     const currency = ocrResult.moneda ? ocrResult.moneda.trim().toUpperCase() : '';

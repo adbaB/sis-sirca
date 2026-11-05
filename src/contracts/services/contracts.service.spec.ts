@@ -8,6 +8,7 @@ import { ContractPdfService } from './contract-pdf.service';
 import { ContractStatisticsService } from './contract-statistics.service';
 import { ContractsService } from './contracts.service';
 import { HealthExclusionsService } from './health-exclusions.service';
+import { ContractAttachmentService } from './contract-attachment.service';
 import { ContractQueryRepository } from '../repositories/contract-query.repository';
 import { Contract, ContractStatus } from '../entities/contract.entity';
 import { CreateContractFullDto } from '../dto/create-contract-full.dto';
@@ -36,6 +37,7 @@ describe('ContractsService (Facade)', () => {
   let statisticsService: jest.Mocked<ContractStatisticsService>;
   let queryRepository: jest.Mocked<ContractQueryRepository>;
   let healthExclusionsService: jest.Mocked<HealthExclusionsService>;
+  let attachmentService: jest.Mocked<ContractAttachmentService>;
 
   const mockContract = {
     id: 'contract-uuid-1',
@@ -158,6 +160,16 @@ describe('ContractsService (Facade)', () => {
             evaluateHealthExclusions: jest.fn(),
           },
         },
+        {
+          provide: ContractAttachmentService,
+          useValue: {
+            uploadAttachment: jest.fn().mockResolvedValue({ url: 'https://s3/doc.pdf' }),
+            addAttachment: jest.fn().mockResolvedValue({
+              url: 'https://s3/doc.pdf',
+              attachments: ['https://s3/doc.pdf'],
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -171,6 +183,7 @@ describe('ContractsService (Facade)', () => {
     statisticsService = module.get(ContractStatisticsService);
     queryRepository = module.get(ContractQueryRepository);
     healthExclusionsService = module.get(HealthExclusionsService);
+    attachmentService = module.get(ContractAttachmentService);
   });
 
   it('should be defined', () => {
@@ -423,6 +436,25 @@ describe('ContractsService (Facade)', () => {
       const res = await service.verifyUnified('query-test');
       expect(verificationService.verifyUnified).toHaveBeenCalledWith('query-test');
       expect(res).toEqual({ type: 'contract', contract: null });
+    });
+  });
+
+  describe('Attachments delegates', () => {
+    it('uploadAttachment should delegate to attachmentService.uploadAttachment', async () => {
+      const mockFile = { originalname: 'doc.pdf' } as Express.Multer.File;
+      const res = await service.uploadAttachment(mockFile);
+      expect(attachmentService.uploadAttachment).toHaveBeenCalledWith(mockFile);
+      expect(res).toEqual({ url: 'https://s3/doc.pdf' });
+    });
+
+    it('addAttachment should delegate to attachmentService.addAttachment', async () => {
+      const mockFile = { originalname: 'doc.pdf' } as Express.Multer.File;
+      const res = await service.addAttachment('contract-uuid-1', mockFile);
+      expect(attachmentService.addAttachment).toHaveBeenCalledWith('contract-uuid-1', mockFile);
+      expect(res).toEqual({
+        url: 'https://s3/doc.pdf',
+        attachments: ['https://s3/doc.pdf'],
+      });
     });
   });
 });

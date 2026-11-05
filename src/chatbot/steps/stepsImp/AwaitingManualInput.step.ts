@@ -29,7 +29,21 @@ export class AwaitingManualInputStep implements IStepHandler {
     }
 
     const parts = incomingText.split(',').map((s) => s.trim());
-    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+    let ref: string;
+    let banco: string;
+    let amountStr: string;
+
+    if (parts.length === 3) {
+      ref = parts[0];
+      banco = parts[1];
+      amountStr = parts[2];
+    } else if (parts.length === 4 && /^\d+$/.test(parts[3])) {
+      // User entered: Referencia, Banco, MontoEntero, Decimales (e.g. 123456, Mercantil, 100, 50 or 199.608, 64)
+      ref = parts[0];
+      banco = parts[1];
+      const cleanWhole = parts[2].replace(/\./g, '');
+      amountStr = `${cleanWhole}.${parts[3]}`;
+    } else {
       await this.metaWhatsappService.sendMessage(
         phone,
         '¡Casi lo tenemos! Pero el formato no es el correcto o falta información. ✨\n\nInténtalo de nuevo así: Referencia, Banco, Monto\n(Por ejemplo: 123456, Mercantil, 100)',
@@ -37,9 +51,26 @@ export class AwaitingManualInputStep implements IStepHandler {
       return;
     }
 
-    const ref = parts[0];
-    const banco = parts[1];
-    const parsedAmount = Number(parts[2]);
+    if (!ref || !banco || !amountStr) {
+      await this.metaWhatsappService.sendMessage(
+        phone,
+        '¡Casi lo tenemos! Pero el formato no es el correcto o falta información. ✨\n\nInténtalo de nuevo así: Referencia, Banco, Monto\n(Por ejemplo: 123456, Mercantil, 100)',
+      );
+      return;
+    }
+
+    let normalizedAmount = amountStr.replace(/\s+/g, '');
+    if (normalizedAmount.includes('.') && normalizedAmount.includes(',')) {
+      if (normalizedAmount.lastIndexOf(',') > normalizedAmount.lastIndexOf('.')) {
+        normalizedAmount = normalizedAmount.replace(/\./g, '').replace(',', '.');
+      } else {
+        normalizedAmount = normalizedAmount.replace(/,/g, '');
+      }
+    } else if (normalizedAmount.includes(',')) {
+      normalizedAmount = normalizedAmount.replace(',', '.');
+    }
+
+    const parsedAmount = Number(normalizedAmount);
 
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       await this.metaWhatsappService.sendMessage(
