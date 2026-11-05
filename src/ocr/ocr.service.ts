@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import OpenAI from 'openai';
+import sharp from 'sharp';
 import config from '../config/configurations';
 import { ExternalServiceException, ErrorCode } from '../common/exceptions';
 
@@ -17,6 +18,8 @@ export interface ReceiptData {
   esZelle?: boolean | null;
 }
 
+export const MAX_OCR_IMAGE_DIMENSION = 1568;
+
 export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: string): boolean {
   if (mimeType?.toLowerCase() === 'application/pdf') return true;
   if (typeof imageBufferOrUrl === 'string') {
@@ -27,6 +30,31 @@ export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: stri
     return imageBufferOrUrl.slice(0, 5).toString('ascii').startsWith('%PDF-');
   }
   return false;
+}
+
+export async function resizeReceiptImage(
+  buffer: Buffer,
+  mimeType?: string,
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  if (isPdfDocument(buffer, mimeType)) {
+    return { buffer, mimeType: mimeType || 'application/pdf' };
+  }
+
+  try {
+    const resizedBuffer = await sharp(buffer)
+      .resize({
+        width: MAX_OCR_IMAGE_DIMENSION,
+        height: MAX_OCR_IMAGE_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+
+    return { buffer: resizedBuffer, mimeType: 'image/jpeg' };
+  } catch {
+    return { buffer, mimeType: mimeType || 'image/jpeg' };
+  }
 }
 
 @Injectable()
@@ -98,16 +126,12 @@ export class OcrService {
           this.logger.warn(
             'Received image as Buffer instead of URL. This will increase token usage significantly. Prefer passing a URL.',
           );
-          let imgMime = mimeType || 'image/jpeg';
-          if (!mimeType) {
-            if (imageBufferOrUrl.slice(0, 8).toString('hex') === '89504e470d0a1a0a') {
-              imgMime = 'image/png';
-            } else if (imageBufferOrUrl.slice(0, 4).toString('ascii') === 'RIFF') {
-              imgMime = 'image/webp';
-            }
-          }
-          const base64Image = imageBufferOrUrl.toString('base64');
-          imageUrl = `data:${imgMime};base64,${base64Image}`;
+          const { buffer: resizedBuffer, mimeType: finalMime } = await resizeReceiptImage(
+            imageBufferOrUrl,
+            mimeType,
+          );
+          const base64Image = resizedBuffer.toString('base64');
+          imageUrl = `data:${finalMime};base64,${base64Image}`;
         }
 
         contentPart = {
@@ -236,12 +260,20 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
             },
             {
               role: 'user',
-              content: [{ type: 'text', text: prompt }, contentPart],
+              content: [
+                {
+                  type: 'text',
+                  text: prompt,
+                  cache_control: { type: 'ephemeral' },
+                } as OpenAI.Chat.Completions.ChatCompletionContentPartText,
+                contentPart,
+              ],
             },
           ],
           response_format: { type: 'json_object' },
-          max_tokens: 7000,
-        },
+          max_tokens: 1500,
+          reasoning: { effort: 'low' },
+        } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
         { timeout: 30_000 },
       );
 

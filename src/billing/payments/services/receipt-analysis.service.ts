@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AwsService } from '../../../aws/aws.service';
-import { OcrService } from '../../../ocr/ocr.service';
+import { OcrService, resizeReceiptImage } from '../../../ocr/ocr.service';
 import { parseOcrDateToISO } from '../../../common/utils/date.util';
 
 export interface ReceiptAnalysisResult {
@@ -39,8 +39,22 @@ export class ReceiptAnalysisService {
       throw new BadRequestException('Se requiere un archivo de comprobante.');
     }
 
-    const s3Url = await this.awsService.uploadFile(file);
-    const ocrResult = await this.ocrService.extractReceiptData(s3Url, file.mimetype);
+    let fileToUpload = file;
+    if (file.buffer) {
+      const { buffer: optimizedBuffer, mimeType: finalMime } = await resizeReceiptImage(
+        file.buffer,
+        file.mimetype,
+      );
+      fileToUpload = {
+        ...file,
+        buffer: optimizedBuffer,
+        mimetype: finalMime,
+        size: optimizedBuffer.length,
+      };
+    }
+
+    const s3Url = await this.awsService.uploadFile(fileToUpload);
+    const ocrResult = await this.ocrService.extractReceiptData(s3Url, fileToUpload.mimetype);
     const formattedDate = parseOcrDateToISO(ocrResult.fecha);
 
     const currency = ocrResult.moneda ? ocrResult.moneda.trim().toUpperCase() : '';
