@@ -20,6 +20,14 @@ export interface ReceiptData {
 
 export const MAX_OCR_IMAGE_DIMENSION = 1568;
 
+/**
+ * Determina si el recurso proporcionado (Buffer o URL) corresponde a un documento PDF
+ * evaluando el tipo MIME, la extensión de la URL o la firma mágica (`%PDF-`).
+ *
+ * @param imageBufferOrUrl - Buffer binario o URL del documento.
+ * @param mimeType - Tipo MIME opcional reportado para el archivo.
+ * @returns `true` si el documento es un PDF; `false` en caso contrario.
+ */
 export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: string): boolean {
   if (mimeType?.toLowerCase() === 'application/pdf') return true;
   if (typeof imageBufferOrUrl === 'string') {
@@ -32,6 +40,16 @@ export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: stri
   return false;
 }
 
+/**
+ * Redimensiona y comprime un buffer de imagen de comprobante para que no exceda
+ * `MAX_OCR_IMAGE_DIMENSION` (1568px), aplicando auto-orientación EXIF, fondo blanco
+ * para transparencias y codificación JPEG al 90%. Los documentos PDF o imágenes que
+ * fallen al procesarse se devuelven sin cambios.
+ *
+ * @param buffer - Buffer original del comprobante.
+ * @param mimeType - Tipo MIME original del archivo.
+ * @returns Buffer optimizado y su tipo MIME resultante.
+ */
 export async function resizeReceiptImage(
   buffer: Buffer,
   mimeType?: string,
@@ -42,12 +60,14 @@ export async function resizeReceiptImage(
 
   try {
     const resizedBuffer = await sharp(buffer)
+      .autoOrient()
       .resize({
         width: MAX_OCR_IMAGE_DIMENSION,
         height: MAX_OCR_IMAGE_DIMENSION,
         fit: 'inside',
         withoutEnlargement: true,
       })
+      .flatten({ background: '#ffffff' })
       .jpeg({ quality: 90 })
       .toBuffer();
 
@@ -82,6 +102,14 @@ export class OcrService {
     });
   }
 
+  /**
+   * Extrae los datos estructurados de un comprobante de pago (imagen o PDF) utilizando
+   * el modelo de visión vía OpenRouter y normaliza la referencia y el monto extraídos.
+   *
+   * @param imageBufferOrUrl - Buffer binario o URL pública del comprobante.
+   * @param mimeType - Tipo MIME opcional del archivo.
+   * @returns Datos estructurados del comprobante (`ReceiptData`).
+   */
   async extractReceiptData(
     imageBufferOrUrl: string | Buffer,
     mimeType?: string,

@@ -11,7 +11,9 @@ import {
 vi.mock('openai');
 
 const mockSharpInstance = {
+  autoOrient: vi.fn().mockReturnThis(),
   resize: vi.fn().mockReturnThis(),
+  flatten: vi.fn().mockReturnThis(),
   jpeg: vi.fn().mockReturnThis(),
   toBuffer: vi.fn().mockImplementation(function (this: { _input: Buffer }) {
     return Promise.resolve(this._input);
@@ -255,17 +257,20 @@ describe('OcrService', () => {
       expect(MAX_OCR_IMAGE_DIMENSION).toBe(1568);
     });
 
-    it('should call sharp with max 1568 dimension and withoutEnlargement', async () => {
+    it('should call sharp with autoOrient, max 1568 dimension, flatten, and jpeg', async () => {
       const buffer = Buffer.from('image bytes');
       const result = await resizeReceiptImage(buffer, 'image/png');
 
       expect(mockSharpFn).toHaveBeenCalledWith(buffer);
+      expect(mockSharpInstance.autoOrient).toHaveBeenCalled();
       expect(mockSharpInstance.resize).toHaveBeenCalledWith({
         width: 1568,
         height: 1568,
         fit: 'inside',
         withoutEnlargement: true,
       });
+      expect(mockSharpInstance.flatten).toHaveBeenCalledWith({ background: '#ffffff' });
+      expect(mockSharpInstance.jpeg).toHaveBeenCalledWith({ quality: 90 });
       expect(result.mimeType).toBe('image/jpeg');
     });
 

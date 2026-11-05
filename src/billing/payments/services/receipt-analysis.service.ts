@@ -45,10 +45,20 @@ export class ReceiptAnalysisService {
         file.buffer,
         file.mimetype,
       );
+      const didConvert = optimizedBuffer !== file.buffer || finalMime !== file.mimetype;
+      const ext = finalMime === 'image/jpeg' ? 'jpg' : finalMime.split('/')[1] || 'jpg';
+      const updatedOriginalName =
+        didConvert && file.originalname
+          ? file.originalname.includes('.')
+            ? file.originalname.replace(/\.[^.]+$/, `.${ext}`)
+            : `${file.originalname}.${ext}`
+          : file.originalname;
+
       fileToUpload = {
         ...file,
         buffer: optimizedBuffer,
         mimetype: finalMime,
+        originalname: updatedOriginalName,
         size: optimizedBuffer.length,
       };
     }

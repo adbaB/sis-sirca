@@ -23,6 +23,10 @@ export class AwaitingCaptureStep implements IStepHandler {
   canHandle(step: Steps): boolean {
     return step === Steps.AWAITING_CAPTURE;
   }
+  /**
+   * Procesa el mensaje entrante en el paso `AWAITING_CAPTURE`, descarga el comprobante
+   * desde WhatsApp, lo sube optimizado a S3 y ejecuta la extracción OCR.
+   */
   async execute(phone: string, message: MetaMessage, state: UserState): Promise<void> {
     const mediaId = message.image?.id || message.document?.id || null;
     const contentType = message.image?.mime_type || message.document?.mime_type || 'image/jpeg';
@@ -124,6 +128,10 @@ export class AwaitingCaptureStep implements IStepHandler {
     }
   }
 
+  /**
+   * Optimiza el buffer del comprobante y lo sube a S3 retornando la URL pública
+   * junto con el tipo MIME resultante.
+   */
   private async uploadToS3(
     buffer: Buffer,
     contentType: string,
