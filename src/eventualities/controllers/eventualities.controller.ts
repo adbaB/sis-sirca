@@ -37,6 +37,7 @@ import { FindEventualitiesDto } from '../dto/find-eventualities.dto';
 import { GetDailyEventualityStatsDto } from '../dto/get-daily-eventuality-stats.dto';
 import { UpdateConsumptionAlertConfigDto } from '../dto/update-consumption-alert-config.dto';
 import { RejectEventualityDto } from '../dto/reject-eventuality.dto';
+import { UploadConsumptionSheetDto } from '../dto/upload-consumption-sheet.dto';
 import { MAX_UPLOAD_FILE_SIZE } from '../../common/constants/upload.constants';
 
 const allowedDocumentMimes = [
@@ -294,11 +295,12 @@ export class EventualitiesController {
   async uploadConsumptionFile(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
+    @Body() dto?: UploadConsumptionSheetDto,
   ) {
     if (!file) {
       throw new BadRequestException('Debe adjuntar el archivo de hoja de consumo.');
     }
-    return this.eventualitiesService.processConsumptionFile(id, file);
+    return this.eventualitiesService.processConsumptionFile(id, file, dto);
   }
 
   @Get(':id/extraction-details')

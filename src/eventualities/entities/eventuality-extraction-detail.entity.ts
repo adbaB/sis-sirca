@@ -123,6 +123,13 @@ export class EventualityExtractionDetail {
   @Column({ type: 'text', name: 'raw_line_text', nullable: true })
   rawLineText?: string | null;
 
+  @Index('IDX_eed_cutoff_date')
+  @Column({ type: 'date', name: 'cutoff_date', nullable: true })
+  cutoffDate?: string | Date | null;
+
+  @Column({ type: 'text', name: 'source_file_url', nullable: true })
+  sourceFileUrl?: string | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 

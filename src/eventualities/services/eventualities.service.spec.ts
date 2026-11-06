@@ -29,6 +29,7 @@ import { AwsService } from '../../aws/aws.service';
 import { EventualityOcrService } from './eventuality-ocr.service';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { MetaWhatsappService } from '../../chatbot/services/meta-whatsapp.service';
+import { EventualityHospitalizationService } from './eventuality-hospitalization.service';
 import { EventualitiesService } from './eventualities.service';
 
 describe('EventualitiesService - Emergencias', () => {
@@ -163,8 +164,9 @@ describe('EventualitiesService - Emergencias', () => {
         {
           provide: getRepositoryToken(EventualityExtractionDetail),
           useValue: {
-            find: jest.fn(),
+            find: jest.fn().mockResolvedValue([]),
             save: jest.fn(),
+            count: jest.fn().mockResolvedValue(0),
           },
         },
         {
@@ -236,6 +238,15 @@ describe('EventualitiesService - Emergencias', () => {
             getOrCreateActivePeriod: jest.fn().mockResolvedValue(mockCoveragePeriod),
             lockCoverageAmount: jest.fn().mockResolvedValue(mockCoveragePeriod),
             updateLockedCoverageAmount: jest.fn().mockResolvedValue(mockCoveragePeriod),
+            updateLockedCoverageWithCap: jest
+              .fn()
+              .mockImplementation((periodId, oldAmount, newAmount) =>
+                Promise.resolve({
+                  period: mockCoveragePeriod,
+                  actualLockedAmount: newAmount,
+                  excessAmount: 0,
+                }),
+              ),
             releaseAndDeductCoverage: jest.fn().mockResolvedValue(mockCoveragePeriod),
           },
         },
@@ -330,6 +341,12 @@ describe('EventualitiesService - Emergencias', () => {
               reportDate: '21/10/2026',
               reportTime: '10:30 AM',
             }),
+          },
+        },
+        {
+          provide: EventualityHospitalizationService,
+          useValue: {
+            requestHospitalization: jest.fn(),
           },
         },
       ],
@@ -634,6 +651,7 @@ describe('EventualitiesService - Emergencias', () => {
                 create: jest.fn().mockImplementation((d) => d),
                 save: jest.fn().mockImplementation(async (d) => d),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                find: jest.fn().mockResolvedValue([]),
               };
             }
             return {};
@@ -651,7 +669,7 @@ describe('EventualitiesService - Emergencias', () => {
       const result = await service.processConsumptionFile('eventuality-1', file);
 
       expect(ocrService.extractConsumptionItems).toHaveBeenCalled();
-      expect(coveragePeriodService.updateLockedCoverageAmount).toHaveBeenCalled();
+      expect(coveragePeriodService.updateLockedCoverageWithCap).toHaveBeenCalled();
       expect(result.eventuality.status).toBe(EventualityStatus.UNDER_ADMIN_REVIEW);
       expect(result.totals.totalCosto).toBe(76);
     });
@@ -707,6 +725,7 @@ describe('EventualitiesService - Emergencias', () => {
                 create: jest.fn().mockImplementation((d) => d),
                 save: jest.fn().mockImplementation(async (d) => d),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                find: jest.fn().mockResolvedValue([]),
               };
             }
             return {};

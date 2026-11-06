@@ -197,6 +197,77 @@ export class CoveragePeriodService {
   }
 
   /**
+   * Ajusta el monto bloqueado de una reserva con tope dinámico (sin lanzar excepción si excede el saldo).
+   * Retorna el monto efectivamente bloqueado y el excedente a cargo del paciente.
+   */
+  @Transactional()
+  async updateLockedCoverageWithCap(
+    coveragePeriodId: string,
+    oldLockedAmount: number,
+    requestedNewLockedAmount: number,
+    manager?: EntityManager,
+  ): Promise<{
+    period: ContractCoveragePeriod;
+    actualLockedAmount: number;
+    excessAmount: number;
+  }> {
+    const em = this.getEntityManager(manager);
+    const repo = em.getRepository(ContractCoveragePeriod);
+
+    const period = await repo.findOne({
+      where: { id: coveragePeriodId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!period) {
+      throw new NotFoundException(
+        `Período de cobertura con ID "${coveragePeriodId}" no encontrado.`,
+      );
+    }
+
+    if (period.status !== CoveragePeriodStatus.ACTIVE) {
+      throw new BadRequestException('El período de cobertura no está activo.');
+    }
+
+    const availableForThisEventuality = Number(
+      (Number(period.remainingCoverage) + oldLockedAmount).toFixed(2),
+    );
+
+    const actualLockedAmount = Math.max(
+      0,
+      Number(Math.min(requestedNewLockedAmount, availableForThisEventuality).toFixed(2)),
+    );
+
+    const excessAmount = Math.max(
+      0,
+      Number((requestedNewLockedAmount - actualLockedAmount).toFixed(2)),
+    );
+
+    const diff = Number((actualLockedAmount - oldLockedAmount).toFixed(2));
+
+    period.reservedCoverage = Math.max(
+      0,
+      Number((Number(period.reservedCoverage) + diff).toFixed(2)),
+    );
+    period.remainingCoverage = Number(
+      Math.max(
+        0,
+        Number(period.initialCoverage) -
+          Number(period.consumedCoverage) -
+          Number(period.reservedCoverage),
+      ).toFixed(2),
+    );
+
+    const saved = await repo.save(period);
+
+    return {
+      period: saved,
+      actualLockedAmount,
+      excessAmount,
+    };
+  }
+
+  /**
    * Libera la reserva bloqueada y registra el débito liquidado definitivo.
    */
   @Transactional()

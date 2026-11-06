@@ -33,6 +33,7 @@ import {
   ExtractedConsumptionSheetResult,
   ExtractedProviderInvoiceResult,
 } from './eventuality-ocr.service';
+import { EventualityHospitalizationService } from './eventuality-hospitalization.service';
 import { ExchangeRateService } from '../../exchange-rate/services/exchange-rate.service';
 import { MetaWhatsappService } from '../../chatbot/services/meta-whatsapp.service';
 import { normalizeWhatsappPhone } from '../../chatbot/utils/phone.util';
@@ -44,7 +45,10 @@ import {
   getCaracasTodayJSDate,
 } from '../../common/utils/date.util';
 import { generateClaimNumber } from '../helpers/claim-number-generator.helper';
+import { calculateCoverageCapAndExcess } from '../helpers/eventuality-hospitalization.helper';
 import { CreateEmergencyDto } from '../dto/create-emergency.dto';
+import { CreateHospitalizationDto } from '../dto/create-hospitalization.dto';
+import { UploadConsumptionSheetDto } from '../dto/upload-consumption-sheet.dto';
 import { CreateApsDto } from '../dto/create-aps.dto';
 import { CreateFromRequestsDto } from '../dto/create-from-requests.dto';
 import { CreateGeneralEventualityDto } from '../dto/create-general-eventuality.dto';
@@ -97,7 +101,15 @@ export class EventualitiesService {
     private readonly eventualityOcrService: EventualityOcrService,
     private readonly metaWhatsappService: MetaWhatsappService,
     private readonly exchangeRateService: ExchangeRateService,
+    private readonly eventualityHospitalizationService: EventualityHospitalizationService,
   ) {}
+
+  /**
+   * Registra una Solicitud de Hospitalización delegando al sub-servicio especializado.
+   */
+  async requestHospitalization(dto: CreateHospitalizationDto): Promise<Eventuality> {
+    return this.eventualityHospitalizationService.requestHospitalization(dto);
+  }
 
   /**
    * Crea una eventualidad de tipo EMERGENCIA.
@@ -317,7 +329,16 @@ export class EventualitiesService {
     }
 
     if (eventuality.status === EventualityStatus.CLINIC_PROCESS) {
-      eventuality.status = EventualityStatus.WAITING_INVOICE;
+      if (!eventuality.dischargeDate) {
+        eventuality.dischargeDate = new Date();
+      }
+      const existingDetailsCount = await this.extractionDetailRepo.count({
+        where: { eventualityId: eventuality.id },
+      });
+      eventuality.status =
+        existingDetailsCount > 0
+          ? EventualityStatus.UNDER_ADMIN_REVIEW
+          : EventualityStatus.WAITING_INVOICE;
     }
     const savedEventuality = await this.eventualityRepo.save(eventuality);
 
@@ -523,6 +544,7 @@ export class EventualitiesService {
   async processConsumptionFile(
     id: string,
     file: Express.Multer.File,
+    options?: UploadConsumptionSheetDto,
   ): Promise<{
     eventuality: Eventuality;
     extractedItems: EventualityExtractionDetail[];
@@ -536,6 +558,10 @@ export class EventualitiesService {
       totalCosto: number;
       totalCostoBs?: number | null;
       totalCoberturaEstimada: number;
+      coveredAmount?: number;
+      patientExcessAmount?: number;
+      consumptionPercentage?: number;
+      semaphore?: 'GREEN' | 'YELLOW' | 'RED';
     };
   }> {
     const eventuality = await this.eventualityRepo.findOne({
@@ -667,14 +693,25 @@ export class EventualitiesService {
     }
 
     // 3. Persistir ítems y ajustar saldo bloqueado en transacción
-    return this.dataSource.transaction(async (manager: EntityManager) => {
+    const mode =
+      options?.mode ||
+      (eventuality.type === EventualityType.HOSPITALIZATION ? 'APPEND' : 'REPLACE');
+    const cutoffDate = options?.cutoffDate || resolvedExchangeRateDate || null;
+
+    let calcCoveredAmount = 0;
+    let calcPatientExcess = 0;
+    let calcPercentage = 0;
+    let calcSemaphore: 'GREEN' | 'YELLOW' | 'RED' = 'GREEN';
+
+    const txResult = await this.dataSource.transaction(async (manager: EntityManager) => {
       const detailRepo = manager.getRepository(EventualityExtractionDetail);
 
       let savedDetails: EventualityExtractionDetail[] = [];
 
       if (ocrSucceeded) {
-        // Eliminar extracciones previas si existían
-        await detailRepo.delete({ eventualityId: eventuality.id });
+        if (mode === 'REPLACE') {
+          await detailRepo.delete({ eventualityId: eventuality.id });
+        }
 
         const newDetails = processedItems.map((it) => {
           const itemSalePrice = Number(
@@ -692,35 +729,91 @@ export class EventualitiesService {
             calculatedSalePrice: itemSalePrice,
             status: ExtractionStatus.EXTRACTED,
             rawLineText: it.rawLineText,
+            cutoffDate: cutoffDate ? new Date(cutoffDate) : null,
+            sourceFileUrl: consumptionPdfUrl,
           });
         });
 
         savedDetails = await detailRepo.save(newDetails);
 
-        const totalCostBase = ocrResult.totalGeneral;
+        const allActiveItems = await detailRepo.find({
+          where: { eventualityId: eventuality.id },
+        });
+        const itemsToCalculate = allActiveItems.length > 0 ? allActiveItems : savedDetails;
+        const unremovedItems = itemsToCalculate.filter(
+          (i) => i.status !== ExtractionStatus.REMOVED,
+        );
+        const totalCostBase = Number(
+          unremovedItems.reduce((sum, i) => sum + Number(i.totalCost || 0), 0).toFixed(2),
+        );
         const newEstimatedCoverage = Number(
           (totalCostBase * Number(eventuality.appliedFactor)).toFixed(2),
         );
 
-        // Ajustar saldo bloqueado preventivo en el período de cobertura
-        const oldLocked = Number(eventuality.reservedCoverageAmount);
-        await this.coveragePeriodService.updateLockedCoverageAmount(
+        // Ajustar saldo con tope (sin bloquear con excepción si excede)
+        const oldLocked = Number(eventuality.reservedCoverageAmount || 0);
+        const {
+          period: updatedPeriod,
+          actualLockedAmount,
+          excessAmount,
+        } = await this.coveragePeriodService.updateLockedCoverageWithCap(
           eventuality.coveragePeriodId,
           oldLocked,
           newEstimatedCoverage,
           manager,
         );
 
+        const alertConfig = await this.getConsumptionAlertConfig();
+        const otherReserved = Math.max(
+          0,
+          Number(updatedPeriod.reservedCoverage || 0) - actualLockedAmount,
+        );
+        const capResult = calculateCoverageCapAndExcess({
+          initialCoverage: Number(updatedPeriod.initialCoverage || 0),
+          consumedCoverage: Number(updatedPeriod.consumedCoverage || 0),
+          otherReservedCoverage: otherReserved,
+          requiredCoverageWithFactor: newEstimatedCoverage,
+          alertThresholdPercentage: alertConfig.consumptionThresholdPercentage,
+        });
+
+        calcCoveredAmount = actualLockedAmount;
+        calcPatientExcess = excessAmount;
+        calcPercentage = capResult.consumptionPercentage;
+        calcSemaphore = capResult.semaphore;
+
         eventuality.consumptionCurrency = ocrResult.currency;
         eventuality.exchangeRateDate = resolvedExchangeRateDate;
         eventuality.appliedExchangeRate = appliedExchangeRate;
         eventuality.totalCost = totalCostBase;
-        eventuality.totalCoverageDeducted = newEstimatedCoverage;
-        eventuality.reservedCoverageAmount = newEstimatedCoverage;
+        eventuality.totalCoverageDeducted = actualLockedAmount;
+        eventuality.reservedCoverageAmount = actualLockedAmount;
+
+        if (capResult.shouldTriggerAlert) {
+          const patientName = eventuality.person?.name || 'Afiliado';
+          const alertMsg =
+            `⚠️ ALERTA DE COBERTURA - ${eventuality.type === EventualityType.HOSPITALIZATION ? 'HOSPITALIZACIÓN' : 'SINIESTRO'}\n` +
+            `El consumo asistencial acumulado ha alcanzado el ${capResult.consumptionPercentage}% de la póliza.\n\n` +
+            `• Nro: ${eventuality.claimNumber || 'Sin número'}\n` +
+            `• Paciente: ${patientName}\n` +
+            `• Consumo Requerido: $${newEstimatedCoverage.toFixed(2)}\n` +
+            `• Cubierto por SIRCA: $${actualLockedAmount.toFixed(2)}\n` +
+            (excessAmount > 0
+              ? `• Excedente a Cargo del Paciente: $${excessAmount.toFixed(2)}\n`
+              : '') +
+            `• Saldo Restante en Póliza: $${Number(updatedPeriod.remainingCoverage || 0).toFixed(2)}`;
+
+          void this.sendWhatsappNotifications(alertConfig.notificationPhones, alertMsg);
+        }
       }
 
       eventuality.consumptionPdfUrl = consumptionPdfUrl;
-      eventuality.status = EventualityStatus.UNDER_ADMIN_REVIEW;
+      // En hospitalización, mientras esté en proceso clínico, se mantiene en CLINIC_PROCESS
+      if (
+        eventuality.type !== EventualityType.HOSPITALIZATION ||
+        eventuality.status !== EventualityStatus.CLINIC_PROCESS
+      ) {
+        eventuality.status = EventualityStatus.UNDER_ADMIN_REVIEW;
+      }
 
       const updatedEventuality = await manager.getRepository(Eventuality).save(eventuality);
 
@@ -737,9 +830,15 @@ export class EventualitiesService {
           totalCosto: Number(updatedEventuality.totalCost || 0),
           totalCostoBs,
           totalCoberturaEstimada: Number(updatedEventuality.totalCoverageDeducted || 0),
+          coveredAmount: calcCoveredAmount,
+          patientExcessAmount: calcPatientExcess,
+          consumptionPercentage: calcPercentage,
+          semaphore: calcSemaphore,
         },
       };
     });
+
+    return txResult;
   }
 
   /**
@@ -758,9 +857,16 @@ export class EventualitiesService {
       totalCosto: number;
       totalCostoBs: number | null;
       totalCoberturaConFactor: number;
+      coveredAmount: number;
+      patientExcessAmount: number;
+      consumptionPercentage: number;
+      semaphore: 'GREEN' | 'YELLOW' | 'RED';
     };
   }> {
-    const eventuality = await this.eventualityRepo.findOne({ where: { id } });
+    const eventuality = await this.eventualityRepo.findOne({
+      where: { id },
+      relations: ['coveragePeriod'],
+    });
     if (!eventuality) {
       throw new NotFoundException(`Eventualidad con ID "${id}" no encontrada.`);
     }
@@ -794,6 +900,19 @@ export class EventualitiesService {
     const totalCosto = Number((med + mat + serv).toFixed(2));
     const totalCob = Number((totalCosto * Number(eventuality.appliedFactor)).toFixed(2));
 
+    const alertConfig = await this.getConsumptionAlertConfig();
+    const period = eventuality.coveragePeriod;
+    const currentReserved = Number(eventuality.reservedCoverageAmount || 0);
+    const otherReserved = Math.max(0, Number(period?.reservedCoverage || 0) - currentReserved);
+
+    const capEval = calculateCoverageCapAndExcess({
+      initialCoverage: Number(period?.initialCoverage || 0),
+      consumedCoverage: Number(period?.consumedCoverage || 0),
+      otherReservedCoverage: otherReserved,
+      requiredCoverageWithFactor: totalCob,
+      alertThresholdPercentage: alertConfig.consumptionThresholdPercentage,
+    });
+
     return {
       eventualityId: id,
       consumptionCurrency: (eventuality.consumptionCurrency as 'USD' | 'Bs') || 'USD',
@@ -807,6 +926,10 @@ export class EventualitiesService {
         totalCosto,
         totalCostoBs,
         totalCoberturaConFactor: totalCob,
+        coveredAmount: capEval.effectiveLockedAmount,
+        patientExcessAmount: capEval.patientExcessAmount,
+        consumptionPercentage: capEval.consumptionPercentage,
+        semaphore: capEval.semaphore,
       },
     };
   }
@@ -1388,9 +1511,11 @@ export class EventualitiesService {
     });
 
     const alertConfig = await this.getConsumptionAlertConfig();
+    const typeLabel =
+      approved.type === EventualityType.HOSPITALIZATION ? 'Hospitalización' : 'Emergencia';
     const message =
       `✅ EVENTUALIDAD APROBADA - SIRCA\n` +
-      `La solicitud de Emergencia ha sido aprobada exitosamente.\n\n` +
+      `La solicitud de ${typeLabel} ha sido aprobada exitosamente.\n\n` +
       `• Nro de Eventualidad: ${approved.claimNumber}\n` +
       `• Paciente: ${approved.person?.name ?? 'Afiliado'}\n` +
       `• Clínica: ${approved.clinicName}\n` +
@@ -1437,9 +1562,11 @@ export class EventualitiesService {
     });
 
     const alertConfig = await this.getConsumptionAlertConfig();
+    const rejectTypeLabel =
+      rejected.type === EventualityType.HOSPITALIZATION ? 'Hospitalización' : 'Emergencia';
     const message =
       `❌ EVENTUALIDAD RECHAZADA - SIRCA\n` +
-      `La solicitud de Emergencia ha sido rechazada.\n\n` +
+      `La solicitud de ${rejectTypeLabel} ha sido rechazada.\n\n` +
       `• Paciente: ${rejected.person?.name ?? 'Afiliado'}\n` +
       `• Clínica: ${rejected.clinicName}\n` +
       `• Motivo: ${rejected.rejectionReason}\n` +
@@ -1724,6 +1851,28 @@ export class EventualitiesService {
    * Crea una eventualidad derivada (STUDY, CONSULTATION, HOSPITALIZATION) a partir de solicitudes pendientes.
    */
   async createFromRequests(dto: CreateFromRequestsDto): Promise<Eventuality> {
+    if (dto.type === EventualityType.HOSPITALIZATION) {
+      const requests = await this.serviceRequestRepo.find({
+        where: dto.requestIds.map((id) => ({ id })),
+      });
+      if (requests.length === 0) {
+        throw new NotFoundException('No se encontraron las solicitudes especificadas.');
+      }
+      const first = requests[0];
+      return this.requestHospitalization({
+        personId: first.personId,
+        contractPersonId: first.contractPersonId,
+        clinicName: dto.clinicName || 'Centro Médico Prestador',
+        admissionReason:
+          dto.notes || `Hospitalización derivada de orden médica (${first.serviceName})`,
+        admissionDate: dto.admissionDate,
+        doctorId: dto.doctorId,
+        parentEventualityId: first.eventualityId,
+        serviceRequestIds: dto.requestIds,
+        notes: dto.notes,
+      });
+    }
+
     return this.dataSource.transaction(async (manager: EntityManager) => {
       const requests = await manager.getRepository(EventualityServiceRequest).find({
         where: dto.requestIds.map((id) => ({ id })),
@@ -1868,6 +2017,19 @@ export class EventualitiesService {
    * Crea una eventualidad de forma general (STUDY, CONSULTATION, HOSPITALIZATION, etc.).
    */
   async createGeneralEventuality(dto: CreateGeneralEventualityDto): Promise<Eventuality> {
+    if (dto.type === EventualityType.HOSPITALIZATION) {
+      return this.requestHospitalization({
+        personId: dto.personId,
+        contractPersonId: dto.contractPersonId,
+        clinicName: dto.clinicName || 'Centro Médico Prestador',
+        admissionReason: dto.notes || 'Hospitalización médica',
+        admissionDate: dto.admissionDate,
+        doctorId: dto.doctorId,
+        parentEventualityId: dto.parentEventualityId,
+        notes: dto.notes,
+      });
+    }
+
     return this.dataSource.transaction(async (manager: EntityManager) => {
       const person = await manager.getRepository(Person).findOne({ where: { id: dto.personId } });
       if (!person) throw new NotFoundException(`Persona con ID "${dto.personId}" no encontrada.`);

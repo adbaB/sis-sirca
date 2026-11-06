@@ -17,7 +17,9 @@ import { MedicalService } from '../plans/entities/medical-service.entity';
 import { DoctorsModule } from '../doctors/doctors.module';
 import { Cie10Module } from '../cie10/cie10.module';
 import { EventualitiesController } from './controllers/eventualities.controller';
+import { EventualityHospitalizationController } from './controllers/eventuality-hospitalization.controller';
 import { EventualitiesService } from './services/eventualities.service';
+import { EventualityHospitalizationService } from './services/eventuality-hospitalization.service';
 import { EventualityOcrService } from './services/eventuality-ocr.service';
 import { EventualityPdfService } from './services/eventuality-pdf.service';
 import { EventualityStatisticsService } from './services/eventuality-statistics.service';
@@ -49,15 +51,17 @@ import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
     DoctorsModule,
     Cie10Module,
   ],
-  controllers: [EventualitiesController],
+  controllers: [EventualitiesController, EventualityHospitalizationController],
   providers: [
     EventualitiesService,
+    EventualityHospitalizationService,
     EventualityOcrService,
     EventualityPdfService,
     EventualityStatisticsService,
   ],
   exports: [
     EventualitiesService,
+    EventualityHospitalizationService,
     EventualityOcrService,
     EventualityPdfService,
     EventualityStatisticsService,
