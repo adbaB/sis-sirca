@@ -1,21 +1,30 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { vi } from 'vitest';
 import config from '../config/configurations';
-import { OcrService } from './ocr.service';
+import {
+  OcrService,
+  resizeReceiptImage,
+  isPdfDocument,
+  MAX_OCR_IMAGE_DIMENSION,
+} from './ocr.service';
 
-jest.mock('openai');
+vi.mock('openai');
 
-// Mock sharp so tests don't need a valid image buffer.
-// The resize pipeline returns the original buffer unchanged.
-jest.mock('sharp', () => {
-  const mockInstance = {
-    resize: jest.fn().mockReturnThis(),
-    jpeg: jest.fn().mockReturnThis(),
-    toBuffer: jest.fn().mockImplementation(function (this: { _input: Buffer }) {
-      return Promise.resolve(this._input);
-    }),
-  };
-  return jest.fn((input: Buffer) => ({ ...mockInstance, _input: input }));
-});
+const mockSharpInstance = {
+  autoOrient: vi.fn().mockReturnThis(),
+  resize: vi.fn().mockReturnThis(),
+  flatten: vi.fn().mockReturnThis(),
+  jpeg: vi.fn().mockReturnThis(),
+  toBuffer: vi.fn().mockImplementation(function (this: { _input: Buffer }) {
+    return Promise.resolve(this._input);
+  }),
+};
+
+const mockSharpFn = vi.fn((input: Buffer) => ({ ...mockSharpInstance, _input: input }));
+
+vi.mock('sharp', () => ({
+  default: (...args: [Buffer]) => mockSharpFn(...args),
+}));
 
 describe('OcrService', () => {
   let service: OcrService;
@@ -83,6 +92,10 @@ describe('OcrService', () => {
 
       const promptCallArg = mockChatCompletionsCreate.mock.calls[0][0];
       expect(promptCallArg.model).toBe('anthropic/claude-sonnet-5.5');
+      expect(promptCallArg.reasoning).toEqual({ effort: 'low' });
+      expect(promptCallArg.messages[1].content[0].cache_control).toEqual({
+        type: 'ephemeral',
+      });
       // Assert that openrouter / openai receives the image directly
       expect(promptCallArg.messages[1].content[1].image_url.url).toContain(
         'base64,ZHVtbXkgaW1hZ2UgYnVmZmVy',
@@ -236,6 +249,65 @@ describe('OcrService', () => {
       await expect(service.extractReceiptData(buffer)).rejects.toThrow(
         'Failed to extract receipt data',
       );
+    });
+  });
+
+  describe('resizeReceiptImage', () => {
+    it('should have MAX_OCR_IMAGE_DIMENSION set to 1568', () => {
+      expect(MAX_OCR_IMAGE_DIMENSION).toBe(1568);
+    });
+
+    it('should call sharp with autoOrient, max 1568 dimension, flatten, and jpeg', async () => {
+      const buffer = Buffer.from('image bytes');
+      const result = await resizeReceiptImage(buffer, 'image/png');
+
+      expect(mockSharpFn).toHaveBeenCalledWith(buffer);
+      expect(mockSharpInstance.autoOrient).toHaveBeenCalled();
+      expect(mockSharpInstance.resize).toHaveBeenCalledWith({
+        width: 1568,
+        height: 1568,
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+      expect(mockSharpInstance.flatten).toHaveBeenCalledWith({ background: '#ffffff' });
+      expect(mockSharpInstance.jpeg).toHaveBeenCalledWith({ quality: 90 });
+      expect(result.mimeType).toBe('image/jpeg');
+    });
+
+    it('should not resize if the document is a PDF', async () => {
+      const pdfBuffer = Buffer.from('%PDF-1.4 dummy pdf');
+      const result = await resizeReceiptImage(pdfBuffer, 'application/pdf');
+
+      expect(result.buffer).toBe(pdfBuffer);
+      expect(result.mimeType).toBe('application/pdf');
+    });
+
+    it('should return original buffer if sharp throws', async () => {
+      mockSharpFn.mockImplementationOnce(() => {
+        throw new Error('Corrupt image');
+      });
+
+      const corruptBuffer = Buffer.from('corrupt');
+      const result = await resizeReceiptImage(corruptBuffer, 'image/jpeg');
+
+      expect(result.buffer).toBe(corruptBuffer);
+      expect(result.mimeType).toBe('image/jpeg');
+    });
+  });
+
+  describe('isPdfDocument', () => {
+    it('should identify PDF by mimeType', () => {
+      expect(isPdfDocument('https://example.com/file', 'application/pdf')).toBe(true);
+    });
+
+    it('should identify PDF by URL extension', () => {
+      expect(isPdfDocument('https://example.com/file.pdf')).toBe(true);
+      expect(isPdfDocument('https://example.com/file.jpg')).toBe(false);
+    });
+
+    it('should identify PDF by magic bytes in buffer', () => {
+      expect(isPdfDocument(Buffer.from('%PDF-1.5 test'))).toBe(true);
+      expect(isPdfDocument(Buffer.from('not a pdf'))).toBe(false);
     });
   });
 });

@@ -77,6 +77,53 @@ describe('ReceiptAnalysisService', () => {
       expect('rawOcr' in result).toBe(false);
     });
 
+    it('should update originalname extension when format changes to image/jpeg and preserve on fallback', async () => {
+      // Valid 1x1 transparent PNG
+      const validPngBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64',
+      );
+      const mockFile = {
+        buffer: validPngBuffer,
+        originalname: 'receipt.png',
+        mimetype: 'image/png',
+      } as Express.Multer.File;
+      mockAwsService.uploadFile.mockResolvedValue('http://s3/receipt.jpg');
+      mockOcrService.extractReceiptData.mockResolvedValue({
+        monto: 100,
+        referencia: '123456',
+        moneda: 'Bs',
+        fecha: '22/07/2026',
+        nombreBanco: 'Mercantil',
+      });
+
+      await service.analyzeReceipt(mockFile);
+
+      expect(mockAwsService.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originalname: 'receipt.jpg',
+          mimetype: 'image/jpeg',
+        }),
+      );
+
+      // Corrupt PNG falls back without changing format -> preserves originalname
+      mockAwsService.uploadFile.mockClear();
+      const corruptFile = {
+        buffer: Buffer.from('corrupt-png-bytes'),
+        originalname: 'receipt.png',
+        mimetype: 'image/png',
+      } as Express.Multer.File;
+
+      await service.analyzeReceipt(corruptFile);
+
+      expect(mockAwsService.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originalname: 'receipt.png',
+          mimetype: 'image/png',
+        }),
+      );
+    });
+
     it('should throw BadRequestException if file is undefined', async () => {
       await expect(
         service.analyzeReceipt(undefined as unknown as Express.Multer.File),

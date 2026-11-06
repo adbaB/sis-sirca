@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import OpenAI from 'openai';
+import sharp from 'sharp';
 import config from '../config/configurations';
 import { ExternalServiceException, ErrorCode } from '../common/exceptions';
 
@@ -17,6 +18,16 @@ export interface ReceiptData {
   esZelle?: boolean | null;
 }
 
+export const MAX_OCR_IMAGE_DIMENSION = 1568;
+
+/**
+ * Determina si el recurso proporcionado (Buffer o URL) corresponde a un documento PDF
+ * evaluando el tipo MIME, la extensión de la URL o la firma mágica (`%PDF-`).
+ *
+ * @param imageBufferOrUrl - Buffer binario o URL del documento.
+ * @param mimeType - Tipo MIME opcional reportado para el archivo.
+ * @returns `true` si el documento es un PDF; `false` en caso contrario.
+ */
 export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: string): boolean {
   if (mimeType?.toLowerCase() === 'application/pdf') return true;
   if (typeof imageBufferOrUrl === 'string') {
@@ -27,6 +38,43 @@ export function isPdfDocument(imageBufferOrUrl: string | Buffer, mimeType?: stri
     return imageBufferOrUrl.slice(0, 5).toString('ascii').startsWith('%PDF-');
   }
   return false;
+}
+
+/**
+ * Redimensiona y comprime un buffer de imagen de comprobante para que no exceda
+ * `MAX_OCR_IMAGE_DIMENSION` (1568px), aplicando auto-orientación EXIF, fondo blanco
+ * para transparencias y codificación JPEG al 90%. Los documentos PDF o imágenes que
+ * fallen al procesarse se devuelven sin cambios.
+ *
+ * @param buffer - Buffer original del comprobante.
+ * @param mimeType - Tipo MIME original del archivo.
+ * @returns Buffer optimizado y su tipo MIME resultante.
+ */
+export async function resizeReceiptImage(
+  buffer: Buffer,
+  mimeType?: string,
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  if (isPdfDocument(buffer, mimeType)) {
+    return { buffer, mimeType: mimeType || 'application/pdf' };
+  }
+
+  try {
+    const resizedBuffer = await sharp(buffer)
+      .autoOrient()
+      .resize({
+        width: MAX_OCR_IMAGE_DIMENSION,
+        height: MAX_OCR_IMAGE_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+
+    return { buffer: resizedBuffer, mimeType: 'image/jpeg' };
+  } catch {
+    return { buffer, mimeType: mimeType || 'image/jpeg' };
+  }
 }
 
 @Injectable()
@@ -54,6 +102,14 @@ export class OcrService {
     });
   }
 
+  /**
+   * Extrae los datos estructurados de un comprobante de pago (imagen o PDF) utilizando
+   * el modelo de visión vía OpenRouter y normaliza la referencia y el monto extraídos.
+   *
+   * @param imageBufferOrUrl - Buffer binario o URL pública del comprobante.
+   * @param mimeType - Tipo MIME opcional del archivo.
+   * @returns Datos estructurados del comprobante (`ReceiptData`).
+   */
   async extractReceiptData(
     imageBufferOrUrl: string | Buffer,
     mimeType?: string,
@@ -98,16 +154,12 @@ export class OcrService {
           this.logger.warn(
             'Received image as Buffer instead of URL. This will increase token usage significantly. Prefer passing a URL.',
           );
-          let imgMime = mimeType || 'image/jpeg';
-          if (!mimeType) {
-            if (imageBufferOrUrl.slice(0, 8).toString('hex') === '89504e470d0a1a0a') {
-              imgMime = 'image/png';
-            } else if (imageBufferOrUrl.slice(0, 4).toString('ascii') === 'RIFF') {
-              imgMime = 'image/webp';
-            }
-          }
-          const base64Image = imageBufferOrUrl.toString('base64');
-          imageUrl = `data:${imgMime};base64,${base64Image}`;
+          const { buffer: resizedBuffer, mimeType: finalMime } = await resizeReceiptImage(
+            imageBufferOrUrl,
+            mimeType,
+          );
+          const base64Image = resizedBuffer.toString('base64');
+          imageUrl = `data:${finalMime};base64,${base64Image}`;
         }
 
         contentPart = {
@@ -236,12 +288,20 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
             },
             {
               role: 'user',
-              content: [{ type: 'text', text: prompt }, contentPart],
+              content: [
+                {
+                  type: 'text',
+                  text: prompt,
+                  cache_control: { type: 'ephemeral' },
+                } as OpenAI.Chat.Completions.ChatCompletionContentPartText,
+                contentPart,
+              ],
             },
           ],
           response_format: { type: 'json_object' },
-          max_tokens: 7000,
-        },
+          max_tokens: 1500,
+          reasoning: { effort: 'low' },
+        } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
         { timeout: 30_000 },
       );
 

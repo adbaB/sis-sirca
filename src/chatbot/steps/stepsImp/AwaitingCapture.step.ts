@@ -4,7 +4,7 @@ import { Steps } from '../../enums/steps.enum';
 import { UserState } from '../../interfaces/userState.interface';
 import { MetaMessage } from '../../interfaces/webhook.interface';
 import { MetaWhatsappService } from '../../services/meta-whatsapp.service';
-import { OcrService } from '../../../ocr/ocr.service';
+import { OcrService, resizeReceiptImage } from '../../../ocr/ocr.service';
 import axios from 'axios';
 import { ChatbotStateService } from '../../services/chatbot-state.service';
 import { AwsService } from '../../../aws/aws.service';
@@ -23,6 +23,10 @@ export class AwaitingCaptureStep implements IStepHandler {
   canHandle(step: Steps): boolean {
     return step === Steps.AWAITING_CAPTURE;
   }
+  /**
+   * Procesa el mensaje entrante en el paso `AWAITING_CAPTURE`, descarga el comprobante
+   * desde WhatsApp, lo sube optimizado a S3 y ejecuta la extracción OCR.
+   */
   async execute(phone: string, message: MetaMessage, state: UserState): Promise<void> {
     const mediaId = message.image?.id || message.document?.id || null;
     const contentType = message.image?.mime_type || message.document?.mime_type || 'image/jpeg';
@@ -34,13 +38,19 @@ export class AwaitingCaptureStep implements IStepHandler {
         );
 
         const buffer = await this.metaWhatsappService.downloadMedia(mediaId);
-        // Upload to S3
-        const receiptUrl = await this.uploadToS3(buffer, contentType);
+        // Upload optimized receipt to S3
+        const { receiptUrl, contentType: finalContentType } = await this.uploadToS3(
+          buffer,
+          contentType,
+        );
         state.extracted_data = { receiptUrl };
 
         // Process OCR
         try {
-          const extractedData = await this.ocrService.extractReceiptData(receiptUrl, contentType);
+          const extractedData = await this.ocrService.extractReceiptData(
+            receiptUrl,
+            finalContentType,
+          );
           state.extracted_data = { ...state.extracted_data, ...extractedData };
 
           const detectedBank =
@@ -118,15 +128,26 @@ export class AwaitingCaptureStep implements IStepHandler {
     }
   }
 
-  private async uploadToS3(buffer: Buffer, contentType: string): Promise<string> {
-    const ext = contentType.split('/')[1] || 'jpg';
+  /**
+   * Optimiza el buffer del comprobante y lo sube a S3 retornando la URL pública
+   * junto con el tipo MIME resultante.
+   */
+  private async uploadToS3(
+    buffer: Buffer,
+    contentType: string,
+  ): Promise<{ receiptUrl: string; contentType: string }> {
+    const { buffer: optimizedBuffer, mimeType: finalMime } = await resizeReceiptImage(
+      buffer,
+      contentType,
+    );
+    const ext = finalMime.split('/')[1] || 'jpg';
     const originalname = `comprobante.${ext}`;
     const receiptUrl = await this.awsService.uploadFile({
-      buffer,
+      buffer: optimizedBuffer,
       originalname,
-      mimetype: contentType,
+      mimetype: finalMime,
     });
 
-    return receiptUrl;
+    return { receiptUrl, contentType: finalMime };
   }
 }
