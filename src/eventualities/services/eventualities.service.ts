@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { getContextSafe } from '../../common/context/request-context';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Eventuality, EventualityStatus, EventualityType } from '../entities/eventuality.entity';
@@ -297,8 +304,29 @@ export class EventualitiesService {
       throw new NotFoundException(`Eventualidad con ID "${id}" no encontrada.`);
     }
 
+    const ctxUser = getContextSafe()?.user;
+    if (ctxUser) {
+      const user = await this.dataSource.getRepository(User).findOne({
+        where: { id: ctxUser.userId },
+        relations: { doctor: true, role: { permissions: true } },
+      });
+      const permissions = user?.role?.permissions?.map((p) => p.name) || [];
+      if (
+        user?.doctor?.isMedicalAuditor ||
+        (permissions.includes('audit:medical') &&
+          !permissions.includes('update:eventualities') &&
+          !permissions.includes('manage:eventualities') &&
+          !permissions.includes('attend:aps'))
+      ) {
+        throw new ForbiddenException(
+          'El perfil de Médico Auditor es de solo lectura y no permite cargar informes médicos.',
+        );
+      }
+    }
+
     if (
       eventuality.status !== EventualityStatus.CLINIC_PROCESS &&
+      eventuality.status !== EventualityStatus.SCHEDULED &&
       eventuality.status !== EventualityStatus.WAITING_INVOICE &&
       eventuality.status !== EventualityStatus.UNDER_ADMIN_REVIEW
     ) {
@@ -2162,7 +2190,14 @@ export class EventualitiesService {
     page = 1,
     limit = 20,
   ) {
-    const user = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
+    const user = await this.dataSource.getRepository(User).findOne({
+      where: { id: userId },
+      relations: { doctor: true, role: { permissions: true } },
+    });
+    const permissions = user?.role?.permissions?.map((p) => p.name) || [];
+    const isAuditor =
+      Boolean(user?.doctor?.isMedicalAuditor) ||
+      (permissions.includes('audit:medical') && !permissions.includes('attend:aps'));
     const doctorId = user?.doctorId || null;
 
     const qb = this.eventualityRepo
@@ -2188,7 +2223,7 @@ export class EventualitiesService {
       }
     } else {
       qb.andWhere('e.status != :status', { status: EventualityStatus.DOCTOR_QUEUE });
-      if (doctorId) {
+      if (doctorId && !isAuditor) {
         qb.andWhere('e.doctorId = :doctorId', { doctorId });
       }
       qb.orderBy('e.dischargeDate', 'DESC').addOrderBy('e.updatedAt', 'DESC');
@@ -2213,10 +2248,23 @@ export class EventualitiesService {
    * Asigna un paciente de la cola general al médico que lo toma.
    */
   async claimPatient(eventualityId: string, userId: string): Promise<Eventuality> {
-    const user = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
-    if (!user || !user.doctorId) {
+    const user = await this.dataSource.getRepository(User).findOne({
+      where: { id: userId },
+      relations: { doctor: true },
+    });
+    if (!user || !user.doctorId || !user.doctor) {
       throw new BadRequestException(
         'Tu usuario no tiene un perfil médico vinculado para atender pacientes.',
+      );
+    }
+    if (user.doctor.isMedicalAuditor) {
+      throw new ForbiddenException(
+        'El perfil de Médico Auditor es de solo lectura y no permite reclamar pacientes en cola.',
+      );
+    }
+    if (user.doctor.canAttendAps === false) {
+      throw new ForbiddenException(
+        'Tu perfil médico no está habilitado para atender pacientes en la cola APS.',
       );
     }
 
@@ -2243,7 +2291,21 @@ export class EventualitiesService {
       if (!eventuality)
         throw new NotFoundException(`Eventualidad con ID "${eventualityId}" no encontrada.`);
 
-      const user = await manager.getRepository(User).findOne({ where: { id: userId } });
+      const user = await manager.getRepository(User).findOne({
+        where: { id: userId },
+        relations: { doctor: true, role: { permissions: true } },
+      });
+      const permissions = user?.role?.permissions?.map((p) => p.name) || [];
+      if (
+        user?.doctor?.isMedicalAuditor ||
+        (permissions.includes('audit:medical') &&
+          !permissions.includes('attend:aps') &&
+          !permissions.includes('attend:consultations'))
+      ) {
+        throw new ForbiddenException(
+          'El perfil de Médico Auditor es de solo lectura y no permite redactar ni modificar informes médicos.',
+        );
+      }
       const doctorId = dto.doctorId || eventuality.doctorId || user?.doctorId || null;
 
       let doctor: Doctor | null = null;

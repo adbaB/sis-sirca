@@ -18,8 +18,10 @@ import { DoctorsModule } from '../doctors/doctors.module';
 import { Cie10Module } from '../cie10/cie10.module';
 import { EventualitiesController } from './controllers/eventualities.controller';
 import { EventualityHospitalizationController } from './controllers/eventuality-hospitalization.controller';
+import { EventualityConsultationController } from './controllers/eventuality-consultation.controller';
 import { EventualitiesService } from './services/eventualities.service';
 import { EventualityHospitalizationService } from './services/eventuality-hospitalization.service';
+import { EventualityConsultationService } from './services/eventuality-consultation.service';
 import { EventualityOcrService } from './services/eventuality-ocr.service';
 import { EventualityPdfService } from './services/eventuality-pdf.service';
 import { EventualityStatisticsService } from './services/eventuality-statistics.service';
@@ -51,10 +53,15 @@ import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
     DoctorsModule,
     Cie10Module,
   ],
-  controllers: [EventualitiesController, EventualityHospitalizationController],
+  controllers: [
+    EventualitiesController,
+    EventualityHospitalizationController,
+    EventualityConsultationController,
+  ],
   providers: [
     EventualitiesService,
     EventualityHospitalizationService,
+    EventualityConsultationService,
     EventualityOcrService,
     EventualityPdfService,
     EventualityStatisticsService,
@@ -62,6 +69,7 @@ import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module';
   exports: [
     EventualitiesService,
     EventualityHospitalizationService,
+    EventualityConsultationService,
     EventualityOcrService,
     EventualityPdfService,
     EventualityStatisticsService,

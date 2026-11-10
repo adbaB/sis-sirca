@@ -127,17 +127,17 @@
         {{/if}}
         <div class="brand-info">
           <h1>SIRCA PLANES DE SALUD</h1>
-          <p>Informe Médico de Atención Médica (APS)</p>
+          <p>{{#if isConsultation}}Informe Médico de Consulta Especializada ({{ consultationTitle }}){{else}}Informe Médico de Atención Médica (APS){{/if}}</p>
         </div>
       </div>
       <div class="claim-badge">
-        <div style="font-size: 9px; text-transform: uppercase;">Siniestro / Atención</div>
+        <div style="font-size: 9px; text-transform: uppercase;">{{#if isConsultation}}Consulta Médica{{else}}Siniestro / Atención{{/if}}</div>
         <div class="claim-number">{{ claimNumber }}</div>
       </div>
     </div>
 
     <!-- Paciente y Contrato -->
-    <div class="section-title">Datos del Afiliado y Contrato</div>
+    <div class="section-title">Datos del Afiliado y de la Consulta</div>
     <div class="grid-3">
       <div class="info-box">
         <div class="info-label">Nombre del Paciente</div>
@@ -154,16 +154,16 @@
     </div>
     <div class="grid-3">
       <div class="info-box">
-        <div class="info-label">Centro Médico / Sede</div>
-        <div class="info-value">{{ clinicName }}</div>
+        <div class="info-label">{{#if isConsultation}}Consulta / Centro Médico{{else}}Centro Médico / Sede{{/if}}</div>
+        <div class="info-value">{{#if isConsultation}}{{ consultationTitle }} • {{/if}}{{ clinicName }}</div>
       </div>
       <div class="info-box">
-        <div class="info-label">Fecha y Hora de Atención</div>
-        <div class="info-value">{{ admissionDateFormatted }}</div>
+        <div class="info-label">{{#if isConsultation}}Día y Hora de la Consulta{{else}}Fecha y Hora de Atención{{/if}}</div>
+        <div class="info-value">{{#if isConsultation}}{{ consultationDayFormatted }} ({{ admissionDateFormatted }}){{else}}{{ admissionDateFormatted }}{{/if}}</div>
       </div>
       <div class="info-box">
         <div class="info-label">Médico Tratante</div>
-        <div class="info-value">{{ doctorFullName }} ({{ doctorSpecialty }})</div>
+        <div class="info-value">Dr(a). {{ doctorFullName }} ({{ doctorSpecialty }})</div>
       </div>
     </div>
 

@@ -116,13 +116,13 @@ export class EventualitiesController {
   }
 
   @Get('doctor/dashboard')
-  @RequirePermissions('attend:aps', 'read:eventualities')
+  @RequirePermissions('attend:aps', 'attend:consultations', 'audit:medical', 'read:eventualities')
   async getDoctorDashboardStats(@CurrentUser() user: JwtPayload) {
     return this.eventualitiesService.getDoctorDashboardStats(user.userId);
   }
 
   @Get('doctor/queue')
-  @RequirePermissions('attend:aps', 'read:eventualities')
+  @RequirePermissions('attend:aps', 'audit:medical', 'read:eventualities')
   async getDoctorQueue(
     @CurrentUser() user: JwtPayload,
     @Query('filter') filter?: 'QUEUE' | 'ATTENDED',
@@ -235,7 +235,7 @@ export class EventualitiesController {
   }
 
   @Put(':id/aps-consultation')
-  @RequirePermissions('attend:aps', 'update:eventualities')
+  @RequirePermissions('attend:aps', 'attend:consultations', 'update:eventualities')
   async saveApsConsultation(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SaveApsConsultationDto,
@@ -245,7 +245,12 @@ export class EventualitiesController {
   }
 
   @Post(':id/medical-report')
-  @RequirePermissions('update:eventualities', 'manage:eventualities')
+  @RequirePermissions(
+    'update:eventualities',
+    'manage:eventualities',
+    'attend:aps',
+    'attend:consultations',
+  )
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_UPLOAD_FILE_SIZE },

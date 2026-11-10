@@ -243,11 +243,11 @@
         {{/if}}
         <div class="brand-info">
           <h1>SIRCA Planes de Salud</h1>
-          <p>Apertura y Control de Atención de Emergencias Médicas</p>
+          <p>{{#if headerSubtitle}}{{ headerSubtitle }}{{else}}Apertura y Control de Atención de Emergencias Médicas{{/if}}</p>
         </div>
       </div>
       <div class="header-badge-section">
-        <span class="header-badge">Comprobante de Ingreso</span>
+        <span class="header-badge">{{#if headerBadge}}{{ headerBadge }}{{else}}Comprobante de Ingreso{{/if}}</span>
         <p class="header-date">Fecha: {{ admissionDateFormatted }}</p>
       </div>
     </header>
@@ -257,7 +257,11 @@
       <div class="claim-label">Número de Eventualidad Oficial</div>
       <div class="claim-number">{{ claimNumber }}</div>
       <div class="claim-subtext">
-        Consigne este correlativo en el informe médico, hoja de consumo y facturas de la clínica
+        {{#if isConsultation}}
+          Presente este comprobante el día de su consulta médica programada junto con su cédula de identidad
+        {{else}}
+          Consigne este correlativo en el informe médico, hoja de consumo y facturas de la clínica
+        {{/if}}
       </div>
     </div>
 
@@ -275,20 +279,41 @@
         <span class="field-secondary">Plan: {{ planName }}</span>
       </div>
 
-      <div class="field-group">
-        <span class="field-label">Clínica / Proveedor</span>
-        <span class="field-value">{{ clinicName }}</span>
-      </div>
+      {{#if isConsultation}}
+        <div class="field-group">
+          <span class="field-label">Consulta Médica</span>
+          <span class="field-value">{{ consultationTitle }}</span>
+          <span class="field-secondary">Sede / Consultorio: {{ clinicName }}</span>
+        </div>
 
-      <div class="field-group">
-        <span class="field-label">Fecha y Hora de Admisión</span>
-        <span class="field-value">{{ admissionDateFormatted }}</span>
-      </div>
+        <div class="field-group">
+          <span class="field-label">Médico Especialista Asignado</span>
+          <span class="field-value">{{ doctorFullName }}</span>
+          <span class="field-secondary">{{ doctorSpecialty }}{{#if doctorCredentials}} • {{ doctorCredentials }}{{/if}}</span>
+        </div>
+
+        <div class="field-group" style="grid-column: span 2; background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px;">
+          <span class="field-label" style="color: #065f46;">Día y Hora de la Consulta Programada</span>
+          <span class="field-value" style="color: #022c22; font-size: 13.5px; text-transform: capitalize;">
+            {{ consultationDayFormatted }} — Hora: {{ consultationTimeFormatted }}
+          </span>
+        </div>
+      {{else}}
+        <div class="field-group">
+          <span class="field-label">Clínica / Proveedor</span>
+          <span class="field-value">{{ clinicName }}</span>
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Fecha y Hora de Admisión</span>
+          <span class="field-value">{{ admissionDateFormatted }}</span>
+        </div>
+      {{/if}}
     </div>
 
-    <!-- Motivo de Ingreso / Emergencia Médica -->
+    <!-- Motivo de Ingreso / Consulta Médica -->
     <div class="reason-section">
-      <span class="field-label">Razón de la Emergencia / Motivo de Ingreso</span>
+      <span class="field-label">{{#if reasonLabel}}{{ reasonLabel }}{{else}}Razón de la Emergencia / Motivo de Ingreso{{/if}}</span>
       <div class="reason-box">
         {{ notes }}
       </div>
@@ -298,8 +323,8 @@
     <div class="signatures-section">
       <div>
         <div class="sig-line"></div>
-        <div class="sig-title">Médico Tratante / Emergencia</div>
-        <div class="sig-subtitle">Nombre, C.I., N° M.P.P.S. y Firma</div>
+        <div class="sig-title">{{#if isConsultation}}{{ doctorFullName }}{{else}}Médico Tratante / Emergencia{{/if}}</div>
+        <div class="sig-subtitle">{{#if isConsultation}}{{ doctorSpecialty }}{{#if doctorCredentials}} • {{ doctorCredentials }}{{/if}}{{else}}Nombre, C.I., N° M.P.P.S. y Firma{{/if}}</div>
       </div>
 
       <div>

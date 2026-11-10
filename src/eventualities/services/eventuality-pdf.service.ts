@@ -6,21 +6,15 @@ import { marked } from 'marked';
 import { CARACAS_ZONE } from '../../common/utils/date.util';
 import { PdfService } from '../../pdf/services/pdf.service';
 import { loadLogoBase64 } from '../../reports/report-utils';
-import { Eventuality } from '../entities/eventuality.entity';
+import { Eventuality, EventualityType } from '../entities/eventuality.entity';
 import { EventualityTreatmentItem } from '../entities/eventuality-treatment-item.entity';
 import { EventualityServiceRequest } from '../entities/eventuality-service-request.entity';
+import {
+  buildVoucherTemplateData,
+  type EventualityVoucherPdfData,
+} from '../helpers/voucher-pdf-data.helper';
 
-export interface EventualityVoucherPdfData extends Record<string, unknown> {
-  logo: string;
-  claimNumber: string;
-  patientName: string;
-  patientIdCard: string;
-  contractCode: string;
-  planName: string;
-  clinicName: string;
-  admissionDateFormatted: string;
-  notes: string;
-}
+export { type EventualityVoucherPdfData };
 
 interface PersonNameFallback {
   firstName?: string;
@@ -58,6 +52,9 @@ export class EventualityPdfService {
         'contractPerson.contract',
         'contractPerson.plan',
         'contractPerson.person',
+        'doctor',
+        'medicalReport',
+        'extractionDetails',
       ],
     });
 
@@ -66,52 +63,7 @@ export class EventualityPdfService {
     }
 
     const logo = await loadLogoBase64(this.logger);
-
-    const person = eventuality.person;
-    const patientName =
-      person?.name ||
-      [
-        (person as unknown as { firstName?: string })?.firstName,
-        (person as unknown as { lastName?: string })?.lastName,
-      ]
-        .filter(Boolean)
-        .join(' ') ||
-      'Afiliado SIRCA';
-
-    const patientIdCard = person
-      ? `${person.typeIdentityCard || 'V'}-${person.identityCard || ''}`
-      : 'N/A';
-
-    const contractCode = eventuality.contractPerson?.contract?.code || 'N/A';
-
-    const planName =
-      eventuality.contractPerson?.plan?.name ||
-      (eventuality.contractPerson?.person as { plan?: { name?: string } } | undefined)?.plan
-        ?.name ||
-      'Plan de Salud';
-
-    const admissionDate = eventuality.admissionDate
-      ? new Date(eventuality.admissionDate)
-      : new Date();
-    const admissionDateFormatted = DateTime.fromJSDate(admissionDate)
-      .setZone(CARACAS_ZONE)
-      .setLocale('es-VE')
-      .toLocaleString({
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      });
-
-    const templateData: EventualityVoucherPdfData = {
-      logo,
-      claimNumber: eventuality.claimNumber || 'PENDIENTE',
-      patientName,
-      patientIdCard,
-      contractCode,
-      planName,
-      clinicName: eventuality.clinicName || 'Centro Médico Prestador',
-      admissionDateFormatted,
-      notes: eventuality.notes || 'Atención de emergencia médica no programada.',
-    };
+    const templateData = buildVoucherTemplateData(eventuality, logo);
 
     const pdfBuffer = await this.pdfService.generatePdf('eventuality-voucher', templateData, {
       landscape: false,
@@ -211,10 +163,21 @@ export class EventualityPdfService {
       : mr?.admissionDiagnosis || 'No especificado';
 
     const secondaryCie10List = mr?.secondaryCie10Codes || [];
+    const isConsultation = eventuality.type === EventualityType.CONSULTATION;
+    const consultationTitle = isConsultation
+      ? `Consulta de ${doctorSpecialty}`
+      : 'Atención Médica Primaria (APS)';
+    const consultationDayFormatted = DateTime.fromJSDate(admissionDate)
+      .setZone(CARACAS_ZONE)
+      .setLocale('es-VE')
+      .toFormat("cccc, dd 'de' LLLL 'de' yyyy");
 
     const templateData = {
       logo,
       claimNumber: eventuality.claimNumber || 'PENDIENTE',
+      isConsultation,
+      consultationTitle,
+      consultationDayFormatted,
       patientName,
       patientIdCard,
       contractCode,

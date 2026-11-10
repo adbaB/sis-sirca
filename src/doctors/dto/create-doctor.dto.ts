@@ -1,4 +1,12 @@
-import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateDoctorDto {
   @IsNotEmpty({ message: 'El nombre es obligatorio.' })
@@ -48,4 +56,16 @@ export class CreateDoctorDto {
   @IsOptional()
   @IsUUID('4', { message: 'El ID de usuario debe ser un UUID válido.' })
   userId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  canAttendAps?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  canScheduleConsultations?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isMedicalAuditor?: boolean;
 }

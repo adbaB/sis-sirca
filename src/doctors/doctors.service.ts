@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Readable } from 'node:stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Doctor } from './entities/doctor.entity';
@@ -12,6 +11,7 @@ import { User } from '../users/entities/user.entity';
 import { AwsService } from '../aws/aws.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
+import { createSignatureMulterFile } from './helpers/doctor-signature.helper';
 
 @Injectable()
 export class DoctorsService {
@@ -27,6 +27,8 @@ export class DoctorsService {
     search?: string;
     specialty?: string;
     isActive?: boolean;
+    canAttendAps?: boolean;
+    canScheduleConsultations?: boolean;
     page?: number;
     limit?: number;
   }) {
@@ -38,6 +40,18 @@ export class DoctorsService {
 
     if (options.isActive !== undefined) {
       qb.andWhere('doctor.isActive = :isActive', { isActive: options.isActive });
+    }
+
+    if (options.canAttendAps !== undefined) {
+      qb.andWhere('doctor.canAttendAps = :canAttendAps', {
+        canAttendAps: options.canAttendAps,
+      });
+    }
+
+    if (options.canScheduleConsultations !== undefined) {
+      qb.andWhere('doctor.canScheduleConsultations = :canScheduleConsultations', {
+        canScheduleConsultations: options.canScheduleConsultations,
+      });
     }
 
     if (options.specialty) {
@@ -128,6 +142,10 @@ export class DoctorsService {
       email: dto.email?.trim().toLowerCase() || null,
       digitalSignatureUrl: dto.digitalSignatureUrl || null,
       isActive: true,
+      canAttendAps: dto.canAttendAps !== undefined ? dto.canAttendAps : true,
+      canScheduleConsultations:
+        dto.canScheduleConsultations !== undefined ? dto.canScheduleConsultations : true,
+      isMedicalAuditor: dto.isMedicalAuditor !== undefined ? dto.isMedicalAuditor : false,
     });
 
     const saved = await this.doctorRepo.save(doctor);
@@ -166,6 +184,10 @@ export class DoctorsService {
     if (dto.email !== undefined) doctor.email = dto.email?.trim().toLowerCase() || null;
     if (dto.digitalSignatureUrl !== undefined) doctor.digitalSignatureUrl = dto.digitalSignatureUrl;
     if (dto.isActive !== undefined) doctor.isActive = dto.isActive;
+    if (dto.canAttendAps !== undefined) doctor.canAttendAps = dto.canAttendAps;
+    if (dto.canScheduleConsultations !== undefined)
+      doctor.canScheduleConsultations = dto.canScheduleConsultations;
+    if (dto.isMedicalAuditor !== undefined) doctor.isMedicalAuditor = dto.isMedicalAuditor;
 
     const updated = await this.doctorRepo.save(doctor);
 
@@ -244,37 +266,7 @@ export class DoctorsService {
 
   async uploadSignatureBase64(doctorId: string, base64Png: string): Promise<string> {
     const doctor = await this.findOne(doctorId);
-
-    const cleanBase64 = base64Png.replace(/^data:image\/\w+;base64,/, '');
-    const buffer = Buffer.from(cleanBase64, 'base64');
-
-    const fakeMulterFile: Express.Multer.File = {
-      fieldname: 'signature',
-      originalname: `signature-${doctor.identityCard}.png`,
-      encoding: '7bit',
-      mimetype: 'image/png',
-      buffer,
-      size: buffer.length,
-      stream: new Readable({
-        read() {
-          this.push(buffer);
-          this.push(null);
-        },
-      }),
-      destination: '',
-      filename: '',
-      path: '',
-    };
-
-    const uploadedUrl = await this.awsService.uploadFile(
-      fakeMulterFile,
-      'doctors/signatures',
-      `signature-${doctor.identityCard}-${Date.now()}`,
-    );
-
-    doctor.digitalSignatureUrl = uploadedUrl;
-    await this.doctorRepo.save(doctor);
-
-    return uploadedUrl;
+    const multerFile = createSignatureMulterFile(doctor.identityCard, base64Png);
+    return this.uploadSignature(doctorId, multerFile);
   }
 }

@@ -104,6 +104,9 @@ describe('EventualityPdfService', () => {
         'contractPerson.contract',
         'contractPerson.plan',
         'contractPerson.person',
+        'doctor',
+        'medicalReport',
+        'extractionDetails',
       ],
     });
     expect(pdfService.generatePdf).toHaveBeenCalledWith(
