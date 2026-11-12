@@ -25,6 +25,7 @@ export default registerAs('config', () => {
 
     openrouter: {
       apiKey: process.env.OPENROUTER_API_KEY,
+      model: process.env.OPENROUTER_MODEL || 'openai/gpt-6.1-terra',
     },
 
     meta: {
