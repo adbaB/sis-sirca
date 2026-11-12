@@ -91,7 +91,7 @@ describe('OcrService', () => {
       expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
 
       const promptCallArg = mockChatCompletionsCreate.mock.calls[0][0];
-      expect(promptCallArg.model).toBe('anthropic/claude-sonnet-5.5');
+      expect(promptCallArg.model).toBe('openai/gpt-6.1-terra');
       expect(promptCallArg.reasoning).toEqual({ effort: 'low' });
       expect(promptCallArg.messages[1].content[0].cache_control).toEqual({
         type: 'ephemeral',
@@ -194,7 +194,7 @@ describe('OcrService', () => {
 
       expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
       const callArgs = mockChatCompletionsCreate.mock.calls[0][0];
-      expect(callArgs.model).toBe('anthropic/claude-sonnet-5.5');
+      expect(callArgs.model).toBe('openai/gpt-6.1-terra');
       expect(callArgs.messages[1].content[1].type).toBe('file');
       expect(callArgs.messages[1].content[1].file.filename).toBe('comprobante.pdf');
       expect(callArgs.messages[1].content[1].file.file_data).toContain(
@@ -242,6 +242,35 @@ describe('OcrService', () => {
       expect(callArgs.messages[1].content[1].file.file_data).toBe(pdfUrl);
       // Normalized from "199.608,64" string to number 199608.64
       expect(result.monto).toBe(199608.64);
+    });
+
+    it('should use custom model from config when OPENROUTER_MODEL is configured', async () => {
+      const customModule: TestingModule = await Test.createTestingModule({
+        providers: [
+          OcrService,
+          {
+            provide: config.KEY,
+            useValue: {
+              openrouter: { apiKey: 'test-api-key', model: 'openai/gpt-6-luna' },
+              env: 'test',
+            },
+          },
+        ],
+      }).compile();
+
+      const customService = customModule.get<OcrService>(OcrService);
+      const mockChatCompletionsCreate = jest.fn().mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify({ monto: 25, referencia: '99999' }) } }],
+      });
+      const openAiInstance = customService['openai'];
+      openAiInstance.chat = {
+        completions: { create: mockChatCompletionsCreate },
+      } as unknown as typeof openAiInstance.chat;
+
+      await customService.extractReceiptData('https://s3.amazonaws.com/receipts/test.jpg');
+
+      expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
+      expect(mockChatCompletionsCreate.mock.calls[0][0].model).toBe('openai/gpt-6-luna');
     });
 
     it('should throw error if OCR fails', async () => {

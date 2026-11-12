@@ -19,6 +19,7 @@ export interface ReceiptData {
 }
 
 export const MAX_OCR_IMAGE_DIMENSION = 1568;
+export const DEFAULT_OCR_MODEL = 'openai/gpt-6.1-terra';
 
 /**
  * Determina si el recurso proporcionado (Buffer o URL) corresponde a un documento PDF
@@ -115,6 +116,7 @@ export class OcrService {
     mimeType?: string,
   ): Promise<ReceiptData> {
     const apiKey = this.configService.openrouter.apiKey;
+    const model = this.configService.openrouter.model || DEFAULT_OCR_MODEL;
     const isTestEnv = this.configService.env === 'test';
 
     if (!apiKey && !isTestEnv) {
@@ -122,7 +124,7 @@ export class OcrService {
     }
 
     try {
-      this.logger.log('Preparing document for OpenRouter (anthropic/claude-sonnet-5.5)...');
+      this.logger.log(`Preparing document for OpenRouter (${model})...`);
 
       const isPdf = isPdfDocument(imageBufferOrUrl, mimeType);
       let contentPart: OpenAI.Chat.Completions.ChatCompletionContentPart;
@@ -171,7 +173,7 @@ export class OcrService {
         };
       }
 
-      this.logger.log('Sending document to OpenRouter (anthropic/claude-sonnet-5.5)...');
+      this.logger.log(`Sending document to OpenRouter (${model})...`);
 
       const prompt = `Extrae los datos del comprobante de pago adjunto. Puede ser una transferencia bancaria venezolana O un pago Zelle desde un banco estadounidense.
 
@@ -279,7 +281,7 @@ Devuelve ÚNICAMENTE un JSON válido sin markdown, sin texto adicional:
 
       const completion = await this.openai.chat.completions.create(
         {
-          model: 'anthropic/claude-sonnet-5.5',
+          model,
           messages: [
             {
               role: 'system',
