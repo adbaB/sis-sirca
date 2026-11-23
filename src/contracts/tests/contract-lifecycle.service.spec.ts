@@ -737,8 +737,8 @@ describe('ContractLifecycleService', () => {
       );
       const expected = DateTime.fromJSDate(opDate)
         .setZone(CARACAS_ZONE)
-        .plus({ days: REACTIVATION_COOLDOWN_DAYS })
-        .startOf('day');
+        .startOf('day')
+        .plus({ days: Math.max(0, REACTIVATION_COOLDOWN_DAYS - 1) });
       expect(DateTime.fromJSDate(result as Date).toMillis()).toBe(expected.toMillis());
       expect(saveMock).toHaveBeenCalled();
       expect(mockSuspended.reactivationEligibleAt).toBeInstanceOf(Date);

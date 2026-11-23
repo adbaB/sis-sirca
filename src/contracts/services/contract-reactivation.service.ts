@@ -86,15 +86,15 @@ export class ContractReactivationService {
     // la carencia cuenta a partir de la fecha actual en que se regularizó la deuda.
     const baselineDate = latestOperationDate ?? nowDate;
 
-    // Carencia de 7 días continuos a partir de la fecha de pago (donde el día 1 es la fecha de pago),
+    // Carencia de 7 días continuos contando el día de pago como día 1,
     // normalizados a medianoche (00:00:00) en zona Caracas.
-    // Ejemplo: pago el día 2 => días de carencia [2, 3, 4, 5, 6, 7, 8] => reactivación elegible el día 9 a las 00:00:00.
+    // Ejemplo: pago el día 10 => días [10(1), 11(2), 12(3), 13(4), 14(5), 15(6)] => reactivación elegible el día 16(7) a las 00:00:00.
     // Las fechas de pago son timestamptz (instantes reales), por lo que se convierten
     // directamente a zona Caracas; no se usa normalizeDateOnly para evitar desfases de un día.
     const eligibleAt = DateTime.fromJSDate(baselineDate)
       .setZone(CARACAS_ZONE)
       .startOf('day')
-      .plus({ days: REACTIVATION_COOLDOWN_DAYS })
+      .plus({ days: Math.max(0, REACTIVATION_COOLDOWN_DAYS - 1) })
       .startOf('day')
       .toJSDate();
 
