@@ -120,7 +120,7 @@ describe('ContractReactivationService', () => {
       expect(mockContractRepo.save).toHaveBeenCalledWith(contract);
     });
 
-    it('should set reactivationEligibleAt to 7 days from latest payment operationDate when debt covered', async () => {
+    it('should set reactivationEligibleAt including payment day as day 1 (e.g. day 10 -> day 16)', async () => {
       const contract = {
         id: 'c-1',
         status: ContractStatus.SUSPENDED,
@@ -138,7 +138,7 @@ describe('ContractReactivationService', () => {
             id: 'pay-1',
             status: PaymentStatus.PROCESSING,
             amount: 100,
-            operationDate: new Date('2026-08-01T15:00:00-04:00'),
+            operationDate: new Date('2026-08-10T15:00:00-04:00'),
             deletedAt: null,
           } as unknown as Payment,
         ],
@@ -153,8 +153,8 @@ describe('ContractReactivationService', () => {
       expect(dt.hour).toBe(0);
       expect(dt.minute).toBe(0);
       expect(dt.second).toBe(0);
-      // 2026-08-01 + 7 days = 2026-08-08
-      expect(dt.toISODate()).toBe('2026-08-08');
+      // Pago el 10 (día 1) => elegible el 16 (día 7: 10 + 6 días)
+      expect(dt.toISODate()).toBe('2026-08-16');
       expect(mockContractRepo.save).toHaveBeenCalledWith(contract);
     });
   });

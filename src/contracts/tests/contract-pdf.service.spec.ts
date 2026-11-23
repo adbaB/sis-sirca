@@ -77,6 +77,10 @@ describe('ContractPdfService', () => {
     awsService = module.get(AwsService);
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
@@ -110,6 +114,9 @@ describe('ContractPdfService', () => {
     });
 
     it('should format age in months for baby affiliate under 1 year old', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-09-30T16:00:00Z'));
+
       contractsRepository.findOne.mockResolvedValue({
         ...mockContract,
         affiliationDate: new Date('2026-09-30'),
@@ -167,6 +174,87 @@ describe('ContractPdfService', () => {
             expect.objectContaining({
               name: 'Abuelo Perez',
               age: '84 AÑOS',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should calculate current age in Caracas timezone instead of freezing at affiliationDate for renewed or older contracts', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-11-23T16:00:00Z'));
+
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        affiliationDate: '2025-05-01',
+        startDate: '2026-05-01',
+        contractPersons: [
+          {
+            ...mockContract.contractPersons[0],
+            person: {
+              ...mockContract.contractPersons[0].person,
+              birthDate: '1990-10-28',
+            },
+          },
+        ],
+      } as unknown as Contract);
+
+      await service.generateContractPdfBuffer('contract-1');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'contract-affiliation',
+        expect.objectContaining({
+          titular: expect.objectContaining({
+            birthDateFormatted: '28-10-1990',
+            age: '36 AÑOS',
+          }),
+          titularRow: expect.objectContaining({
+            age: '36 AÑOS',
+          }),
+        }),
+      );
+    });
+
+    it('should format baby age in months when baby is born after the contract affiliationDate', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-09-30T16:00:00Z'));
+
+      contractsRepository.findOne.mockResolvedValue({
+        ...mockContract,
+        affiliationDate: '2025-01-15',
+        contractPersons: [
+          ...mockContract.contractPersons,
+          {
+            id: 'cp-baby',
+            role: PersonRole.AFILIADO,
+            relationship: 'HIJO',
+            person: {
+              id: 'p-baby',
+              name: 'Bebe Nuevo',
+              typeIdentityCard: 'PN',
+              identityCard: '99999998',
+              birthDate: '2026-06-30',
+              plan: { id: 'plan-1', name: 'Plan Familiar', coverage: 5000, amount: 50 },
+            },
+          } as unknown as NonNullable<Contract['contractPersons']>[0],
+        ],
+      } as unknown as Contract);
+
+      await service.generateContractPdfBuffer('contract-1');
+
+      expect(pdfService.generatePdf).toHaveBeenCalledWith(
+        'contract-affiliation',
+        expect.objectContaining({
+          beneficiaries: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Bebe Nuevo',
+              age: '3 MESES',
+            }),
+          ]),
+          beneficiariesRow: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Bebe Nuevo',
+              age: '3 MESES',
             }),
           ]),
         }),
